@@ -1,0 +1,230 @@
+<Window x:Class="LabServerAdmin.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:LabServerAdmin"
+        mc:Ignorable="d"
+        Title="Lab Server Admin - PC Management System" Height="800" Width="1200"
+        WindowStartupLocation="CenterScreen">
+    
+    <Window.Resources>
+        <Style x:Key="ModernButton" TargetType="Button">
+            <Setter Property="Background" Value="#2196F3"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="Margin" Value="2"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#1976D2"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        
+        <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource ModernButton}">
+            <Setter Property="Background" Value="#F44336"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#D32F2F"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        
+        <Style x:Key="SuccessButton" TargetType="Button" BasedOn="{StaticResource ModernButton}">
+            <Setter Property="Background" Value="#4CAF50"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#388E3C"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#1976D2" Padding="15">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <TextBlock Text="🔧 Lab Server Admin" FontSize="24" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="ServerStatusText" Text="Server: Stopped" FontSize="14" Foreground="LightBlue" Margin="20,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+                
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button x:Name="VoiceToggleButton" Content="🎤 Voice Commands: OFF" Style="{StaticResource ModernButton}" Click="VoiceToggleButton_Click"/>
+                    <Button x:Name="ServerToggleButton" Content="▶️ Start Server" Style="{StaticResource SuccessButton}" Click="ServerToggleButton_Click" Margin="10,0,0,0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Main Content -->
+        <TabControl x:Name="MainTabControl" Grid.Row="1" Margin="10">
+            <!-- Dashboard Tab -->
+            <TabItem Header="📊 Dashboard">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Client Controls -->
+                    <GroupBox Grid.Row="0" Header="Client Controls" Margin="0,0,0,10">
+                        <StackPanel Orientation="Horizontal" Margin="10">
+                            <Button x:Name="LockAllButton" Content="🔒 Lock All" Style="{StaticResource ModernButton}" Click="LockAllButton_Click"/>
+                            <Button x:Name="UnlockAllButton" Content="🔓 Unlock All" Style="{StaticResource ModernButton}" Click="UnlockAllButton_Click"/>
+                            <Button x:Name="ShutdownAllButton" Content="⏹️ Shutdown All" Style="{StaticResource DangerButton}" Click="ShutdownAllButton_Click"/>
+                            <Button x:Name="RestartAllButton" Content="🔄 Restart All" Style="{StaticResource DangerButton}" Click="RestartAllButton_Click"/>
+                            <Button x:Name="SleepAllButton" Content="😴 Sleep All" Style="{StaticResource ModernButton}" Click="SleepAllButton_Click"/>
+                            <Button x:Name="RefreshClientsButton" Content="🔄 Refresh" Style="{StaticResource ModernButton}" Click="RefreshClientsButton_Click"/>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <!-- Connected Clients -->
+                    <GroupBox Grid.Row="1" Header="Connected Clients">
+                        <DataGrid x:Name="ClientsDataGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" 
+                                  GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="PC Name" Binding="{Binding Name}" Width="150"/>
+                                <DataGridTextColumn Header="IP Address" Binding="{Binding IpAddress}" Width="120"/>
+                                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                                                    <Setter Property="Foreground" Value="Green"/>
+                                                    <Setter Property="FontWeight" Value="Bold"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsConnected}" Value="False">
+                                                    <Setter Property="Foreground" Value="Red"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Last Response" Binding="{Binding LastResponse, StringFormat=HH:mm:ss}" Width="120"/>
+                                <DataGridTemplateColumn Header="Actions" Width="300">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Button Content="🔒" ToolTip="Lock" Style="{StaticResource ModernButton}" 
+                                                        Click="LockClientButton_Click" Tag="{Binding Name}" Width="30" Height="25"/>
+                                                <Button Content="🔓" ToolTip="Unlock" Style="{StaticResource ModernButton}" 
+                                                        Click="UnlockClientButton_Click" Tag="{Binding Name}" Width="30" Height="25"/>
+                                                <Button Content="⏹️" ToolTip="Shutdown" Style="{StaticResource DangerButton}" 
+                                                        Click="ShutdownClientButton_Click" Tag="{Binding Name}" Width="30" Height="25"/>
+                                                <Button Content="🔄" ToolTip="Restart" Style="{StaticResource DangerButton}" 
+                                                        Click="RestartClientButton_Click" Tag="{Binding Name}" Width="30" Height="25"/>
+                                                <Button Content="😴" ToolTip="Sleep" Style="{StaticResource ModernButton}" 
+                                                        Click="SleepClientButton_Click" Tag="{Binding Name}" Width="30" Height="25"/>
+                                                <Button Content="📋" ToolTip="View Logs" Style="{StaticResource ModernButton}" 
+                                                        Click="ViewLogsButton_Click" Tag="{Binding Name}" Width="30" Height="25"/>
+                                                <Button Content="🖥️" ToolTip="Remote View" Style="{StaticResource ModernButton}"
+                                                        Click="ViewScreenButton_Click" Tag="{Binding Name}" Width="30" Height="25"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </GroupBox>
+                </Grid>
+            </TabItem>
+
+            <!-- System Logs Tab -->
+            <TabItem Header="📋 System Logs">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                        <Button x:Name="RefreshLogsButton" Content="🔄 Refresh Logs" Style="{StaticResource ModernButton}" Click="RefreshLogsButton_Click"/>
+                        <Button x:Name="ExportLogsButton" Content="📤 Export Logs" Style="{StaticResource ModernButton}" Click="ExportLogsButton_Click" Margin="10,0,0,0"/>
+                    </StackPanel>
+
+                    <DataGrid x:Name="SystemLogsDataGrid" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" 
+                              GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150"/>
+                            <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="150"/>
+                            <DataGridTextColumn Header="Client" Binding="{Binding ClientName}" Width="120"/>
+                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100"/>
+                            <DataGridTextColumn Header="Details" Binding="{Binding Details}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- Attendance Logs Tab -->
+            <TabItem Header="👥 Attendance Logs">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                        <Button x:Name="RefreshAttendanceButton" Content="🔄 Refresh" Style="{StaticResource ModernButton}" Click="RefreshAttendanceButton_Click"/>
+                        <Button x:Name="ExportAttendanceButton" Content="📤 Export Attendance" Style="{StaticResource ModernButton}" Click="ExportAttendanceButton_Click" Margin="10,0,0,0"/>
+                    </StackPanel>
+
+                    <DataGrid x:Name="AttendanceLogsDataGrid" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" 
+                              GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Student Name" Binding="{Binding StudentName}" Width="150"/>
+                            <DataGridTextColumn Header="PC Name" Binding="{Binding PcName}" Width="120"/>
+                            <DataGridTextColumn Header="Time In" Binding="{Binding TimeIn, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150"/>
+                            <DataGridTextColumn Header="Time Out" Binding="{Binding TimeOut, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150"/>
+                            <DataGridCheckBoxColumn Header="Active" Binding="{Binding IsActive}" Width="80"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- Settings Tab -->
+            <TabItem Header="⚙️ Settings">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <GroupBox Header="Client Usage Limit" Margin="0,0,0,10">
+                        <StackPanel Orientation="Horizontal" Margin="10" VerticalAlignment="Center">
+                            <TextBlock Text="Usage limit for all clients (hours):" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <TextBox x:Name="UsageLimitHoursTextBox" Width="80" Margin="0,0,10,0"/>
+                            <Button Content="Apply to All" Style="{StaticResource ModernButton}" Click="ApplyUsageLimitButton_Click"/>
+                            <Button Content="Clear Limit" Style="{StaticResource ModernButton}" Click="ClearUsageLimitButton_Click" Margin="10,0,0,0"/>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <TextBlock x:Name="UsageLimitStatusText" Grid.Row="1" Text="No usage limit set." FontStyle="Italic" Foreground="Gray" Margin="10,0,0,0"/>
+                </Grid>
+            </TabItem>
+        </TabControl>
+
+        <!-- Status Bar -->
+        <StatusBar Grid.Row="2" Background="#F5F5F5">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusText" Text="Ready"/>
+            </StatusBarItem>
+            <StatusBarItem HorizontalAlignment="Right">
+                <TextBlock x:Name="ConnectedClientsText" Text="Connected Clients: 0"/>
+            </StatusBarItem>
+        </StatusBar>
+    </Grid>
+</Window>
