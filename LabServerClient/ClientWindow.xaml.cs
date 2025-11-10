@@ -506,24 +506,24 @@ namespace LabServerClient
             UpdateUsageLimitDisplay();
         }
 
-        private async Task<string> SetUsageLimit(string? parameters)
+        private Task<string> SetUsageLimit(string? parameters)
         {
             if (string.IsNullOrWhiteSpace(parameters))
             {
                 ResetUsageLimitState(true);
-                return "Usage limit cleared";
+                return Task.FromResult("Usage limit cleared");
             }
 
             if (!double.TryParse(parameters, NumberStyles.Float, CultureInfo.InvariantCulture, out var hours) &&
                 !double.TryParse(parameters, NumberStyles.Float, CultureInfo.CurrentCulture, out hours))
             {
-                return $"Invalid usage limit parameter: {parameters}";
+                return Task.FromResult($"Invalid usage limit parameter: {parameters}");
             }
 
             if (hours <= 0)
             {
                 ResetUsageLimitState(true);
-                return "Usage limit cleared";
+                return Task.FromResult("Usage limit cleared");
             }
 
             ResetUsageLimitState(true);
@@ -539,7 +539,7 @@ namespace LabServerClient
 
             _ = Task.Run(() => MonitorUsageLimitAsync(_usageLimitExpiryUtc.Value, _usageLimitCts.Token));
 
-            return $"Usage limit set to {hours:0.##} hours (until {_usageLimitExpiryUtc.Value.ToLocalTime():t}).";
+            return Task.FromResult($"Usage limit set to {hours:0.##} hours (until {_usageLimitExpiryUtc.Value.ToLocalTime():t}).");
         }
 
         private async Task MonitorUsageLimitAsync(DateTime expiryUtc, CancellationToken token)
@@ -613,12 +613,12 @@ namespace LabServerClient
                 }
 
                 UsageLimitStatusText.Text = $"Usage limit: {remaining:hh\\:mm\\:ss} remaining";
-                UsageLimitStatusText.Foreground = remaining <= TimeSpan.FromMinutes(5) ? Brushes.DarkRed : Brushes.DarkBlue;
+                UsageLimitStatusText.Foreground = remaining <= TimeSpan.FromMinutes(5) ? System.Windows.Media.Brushes.DarkRed : System.Windows.Media.Brushes.DarkBlue;
             }
             else
             {
                 UsageLimitStatusText.Text = "Usage limit: none";
-                UsageLimitStatusText.Foreground = Brushes.Gray;
+                UsageLimitStatusText.Foreground = System.Windows.Media.Brushes.Gray;
             }
         }
 
@@ -638,7 +638,7 @@ namespace LabServerClient
         private const uint MOUSEEVENTF_WHEEL = 0x0800;
         private const uint KEYEVENTF_KEYUP = 0x0002;
 
-        private async Task<string?> StartScreenShare(string? parameters)
+        private Task<string?> StartScreenShare(string? parameters)
         {
             try
             {
@@ -659,7 +659,7 @@ namespace LabServerClient
 
                 if (_stream == null)
                 {
-                    return "Screen streaming unavailable: client not connected";
+                    return Task.FromResult<string?>("Screen streaming unavailable: client not connected");
                 }
 
                 _screenShareIntervalMs = interval;
@@ -668,12 +668,12 @@ namespace LabServerClient
                 _ = Task.Run(() => CaptureScreenLoopAsync(_screenShareIntervalMs, _screenShareCts.Token));
 
                 LogMessage($"Screen streaming started at {1000.0 / _screenShareIntervalMs:F1} FPS");
-                return $"Screen streaming started ({_screenShareIntervalMs} ms interval)";
+                return Task.FromResult<string?>($"Screen streaming started ({_screenShareIntervalMs} ms interval)");
             }
             catch (Exception ex)
             {
                 LogMessage($"Screen streaming error: {ex.Message}");
-                return $"Screen streaming error: {ex.Message}";
+                return Task.FromResult<string?>($"Screen streaming error: {ex.Message}");
             }
         }
 
@@ -744,7 +744,7 @@ namespace LabServerClient
             var screenWidth = (int)SystemParameters.PrimaryScreenWidth;
             var screenHeight = (int)SystemParameters.PrimaryScreenHeight;
 
-            using var bitmap = new Bitmap(screenWidth, screenHeight, PixelFormat.Format32bppArgb);
+            using var bitmap = new Bitmap(screenWidth, screenHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             using (var graphics = Graphics.FromImage(bitmap))
             {
                 graphics.CopyFromScreen(0, 0, 0, 0, bitmap.Size, CopyPixelOperation.SourceCopy);
