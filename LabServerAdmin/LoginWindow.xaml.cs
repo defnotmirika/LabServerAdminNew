@@ -199,25 +199,29 @@ namespace LabServerAdmin
 
                 if (isValid)
                 {
+                    // Set authenticated flag first
                     IsAuthenticated = true;
                     ErrorTextBlock.Visibility = Visibility.Collapsed;
                     
-                    // Log successful login attempt
+                    // Log successful login attempt (fire and forget to not delay window close)
                     if (_databaseService != null)
                     {
-                        try
+                        _ = Task.Run(async () =>
                         {
-                            await _databaseService.LogSystemActionAsync(
-                                "Login",
-                                username,
-                                "Success",
-                                "User logged in successfully"
-                            );
-                        }
-                        catch
-                        {
-                            // Ignore logging errors
-                        }
+                            try
+                            {
+                                await _databaseService.LogSystemActionAsync(
+                                    "Login",
+                                    username,
+                                    "Success",
+                                    "User logged in successfully"
+                                );
+                            }
+                            catch
+                            {
+                                // Ignore logging errors
+                            }
+                        });
                     }
                     
                     // Set DialogResult and close window

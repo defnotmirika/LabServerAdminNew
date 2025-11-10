@@ -54,6 +54,9 @@ namespace LabServerAdmin
             SetupEventHandlers();
             Loaded += MainWindow_Loaded;
             
+            // Set window to fullscreen on startup (but still resizable)
+            WindowState = WindowState.Maximized;
+            
             UpdateStatus("Ready - Click 'Start Server' to begin");
         }
 
