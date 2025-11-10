@@ -1,3 +1,5 @@
+using System;
+using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,10 +26,10 @@ namespace LabServerAdmin
 
                 // Show login window first with database service
                 var loginWindow = new LoginWindow(_databaseService);
-                loginWindow.ShowDialog();
+                var dialogResult = loginWindow.ShowDialog();
 
                 // Only show main window if login was successful
-                if (loginWindow.IsAuthenticated)
+                if (loginWindow.IsAuthenticated && dialogResult == true)
                 {
                     var mainWindow = new MainWindow();
                     mainWindow.Show();
@@ -38,7 +40,7 @@ namespace LabServerAdmin
                     Shutdown();
                 }
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
                 MessageBox.Show(
                     $"Failed to initialize application: {ex.Message}\n\n" +

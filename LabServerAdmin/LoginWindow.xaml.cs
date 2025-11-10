@@ -71,20 +71,21 @@ namespace LabServerAdmin
 
         private void LoginWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
-            // Unregister hotkeys
+            // Prevent closing unless authenticated
+            if (!IsAuthenticated)
+            {
+                e.Cancel = true;
+                MessageBox.Show("You must login to exit the application.", "Login Required", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            
+            // Unregister hotkeys only if closing is allowed
             var hwnd = new WindowInteropHelper(this).Handle;
             if (hwnd != IntPtr.Zero)
             {
                 UnregisterHotKey(hwnd, HOTKEY_ID);
             }
             _source?.RemoveHook(WndProc);
-            
-            // Prevent closing unless authenticated
-            if (!IsAuthenticated)
-            {
-                e.Cancel = true;
-                MessageBox.Show("You must login to exit the application.", "Login Required", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
         }
 
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -219,8 +220,9 @@ namespace LabServerAdmin
                         }
                     }
                     
-                    DialogResult = true;
-                    Close();
+                    // Set DialogResult and close window
+                    this.DialogResult = true;
+                    this.Close();
                 }
                 else
                 {
