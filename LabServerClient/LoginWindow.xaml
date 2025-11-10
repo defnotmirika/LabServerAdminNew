@@ -31,7 +31,7 @@
         </Style>
     </Window.Resources>
 
-    <Border BorderBrush="#CCCCCC" BorderThickness="2" CornerRadius="10" Background="White" Margin="20">
+    <Border BorderBrush="#CCCCCC" BorderThickness="0" CornerRadius="10" Background="White" Margin="10">
         <Grid Margin="30">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -59,8 +59,7 @@
                           FontWeight="SemiBold" 
                           FontSize="14"
                           Foreground="#34495E"/>
-                <TextBox x:Name="UsernameTextBox" 
-                        Text="client"
+                <TextBox x:Name="UsernameTextBox"
                         KeyDown="UsernameTextBox_KeyDown"/>
 
                 <TextBlock Text="Password:" 
@@ -87,14 +86,6 @@
                        FontWeight="Bold"
                        Margin="0,10,0,0"/>
             </StackPanel>
-
-            <!-- Footer -->
-            <TextBlock Grid.Row="2" 
-                      Text="© Lab Server Solutions" 
-                      FontSize="11" 
-                      HorizontalAlignment="Center"
-                      Foreground="#95A5A6"
-                      Margin="0,20,0,0"/>
         </Grid>
     </Border>
 </Window>

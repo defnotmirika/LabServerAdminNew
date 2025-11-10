@@ -66,6 +66,8 @@ namespace LabServerAdmin
             {
                 await _databaseService.InitializeDatabaseAsync();
                 await LoadUsageLimitAsync();
+                // Load attendance logs when server starts
+                await RefreshAttendanceLogs();
             }
             catch (Exception ex)
             {
@@ -107,6 +109,9 @@ namespace LabServerAdmin
                     ServerToggleButton.Style = (Style)FindResource("DangerButton");
                     ServerStatusText.Text = "Server: Running on Port 9000";
                     UpdateStatus("Server started successfully");
+                    
+                    // Refresh attendance logs when server starts
+                    await RefreshAttendanceLogs();
                 }
                 else
                 {
@@ -367,17 +372,49 @@ namespace LabServerAdmin
 
         private async void ExportAttendanceButton_Click(object sender, RoutedEventArgs e)
         {
-            var saveDialog = new SaveFileDialog
+            // Show date selection window
+            var exportWindow = new ExportAttendanceWindow
             {
-                Filter = "CSV files (*.csv)|*.csv|Text files (*.txt)|*.txt",
-                DefaultExt = "csv",
-                FileName = $"attendance_logs_{DateTime.Now:yyyyMMdd_HHmmss}"
+                Owner = this
             };
 
-            if (saveDialog.ShowDialog() == true)
+            if (exportWindow.ShowDialog() == true && exportWindow.IsExportConfirmed)
             {
-                await ExportAttendanceLogs(saveDialog.FileName);
-                UpdateStatus($"Attendance logs exported to {Path.GetFileName(saveDialog.FileName)}");
+                try
+                {
+                    // Get attendance logs for selected date range
+                    var logs = await _databaseService.GetAttendanceLogsAsync(
+                        exportWindow.SelectedStartDate, 
+                        exportWindow.SelectedEndDate);
+
+                    if (logs.Count == 0)
+                    {
+                        MessageBox.Show(
+                            "No attendance records found for the selected date range.",
+                            "No Data",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Information);
+                        return;
+                    }
+
+                    // Export to file
+                    await ExportAttendanceLogs(exportWindow.SelectedFilePath!, logs);
+                    UpdateStatus($"Attendance logs exported to {Path.GetFileName(exportWindow.SelectedFilePath)} ({logs.Count} records)");
+                    
+                    MessageBox.Show(
+                        $"Successfully exported {logs.Count} attendance record(s) to:\n{exportWindow.SelectedFilePath}",
+                        "Export Successful",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(
+                        $"Error exporting attendance logs: {ex.Message}",
+                        "Export Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                }
             }
         }
 
@@ -502,22 +539,70 @@ namespace LabServerAdmin
             }
         }
 
+        private DateTime? _attendanceStartDate = null;
+        private DateTime? _attendanceEndDate = null;
+
         private async Task RefreshAttendanceLogs()
         {
             try
             {
-                var logs = await _databaseService.GetAttendanceLogsAsync();
+                var logs = await _databaseService.GetAttendanceLogsAsync(_attendanceStartDate, _attendanceEndDate);
                 _attendanceLogs.Clear();
                 
                 foreach (var log in logs)
                 {
                     _attendanceLogs.Add(log);
                 }
+                
+                UpdateStatus($"Loaded {logs.Count} attendance record(s)");
             }
             catch (Exception ex)
             {
                 UpdateStatus($"Error refreshing attendance logs: {ex.Message}");
             }
+        }
+
+        private void FilterTodayButton_Click(object sender, RoutedEventArgs e)
+        {
+            var today = DateTime.Today;
+            StartDatePicker.SelectedDate = today;
+            EndDatePicker.SelectedDate = today;
+            _attendanceStartDate = today;
+            _attendanceEndDate = today;
+            _ = RefreshAttendanceLogs();
+        }
+
+        private void FilterAllButton_Click(object sender, RoutedEventArgs e)
+        {
+            StartDatePicker.SelectedDate = null;
+            EndDatePicker.SelectedDate = null;
+            _attendanceStartDate = null;
+            _attendanceEndDate = null;
+            _ = RefreshAttendanceLogs();
+        }
+
+        private void ApplyDateFilterButton_Click(object sender, RoutedEventArgs e)
+        {
+            _attendanceStartDate = StartDatePicker.SelectedDate;
+            _attendanceEndDate = EndDatePicker.SelectedDate;
+            _ = RefreshAttendanceLogs();
+        }
+
+        private void DatePicker_SelectedDateChanged(object? sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            // Auto-apply filter when dates are selected
+            if (StartDatePicker.SelectedDate != null || EndDatePicker.SelectedDate != null)
+            {
+                _attendanceStartDate = StartDatePicker.SelectedDate;
+                _attendanceEndDate = EndDatePicker.SelectedDate;
+                _ = RefreshAttendanceLogs();
+            }
+        }
+
+        private void AttendanceLogsDataGrid_Sorting(object sender, System.Windows.Controls.DataGridSortingEventArgs e)
+        {
+            // Allow default sorting behavior
+            e.Handled = false;
         }
 
         private async Task ExportSystemLogs(string filePath)
@@ -548,11 +633,15 @@ namespace LabServerAdmin
             }
         }
 
-        private async Task ExportAttendanceLogs(string filePath)
+        private async Task ExportAttendanceLogs(string filePath, List<AttendanceLog>? logs = null)
         {
             try
             {
-                var logs = await _databaseService.GetAttendanceLogsAsync();
+                // Use provided logs or fetch all if not provided
+                if (logs == null)
+                {
+                    logs = await _databaseService.GetAttendanceLogsAsync();
+                }
                 
                 if (Path.GetExtension(filePath).ToLower() == ".csv")
                 {

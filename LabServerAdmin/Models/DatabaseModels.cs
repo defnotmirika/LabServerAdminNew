@@ -58,6 +58,20 @@ namespace LabServerAdmin.Models
         public DateTime? TimeOut { get; set; }
         
         public bool IsActive { get; set; } = true;
+
+        // Computed property for display
+        public string Duration
+        {
+            get
+            {
+                if (TimeOut.HasValue)
+                {
+                    var duration = TimeOut.Value - TimeIn;
+                    return $"{duration.Hours:D2}:{duration.Minutes:D2}:{duration.Seconds:D2}";
+                }
+                return "Active";
+            }
+        }
     }
 
     public class ConnectedClient

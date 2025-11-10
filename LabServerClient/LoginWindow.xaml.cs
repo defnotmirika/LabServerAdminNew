@@ -3,14 +3,13 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using LabServerClient.Services;
 
 namespace LabServerClient
 {
     public partial class LoginWindow : Window
     {
-        // Default credentials (in production, these should be stored securely)
-        private const string DefaultUsername = "client";
-        private const string DefaultPassword = "client123";
+        private readonly DatabaseService? _databaseService;
 
         [DllImport("user32.dll")]
         private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
@@ -42,8 +41,9 @@ namespace LabServerClient
         private HwndSource? _source;
         public bool IsAuthenticated { get; private set; } = false;
 
-        public LoginWindow()
+        public LoginWindow(DatabaseService? databaseService = null)
         {
+            _databaseService = databaseService;
             InitializeComponent();
             Loaded += LoginWindow_Loaded;
             Closing += LoginWindow_Closing;
@@ -71,20 +71,21 @@ namespace LabServerClient
 
         private void LoginWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
-            // Unregister hotkeys
+            // Prevent closing unless authenticated
+            if (!IsAuthenticated)
+            {
+                e.Cancel = true;
+                MessageBox.Show("You must login to exit the application.", "Login Required", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            
+            // Unregister hotkeys only if closing is allowed
             var hwnd = new WindowInteropHelper(this).Handle;
             if (hwnd != IntPtr.Zero)
             {
                 UnregisterHotKey(hwnd, HOTKEY_ID);
             }
             _source?.RemoveHook(WndProc);
-            
-            // Prevent closing unless authenticated
-            if (!IsAuthenticated)
-            {
-                e.Cancel = true;
-                MessageBox.Show("You must login to exit the application.", "Login Required", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
         }
 
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -158,7 +159,7 @@ namespace LabServerClient
             }
         }
 
-        private void AttemptLogin()
+        private async void AttemptLogin()
         {
             string username = UsernameTextBox.Text.Trim();
             string password = PasswordBox.Password;
@@ -177,19 +178,51 @@ namespace LabServerClient
                 return;
             }
 
-            // Validate credentials
-            if (username == DefaultUsername && password == DefaultPassword)
+            // Disable login button during authentication
+            LoginButton.IsEnabled = false;
+            ErrorTextBlock.Visibility = Visibility.Collapsed;
+
+            try
             {
-                IsAuthenticated = true;
-                ErrorTextBlock.Visibility = Visibility.Collapsed;
-                DialogResult = true;
-                Close();
+                bool isValid = false;
+
+                // Validate credentials against database if available
+                if (_databaseService != null)
+                {
+                    isValid = await _databaseService.ValidateClientAsync(username, password);
+                }
+                else
+                {
+                    // Fallback to hardcoded credentials if database is not available
+                    isValid = (username == "client" && password == "client123");
+                }
+
+                if (isValid)
+                {
+                    // Set authenticated flag first
+                    IsAuthenticated = true;
+                    ErrorTextBlock.Visibility = Visibility.Collapsed;
+                    
+                    // Set DialogResult and close window
+                    this.DialogResult = true;
+                    this.Close();
+                }
+                else
+                {
+                    ShowError("Invalid username or password. Please try again.");
+                    PasswordBox.Password = "";
+                    PasswordBox.Focus();
+                }
             }
-            else
+            catch (Exception ex)
             {
-                ShowError("Invalid username or password. Please try again.");
+                ShowError($"Authentication error: {ex.Message}");
                 PasswordBox.Password = "";
                 PasswordBox.Focus();
+            }
+            finally
+            {
+                LoginButton.IsEnabled = true;
             }
         }
 

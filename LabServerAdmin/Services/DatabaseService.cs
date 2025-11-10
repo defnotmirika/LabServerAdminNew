@@ -63,6 +63,14 @@ namespace LabServerAdmin.Services
                     setting_value VARCHAR(255),
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
+
+                CREATE TABLE IF NOT EXISTS clients (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(50) NOT NULL UNIQUE,
+                    password_hash VARCHAR(255) NOT NULL,
+                    pc_name VARCHAR(100),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
             ";
 
             using var command = new NpgsqlCommand(createTables, connection);
@@ -70,6 +78,9 @@ namespace LabServerAdmin.Services
 
             // Create default admin if none exists
             await CreateDefaultAdminAsync(connection);
+            
+            // Create default client if none exists
+            await CreateDefaultClientAsync(connection);
         }
 
         private async Task CreateDefaultAdminAsync(NpgsqlConnection connection)
@@ -94,12 +105,51 @@ namespace LabServerAdmin.Services
             }
         }
 
+        private async Task CreateDefaultClientAsync(NpgsqlConnection connection)
+        {
+            var checkClient = "SELECT COUNT(*) FROM clients";
+            using var checkCommand = new NpgsqlCommand(checkClient, connection);
+            var clientCount = Convert.ToInt32(await checkCommand.ExecuteScalarAsync());
+
+            if (clientCount == 0)
+            {
+                var insertClient = @"
+                    INSERT INTO clients (username, password_hash, pc_name) 
+                    VALUES ('client', @passwordHash, 'PC 1')
+                ";
+                
+                // Default password: client123 (hashed with BCrypt)
+                var hashedPassword = BCrypt.Net.BCrypt.HashPassword("client123");
+                
+                using var insertCommand = new NpgsqlCommand(insertClient, connection);
+                insertCommand.Parameters.AddWithValue("@passwordHash", hashedPassword);
+                await insertCommand.ExecuteNonQueryAsync();
+            }
+        }
+
         public async Task<bool> ValidateAdminAsync(string username, string password)
         {
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
             var query = "SELECT password_hash FROM admins WHERE username = @username";
+            using var command = new NpgsqlCommand(query, connection);
+            command.Parameters.AddWithValue("@username", username);
+
+            var result = await command.ExecuteScalarAsync();
+            if (result != null)
+            {
+                return BCrypt.Net.BCrypt.Verify(password, result.ToString());
+            }
+            return false;
+        }
+
+        public async Task<bool> ValidateClientAsync(string username, string password)
+        {
+            using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var query = "SELECT password_hash FROM clients WHERE username = @username";
             using var command = new NpgsqlCommand(query, connection);
             command.Parameters.AddWithValue("@username", username);
 
@@ -164,7 +214,7 @@ namespace LabServerAdmin.Services
             return logs;
         }
 
-        public async Task<List<AttendanceLog>> GetAttendanceLogsAsync()
+        public async Task<List<AttendanceLog>> GetAttendanceLogsAsync(DateTime? startDate = null, DateTime? endDate = null)
         {
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
@@ -172,10 +222,35 @@ namespace LabServerAdmin.Services
             var query = @"
                 SELECT id, student_name, pc_name, time_in, time_out, is_active 
                 FROM attendance_logs 
-                ORDER BY time_in DESC
+                WHERE 1=1
             ";
 
+            // Add date filtering if provided
+            if (startDate.HasValue)
+            {
+                query += " AND DATE(time_in) >= @startDate";
+            }
+
+            if (endDate.HasValue)
+            {
+                query += " AND DATE(time_in) <= @endDate";
+            }
+
+            query += " ORDER BY time_in DESC";
+
             using var command = new NpgsqlCommand(query, connection);
+
+            // Add parameters if dates are provided
+            if (startDate.HasValue)
+            {
+                command.Parameters.AddWithValue("@startDate", startDate.Value.Date);
+            }
+
+            if (endDate.HasValue)
+            {
+                command.Parameters.AddWithValue("@endDate", endDate.Value.Date);
+            }
+
             var logs = new List<AttendanceLog>();
             using var reader = await command.ExecuteReaderAsync();
 

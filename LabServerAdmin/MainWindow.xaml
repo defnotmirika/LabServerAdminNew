@@ -177,19 +177,34 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
-                        <Button x:Name="RefreshAttendanceButton" Content="🔄 Refresh" Style="{StaticResource ModernButton}" Click="RefreshAttendanceButton_Click"/>
-                        <Button x:Name="ExportAttendanceButton" Content="📤 Export Attendance" Style="{StaticResource ModernButton}" Click="ExportAttendanceButton_Click" Margin="10,0,0,0"/>
+                    <StackPanel Grid.Row="0" Orientation="Vertical" Margin="0,0,0,10">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <Button x:Name="RefreshAttendanceButton" Content="🔄 Refresh" Style="{StaticResource ModernButton}" Click="RefreshAttendanceButton_Click"/>
+                            <Button x:Name="ExportAttendanceButton" Content="📤 Export Attendance" Style="{StaticResource ModernButton}" Click="ExportAttendanceButton_Click" Margin="10,0,0,0"/>
+                            <Button x:Name="FilterTodayButton" Content="📅 Today" Style="{StaticResource ModernButton}" Click="FilterTodayButton_Click" Margin="10,0,0,0"/>
+                            <Button x:Name="FilterAllButton" Content="📋 All Records" Style="{StaticResource ModernButton}" Click="FilterAllButton_Click" Margin="10,0,0,0"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Filter by Date:" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="SemiBold"/>
+                            <TextBlock Text="From:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <DatePicker x:Name="StartDatePicker" Width="150" Margin="0,0,20,0" SelectedDateChanged="DatePicker_SelectedDateChanged"/>
+                            <TextBlock Text="To:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <DatePicker x:Name="EndDatePicker" Width="150" Margin="0,0,20,0" SelectedDateChanged="DatePicker_SelectedDateChanged"/>
+                            <Button x:Name="ApplyDateFilterButton" Content="Apply Filter" Style="{StaticResource ModernButton}" Click="ApplyDateFilterButton_Click"/>
+                        </StackPanel>
                     </StackPanel>
 
                     <DataGrid x:Name="AttendanceLogsDataGrid" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" 
-                              GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True">
+                              GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True" 
+                              CanUserSortColumns="True" Sorting="AttendanceLogsDataGrid_Sorting">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Student Name" Binding="{Binding StudentName}" Width="150"/>
-                            <DataGridTextColumn Header="PC Name" Binding="{Binding PcName}" Width="120"/>
-                            <DataGridTextColumn Header="Time In" Binding="{Binding TimeIn, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150"/>
-                            <DataGridTextColumn Header="Time Out" Binding="{Binding TimeOut, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150"/>
-                            <DataGridCheckBoxColumn Header="Active" Binding="{Binding IsActive}" Width="80"/>
+                            <DataGridTextColumn Header="Date" Binding="{Binding TimeIn, StringFormat=yyyy-MM-dd}" Width="120" SortMemberPath="TimeIn"/>
+                            <DataGridTextColumn Header="Student Name" Binding="{Binding StudentName}" Width="150" SortMemberPath="StudentName"/>
+                            <DataGridTextColumn Header="PC Name" Binding="{Binding PcName}" Width="120" SortMemberPath="PcName"/>
+                            <DataGridTextColumn Header="Time In" Binding="{Binding TimeIn, StringFormat=HH:mm:ss}" Width="100" SortMemberPath="TimeIn"/>
+                            <DataGridTextColumn Header="Time Out" Binding="{Binding TimeOut, StringFormat=HH:mm:ss}" Width="100" SortMemberPath="TimeOut"/>
+                            <DataGridTextColumn Header="Duration" Binding="{Binding Duration}" Width="100"/>
+                            <DataGridCheckBoxColumn Header="Active" Binding="{Binding IsActive}" Width="80" SortMemberPath="IsActive"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>
