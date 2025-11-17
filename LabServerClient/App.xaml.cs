@@ -48,7 +48,7 @@ namespace LabServerClient
                     {
                         try
                         {
-                            var clientWindow = new ClientWindow();
+                            var clientWindow = new ClientWindow(_databaseService);
                             clientWindow.Show();
                             clientWindow.Activate();
                             clientWindow.Focus();

@@ -14,6 +14,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
+using LabServerClient.Services;
 
 namespace LabServerClient
 {
@@ -29,9 +30,11 @@ namespace LabServerClient
         private DateTime? _usageLimitExpiryUtc;
         private CancellationTokenSource? _screenShareCts;
         private int _screenShareIntervalMs = 500;
+        private readonly DatabaseService? _databaseService;
 
-        public ClientWindow()
+        public ClientWindow(DatabaseService? databaseService = null)
         {
+            _databaseService = databaseService;
             InitializeComponent();
             
             // Setup heartbeat timer
@@ -125,6 +128,22 @@ namespace LabServerClient
             {
                 await DisconnectFromServer();
             }
+        }
+
+        private async void LogoutButton_Click(object sender, RoutedEventArgs e)
+        {
+            var confirm = MessageBox.Show(
+                "Are you sure you want to log out?",
+                "Confirm Logout",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (confirm != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            await HandleLogoutAsync();
         }
 
         private async Task ConnectToServer()
@@ -958,6 +977,43 @@ namespace LabServerClient
             
             _heartbeatTimer?.Stop();
             base.OnClosed(e);
+        }
+
+        private async Task HandleLogoutAsync()
+        {
+            await DisconnectFromServer();
+
+            var app = Application.Current;
+            if (app == null)
+            {
+                return;
+            }
+
+            app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            Hide();
+
+            var loginWindow = new LoginWindow(_databaseService, requireAuthenticationToClose: false);
+            bool? dialogResult = loginWindow.ShowDialog();
+
+            if (loginWindow.IsAuthenticated && dialogResult == true)
+            {
+                app.ShutdownMode = ShutdownMode.OnMainWindowClose;
+                Show();
+                Activate();
+                WindowState = WindowState.Normal;
+                UpdateStatus("Logged in successfully");
+
+                StatusText.Text = "Disconnected";
+                StatusText.Style = (Style)FindResource("StatusDisconnected");
+                CurrentCommandText.Text = "None";
+                UsageLimitStatusText.Text = "Usage limit: none";
+                LogTextBlock.Text = string.Empty;
+                LastResponseText.Text = "Last Response: Never";
+            }
+            else
+            {
+                app.Shutdown();
+            }
         }
     }
 

@@ -10,6 +10,7 @@ namespace LabServerAdmin
     public partial class LoginWindow : Window
     {
         private readonly DatabaseService? _databaseService;
+        private readonly bool _requireAuthenticationToClose;
 
         [DllImport("user32.dll")]
         private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
@@ -41,9 +42,10 @@ namespace LabServerAdmin
         private HwndSource? _source;
         public bool IsAuthenticated { get; private set; } = false;
 
-        public LoginWindow(DatabaseService? databaseService = null)
+        public LoginWindow(DatabaseService? databaseService = null, bool requireAuthenticationToClose = true)
         {
             _databaseService = databaseService;
+            _requireAuthenticationToClose = requireAuthenticationToClose;
             InitializeComponent();
             Loaded += LoginWindow_Loaded;
             Closing += LoginWindow_Closing;
@@ -72,7 +74,7 @@ namespace LabServerAdmin
         private void LoginWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
             // Prevent closing unless authenticated
-            if (!IsAuthenticated)
+            if (_requireAuthenticationToClose && !IsAuthenticated)
             {
                 e.Cancel = true;
                 MessageBox.Show("You must login to exit the application.", "Login Required", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -108,7 +110,7 @@ namespace LabServerAdmin
                 if (command == SC_TASKLIST || command == SC_CLOSE)
                 {
                     // Block Alt+Tab and close
-                    if (!IsAuthenticated)
+                    if (_requireAuthenticationToClose && !IsAuthenticated)
                     {
                         handled = true;
                         return IntPtr.Zero;
@@ -131,7 +133,7 @@ namespace LabServerAdmin
             }
 
             // Block Escape key
-            if (e.Key == Key.Escape && !IsAuthenticated)
+            if (e.Key == Key.Escape && _requireAuthenticationToClose && !IsAuthenticated)
             {
                 e.Handled = true;
             }

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using System;
+using System.Text.RegularExpressions;
 
 namespace LabServerClient.Services
 {
@@ -33,17 +34,37 @@ namespace LabServerClient.Services
                 command.Parameters.AddWithValue("@username", username);
 
                 var result = await command.ExecuteScalarAsync();
-                if (result != null)
+                var passwordHash = result?.ToString();
+
+                if (string.IsNullOrWhiteSpace(passwordHash) || !IsValidBcryptHash(passwordHash))
                 {
-                    return BCrypt.Net.BCrypt.Verify(password, result.ToString());
+                    return false;
                 }
-                return false;
+
+                try
+                {
+                    return BCrypt.Net.BCrypt.Verify(password, passwordHash);
+                }
+                catch (BCrypt.Net.SaltParseException)
+                {
+                    return false;
+                }
             }
             catch
             {
                 // If database is not available, fall back to hardcoded credentials
                 return (username == "client" && password == "client123");
             }
+        }
+
+        private static bool IsValidBcryptHash(string? hash)
+        {
+            if (string.IsNullOrWhiteSpace(hash))
+            {
+                return false;
+            }
+
+            return Regex.IsMatch(hash, @"^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$");
         }
     }
 }

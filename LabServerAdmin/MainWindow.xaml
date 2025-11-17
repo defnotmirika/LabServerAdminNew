@@ -66,6 +66,7 @@
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                     <Button x:Name="VoiceToggleButton" Content="🎤 Voice Commands: OFF" Style="{StaticResource ModernButton}" Click="VoiceToggleButton_Click"/>
                     <Button x:Name="ServerToggleButton" Content="▶️ Start Server" Style="{StaticResource SuccessButton}" Click="ServerToggleButton_Click" Margin="10,0,0,0"/>
+                    <Button x:Name="LogoutButton" Content="🚪 Logout" Style="{StaticResource ModernButton}" Click="LogoutButton_Click" Margin="10,0,0,0"/>
                 </StackPanel>
             </Grid>
         </Border>

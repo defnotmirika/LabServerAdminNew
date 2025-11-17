@@ -3,6 +3,7 @@ using Npgsql;
 using LabServerAdmin.Models;
 using System;
 using System.Data;
+using System.Text.RegularExpressions;
 
 namespace LabServerAdmin.Services
 {
@@ -94,46 +95,108 @@ namespace LabServerAdmin.Services
 
         private async Task CreateDefaultAdminAsync(NpgsqlConnection connection)
         {
-            var checkAdmin = "SELECT COUNT(*) FROM admins";
-            using var checkCommand = new NpgsqlCommand(checkAdmin, connection);
-            var adminCount = Convert.ToInt32(await checkCommand.ExecuteScalarAsync());
+            var getAdmin = "SELECT password_hash FROM admins WHERE username = 'admin' LIMIT 1";
+            using var getCommand = new NpgsqlCommand(getAdmin, connection);
+            var existingHashObj = await getCommand.ExecuteScalarAsync();
 
-            if (adminCount == 0)
+            if (existingHashObj == null)
             {
-                var insertAdmin = @"
-                    INSERT INTO admins (username, password_hash) 
-                    VALUES ('admin', @passwordHash)
-                ";
-                
-                // Default password: admin123 (hashed with BCrypt)
-                var hashedPassword = BCrypt.Net.BCrypt.HashPassword("admin123");
-                
-                using var insertCommand = new NpgsqlCommand(insertAdmin, connection);
-                insertCommand.Parameters.AddWithValue("@passwordHash", hashedPassword);
-                await insertCommand.ExecuteNonQueryAsync();
+                await InsertDefaultAdminAsync(connection);
+                return;
+            }
+
+            var existingHash = existingHashObj?.ToString();
+            if (!IsValidBcryptHash(existingHash))
+            {
+                await UpdateAdminPasswordAsync(connection);
             }
         }
 
         private async Task CreateDefaultClientAsync(NpgsqlConnection connection)
         {
-            var checkClient = "SELECT COUNT(*) FROM clients";
-            using var checkCommand = new NpgsqlCommand(checkClient, connection);
-            var clientCount = Convert.ToInt32(await checkCommand.ExecuteScalarAsync());
+            var getClient = "SELECT password_hash FROM clients WHERE username = 'client' LIMIT 1";
+            using var getCommand = new NpgsqlCommand(getClient, connection);
+            var existingHashObj = await getCommand.ExecuteScalarAsync();
 
-            if (clientCount == 0)
+            if (existingHashObj == null)
             {
-                var insertClient = @"
-                    INSERT INTO clients (username, password_hash, pc_name) 
-                    VALUES ('client', @passwordHash, 'PC 1')
-                ";
-                
-                // Default password: client123 (hashed with BCrypt)
-                var hashedPassword = BCrypt.Net.BCrypt.HashPassword("client123");
-                
-                using var insertCommand = new NpgsqlCommand(insertClient, connection);
-                insertCommand.Parameters.AddWithValue("@passwordHash", hashedPassword);
-                await insertCommand.ExecuteNonQueryAsync();
+                await InsertDefaultClientAsync(connection);
+                return;
             }
+
+            var existingHash = existingHashObj?.ToString();
+            if (!IsValidBcryptHash(existingHash))
+            {
+                await UpdateDefaultClientPasswordAsync(connection);
+            }
+        }
+
+        private static async Task InsertDefaultAdminAsync(NpgsqlConnection connection)
+        {
+            var insertAdmin = @"
+                INSERT INTO admins (username, password_hash) 
+                VALUES ('admin', @passwordHash)
+            ";
+
+            var hashedPassword = BCrypt.Net.BCrypt.HashPassword("admin123");
+
+            using var insertCommand = new NpgsqlCommand(insertAdmin, connection);
+            insertCommand.Parameters.AddWithValue("@passwordHash", hashedPassword);
+            await insertCommand.ExecuteNonQueryAsync();
+        }
+
+        private static async Task UpdateAdminPasswordAsync(NpgsqlConnection connection)
+        {
+            var updateAdmin = @"
+                UPDATE admins 
+                SET password_hash = @passwordHash 
+                WHERE username = 'admin'
+            ";
+
+            var hashedPassword = BCrypt.Net.BCrypt.HashPassword("admin123");
+
+            using var updateCommand = new NpgsqlCommand(updateAdmin, connection);
+            updateCommand.Parameters.AddWithValue("@passwordHash", hashedPassword);
+            await updateCommand.ExecuteNonQueryAsync();
+        }
+
+        private static async Task InsertDefaultClientAsync(NpgsqlConnection connection)
+        {
+            var insertClient = @"
+                INSERT INTO clients (username, password_hash, pc_name) 
+                VALUES ('client', @passwordHash, 'PC 1')
+            ";
+
+            var hashedPassword = BCrypt.Net.BCrypt.HashPassword("client123");
+
+            using var insertCommand = new NpgsqlCommand(insertClient, connection);
+            insertCommand.Parameters.AddWithValue("@passwordHash", hashedPassword);
+            await insertCommand.ExecuteNonQueryAsync();
+        }
+
+        private static async Task UpdateDefaultClientPasswordAsync(NpgsqlConnection connection)
+        {
+            var updateClient = @"
+                UPDATE clients 
+                SET password_hash = @passwordHash, pc_name = COALESCE(pc_name, 'PC 1')
+                WHERE username = 'client'
+            ";
+
+            var hashedPassword = BCrypt.Net.BCrypt.HashPassword("client123");
+
+            using var updateCommand = new NpgsqlCommand(updateClient, connection);
+            updateCommand.Parameters.AddWithValue("@passwordHash", hashedPassword);
+            await updateCommand.ExecuteNonQueryAsync();
+        }
+
+        private static bool IsValidBcryptHash(string? hash)
+        {
+            if (string.IsNullOrWhiteSpace(hash))
+            {
+                return false;
+            }
+
+            return Regex.IsMatch(hash, @"^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$");
         }
 
         public async Task<bool> ValidateAdminAsync(string username, string password)
@@ -146,11 +209,21 @@ namespace LabServerAdmin.Services
             command.Parameters.AddWithValue("@username", username);
 
             var result = await command.ExecuteScalarAsync();
-            if (result != null)
+            var passwordHash = result?.ToString();
+
+            if (string.IsNullOrWhiteSpace(passwordHash) || !IsValidBcryptHash(passwordHash))
             {
-                return BCrypt.Net.BCrypt.Verify(password, result.ToString());
+                return false;
             }
-            return false;
+
+            try
+            {
+                return BCrypt.Net.BCrypt.Verify(password, passwordHash);
+            }
+            catch (BCrypt.Net.SaltParseException)
+            {
+                return false;
+            }
         }
 
         public async Task<bool> ValidateClientAsync(string username, string password)
@@ -163,11 +236,21 @@ namespace LabServerAdmin.Services
             command.Parameters.AddWithValue("@username", username);
 
             var result = await command.ExecuteScalarAsync();
-            if (result != null)
+            var passwordHash = result?.ToString();
+
+            if (string.IsNullOrWhiteSpace(passwordHash) || !IsValidBcryptHash(passwordHash))
             {
-                return BCrypt.Net.BCrypt.Verify(password, result.ToString());
+                return false;
             }
-            return false;
+
+            try
+            {
+                return BCrypt.Net.BCrypt.Verify(password, passwordHash);
+            }
+            catch (BCrypt.Net.SaltParseException)
+            {
+                return false;
+            }
         }
 
         public async Task LogSystemActionAsync(string action, string clientName, string status, string? details = null)

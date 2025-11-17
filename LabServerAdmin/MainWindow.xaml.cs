@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Globalization;
 using System.IO;
@@ -53,6 +54,7 @@ namespace LabServerAdmin
             // Setup event handlers
             SetupEventHandlers();
             Loaded += MainWindow_Loaded;
+            Closing += MainWindow_Closing;
             
             // Set window to fullscreen on startup (but still resizable)
             WindowState = WindowState.Maximized;
@@ -73,6 +75,20 @@ namespace LabServerAdmin
             {
                 MessageBox.Show($"Initialization error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 UpdateStatus($"Initialization error: {ex.Message}");
+            }
+        }
+
+        private void MainWindow_Closing(object? sender, CancelEventArgs e)
+        {
+            if (_isServerRunning)
+            {
+                e.Cancel = true;
+                MessageBox.Show(
+                    "Stop the server before exiting the admin application.",
+                    "Server Still Running",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                Activate();
             }
         }
 
@@ -157,6 +173,22 @@ namespace LabServerAdmin
                 MessageBox.Show($"Voice recognition error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 UpdateStatus($"Voice recognition error: {ex.Message}");
             }
+        }
+
+        private async void LogoutButton_Click(object sender, RoutedEventArgs e)
+        {
+            var confirm = MessageBox.Show(
+                "Are you sure you want to log out?",
+                "Confirm Logout",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (confirm != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            await HandleLogoutAsync();
         }
 
         #endregion
@@ -815,6 +847,88 @@ namespace LabServerAdmin
                 MessageBox.Show($"Failed to clear usage limit: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 UpdateStatus($"Usage limit clear error: {ex.Message}");
             }
+        }
+
+        #endregion
+
+        #region Session Management
+
+        private async Task HandleLogoutAsync()
+        {
+            await CleanupSessionStateAsync();
+
+            var app = Application.Current;
+            if (app == null)
+            {
+                return;
+            }
+
+            app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            Hide();
+
+            var loginWindow = new LoginWindow(_databaseService, requireAuthenticationToClose: false);
+            bool? dialogResult = loginWindow.ShowDialog();
+
+            if (loginWindow.IsAuthenticated && dialogResult == true)
+            {
+                app.ShutdownMode = ShutdownMode.OnMainWindowClose;
+                Show();
+                WindowState = WindowState.Maximized;
+                Activate();
+                MainTabControl.SelectedIndex = 0;
+
+                await LoadUsageLimitAsync();
+                await RefreshSystemLogs();
+                await RefreshAttendanceLogs();
+                await RefreshConnectedClients();
+
+                UpdateStatus("Logged in successfully");
+            }
+            else
+            {
+                app.Shutdown();
+            }
+        }
+
+        private async Task CleanupSessionStateAsync()
+        {
+            try
+            {
+                if (_isServerRunning)
+                {
+                    await _tcpServerService.StopServerAsync();
+                    _isServerRunning = false;
+                    ServerToggleButton.Content = "▶️ Start Server";
+                    ServerToggleButton.Style = (Style)FindResource("SuccessButton");
+                    ServerStatusText.Text = "Server: Stopped";
+                }
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Error stopping server: {ex.Message}");
+            }
+
+            try
+            {
+                if (_isVoiceEnabled)
+                {
+                    _voiceRecognitionService.StopListening();
+                    _isVoiceEnabled = false;
+                    VoiceToggleButton.Content = "🎤 Voice Commands: OFF";
+                    VoiceToggleButton.Style = (Style)FindResource("ModernButton");
+                }
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Error disabling voice recognition: {ex.Message}");
+            }
+
+            CloseAllRemoteWindows();
+            _connectedClients.Clear();
+            _systemLogs.Clear();
+            _attendanceLogs.Clear();
+            UpdateConnectedClientsCount();
+            UpdateStatus("Session cleared");
         }
 
         #endregion
