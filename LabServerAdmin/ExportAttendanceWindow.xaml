@@ -112,14 +112,18 @@
                        Click="CancelButton_Click"
                        Background="#95A5A6"
                        Foreground="White"
-                       FontWeight="Bold"/>
+                       FontWeight="Bold"
+                       Width="100"
+                       Height="50"/>
                 <Button x:Name="ExportButton" 
                        Content="Export" 
                        Click="ExportButton_Click"
                        Background="#27AE60"
                        Foreground="White"
                        FontWeight="Bold"
-                       Margin="10,0,0,0"/>
+                       Width="100"
+                       Height="50"
+                       Margin="20,0,0,0"/>
             </StackPanel>
         </Grid>
     </Border>

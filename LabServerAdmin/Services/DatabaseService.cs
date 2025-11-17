@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using LabServerAdmin.Models;
+using System;
 using System.Data;
 
 namespace LabServerAdmin.Services
@@ -13,8 +14,16 @@ namespace LabServerAdmin.Services
         public DatabaseService(IConfiguration configuration)
         {
             _configuration = configuration;
-            _connectionString = _configuration.GetConnectionString("DefaultConnection") 
+
+            var supabaseConnection = Environment.GetEnvironmentVariable("SUPABASE_DB_CONNECTION")
+                ?? _configuration["Supabase:ConnectionString"];
+
+            var defaultConnection = _configuration.GetConnectionString("DefaultConnection")
                 ?? "Host=localhost;Database=labserver;Username=postgres;Password=abc123";
+
+            _connectionString = !string.IsNullOrWhiteSpace(supabaseConnection)
+                ? supabaseConnection
+                : defaultConnection;
         }
 
         public async Task InitializeDatabaseAsync()

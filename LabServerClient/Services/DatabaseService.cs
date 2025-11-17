@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Npgsql;
+using System;
 
 namespace LabServerClient.Services
 {
@@ -9,8 +10,15 @@ namespace LabServerClient.Services
 
         public DatabaseService(IConfiguration configuration)
         {
-            _connectionString = configuration.GetConnectionString("DefaultConnection") 
+            var supabaseConnection = Environment.GetEnvironmentVariable("SUPABASE_DB_CONNECTION")
+                ?? configuration["Supabase:ConnectionString"];
+
+            var defaultConnection = configuration.GetConnectionString("DefaultConnection")
                 ?? "Host=localhost;Database=labserver;Username=postgres;Password=abc123";
+
+            _connectionString = !string.IsNullOrWhiteSpace(supabaseConnection)
+                ? supabaseConnection
+                : defaultConnection;
         }
 
         public async Task<bool> ValidateClientAsync(string username, string password)

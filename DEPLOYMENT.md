@@ -5,7 +5,7 @@
 ### System Requirements
 - [ ] Windows 10/11 on all machines
 - [ ] .NET 8.0 Runtime installed on all machines
-- [ ] PostgreSQL 12+ installed on admin machine
+- [ ] PostgreSQL 12+ installed on admin machine **or** access to a Supabase project
 - [ ] Network connectivity between admin and client machines
 - [ ] Microphone available for voice commands (optional)
 
@@ -18,6 +18,7 @@
 
 ### 1. Database Setup
 
+#### Option A – Self-hosted PostgreSQL
 1. **Install PostgreSQL** on the admin machine
 2. **Create database**:
    ```sql
@@ -34,6 +35,26 @@
        "DefaultConnection": "Host=localhost;Database=labserver;Username=postgres;Password=yourpassword"
      }
    }
+   ```
+
+#### Option B – Supabase Managed PostgreSQL
+1. **Create (or reuse) a Supabase project** and open the **Project Settings → Database** tab.
+2. **Copy the pooled connection string** (or build one manually) and note:
+   - Host (e.g., `aws-0-ap-southeast-1.pooler.supabase.com`)
+   - Port (commonly `6543` for pooled connections)
+   - Database (default `postgres`)
+   - User (e.g., `postgres.your-project-ref`)
+   - Password (Supabase-generated)
+3. **Enable SSL** on the connection string. Supabase requires at least:
+   ```
+   Ssl Mode=Require;Trust Server Certificate=true
+   ```
+4. **Provide the connection string to both apps** using one of:
+   - Set the environment variable `SUPABASE_DB_CONNECTION`
+   - Edit `appsettings.json` and set `Supabase:ConnectionString`
+5. **Run `database_setup.sql`** against the Supabase database once to provision tables:
+   ```bash
+   psql "<your_supabase_connection_string>" -f database_setup.sql
    ```
 
 ### 2. Admin Application Deployment
@@ -94,6 +115,9 @@
   "ConnectionStrings": {
     "DefaultConnection": "Host=localhost;Database=labserver;Username=postgres;Password=yourpassword"
   },
+  "Supabase": {
+    "ConnectionString": "Host=YOUR_SUPABASE_HOST;Port=6543;Database=postgres;Username=postgres.YOUR_PROJECT_REF;Password=YOUR_SUPABASE_PASSWORD;Ssl Mode=Require;Trust Server Certificate=true"
+  },
   "ServerSettings": {
     "Port": 9000,
     "HeartbeatInterval": 30
@@ -109,6 +133,7 @@
 - Stored in Windows Registry
 - Key: `HKEY_CURRENT_USER\SOFTWARE\LabServerClient`
 - Values: `ServerIP`, `PCName`
+- Optional: Set `SUPABASE_DB_CONNECTION` environment variable or `Supabase:ConnectionString` in `appsettings.json` (if using local config file alongside the client) to point at your Supabase database.
 
 ## 🧪 Testing Deployment
 
