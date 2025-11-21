@@ -533,6 +533,24 @@ namespace LabServerClient
                 return Task.FromResult("Usage limit cleared");
             }
 
+            var trimmed = parameters.Trim();
+
+            if (trimmed.StartsWith("{", StringComparison.Ordinal))
+            {
+                try
+                {
+                    var payload = JsonSerializer.Deserialize<UsageLimitCommandPayload>(parameters);
+                    if (payload != null)
+                    {
+                        return ApplyUsageLimitPayload(payload);
+                    }
+                }
+                catch (JsonException ex)
+                {
+                    LogMessage($"Usage limit payload error: {ex.Message}");
+                }
+            }
+
             if (!double.TryParse(parameters, NumberStyles.Float, CultureInfo.InvariantCulture, out var hours) &&
                 !double.TryParse(parameters, NumberStyles.Float, CultureInfo.CurrentCulture, out hours))
             {
@@ -559,6 +577,38 @@ namespace LabServerClient
             _ = Task.Run(() => MonitorUsageLimitAsync(_usageLimitExpiryUtc.Value, _usageLimitCts.Token));
 
             return Task.FromResult($"Usage limit set to {hours:0.##} hours (until {_usageLimitExpiryUtc.Value.ToLocalTime():t}).");
+        }
+
+        private Task<string> ApplyUsageLimitPayload(UsageLimitCommandPayload payload)
+        {
+            if (!payload.Hours.HasValue || payload.Hours.Value <= 0 || !payload.ExpiresUtc.HasValue)
+            {
+                ResetUsageLimitState(true);
+                return Task.FromResult("Usage limit cleared");
+            }
+
+            ResetUsageLimitState(true);
+
+            _usageLimitExpiryUtc = DateTime.SpecifyKind(payload.ExpiresUtc.Value, DateTimeKind.Utc);
+            _usageLimitCts = new CancellationTokenSource();
+
+            Dispatcher.Invoke(() =>
+            {
+                _usageLimitUiTimer.Start();
+                UpdateUsageLimitDisplay();
+            });
+
+            _ = Task.Run(() => MonitorUsageLimitAsync(_usageLimitExpiryUtc.Value, _usageLimitCts.Token));
+
+            var sessionStart = payload.SessionStartUtc.HasValue
+                ? payload.SessionStartUtc.Value.ToLocalTime().ToString("t")
+                : "now";
+
+            var expiryLocal = _usageLimitExpiryUtc.Value.ToLocalTime().ToString("t");
+            var statusMessage = $"Usage limit synchronized. Session start: {sessionStart}, ends at {expiryLocal}.";
+            LogMessage(statusMessage);
+
+            return Task.FromResult($"Usage limit active until {expiryLocal}");
         }
 
         private async Task MonitorUsageLimitAsync(DateTime expiryUtc, CancellationToken token)
@@ -1014,6 +1064,13 @@ namespace LabServerClient
             {
                 app.Shutdown();
             }
+        }
+
+        private class UsageLimitCommandPayload
+        {
+            public double? Hours { get; set; }
+            public DateTime? SessionStartUtc { get; set; }
+            public DateTime? ExpiresUtc { get; set; }
         }
     }
 
