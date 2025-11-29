@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:LabServerClient"
         mc:Ignorable="d"
-        Title="Lab Server Client" Height="300" Width="400"
+        Title="Lab Server Client" Height="344" Width="400"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
         WindowStyle="SingleBorderWindow">

@@ -135,7 +135,7 @@ namespace LabServerAdmin
                     UpdateStatus("Server started successfully");
                     
                     await HandleUsageLimitOnServerStartAsync();
-
+                    
                     // Refresh attendance logs when server starts
                     await RefreshAttendanceLogs();
                 }
@@ -787,11 +787,11 @@ namespace LabServerAdmin
                     _usageLimitSessionStartUtc = null;
                 }
 
-                Dispatcher.Invoke(() =>
-                {
+                    Dispatcher.Invoke(() =>
+                    {
                     UsageLimitHoursTextBox.Text = _currentUsageLimitHours?.ToString("0.##", CultureInfo.CurrentCulture) ?? string.Empty;
-                    UpdateUsageLimitStatus();
-                });
+                        UpdateUsageLimitStatus();
+                    });
             }
             catch (Exception ex)
             {
@@ -813,8 +813,8 @@ namespace LabServerAdmin
 
                     UsageLimitStatusText.Text =
                         $"Usage limit active ({_currentUsageLimitHours.Value.ToString("0.##", CultureInfo.CurrentCulture)}h). Remaining: {remaining:hh\\:mm\\:ss}.";
-                    UsageLimitStatusText.FontStyle = FontStyles.Normal;
-                    UsageLimitStatusText.Foreground = Brushes.DarkGreen;
+                UsageLimitStatusText.FontStyle = FontStyles.Normal;
+                UsageLimitStatusText.Foreground = Brushes.DarkGreen;
                 }
                 else
                 {
@@ -963,8 +963,8 @@ namespace LabServerAdmin
                 if (_isServerRunning)
                 {
                     await ActivateUsageLimitSessionAsync(forceRestart: true);
-                    UpdateStatus($"Usage limit of {hours:0.##} hours applied to all clients");
-                    MessageBox.Show($"Usage limit of {hours:0.##} hours applied to all connected clients.", "Usage Limit Applied", MessageBoxButton.OK, MessageBoxImage.Information);
+                UpdateStatus($"Usage limit of {hours:0.##} hours applied to all clients");
+                MessageBox.Show($"Usage limit of {hours:0.##} hours applied to all connected clients.", "Usage Limit Applied", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 else
                 {

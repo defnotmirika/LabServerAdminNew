@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Globalization;
@@ -31,6 +32,7 @@ namespace LabServerClient
         private CancellationTokenSource? _screenShareCts;
         private int _screenShareIntervalMs = 500;
         private readonly DatabaseService? _databaseService;
+        private bool _allowClose = false;
 
         public ClientWindow(DatabaseService? databaseService = null)
         {
@@ -1018,6 +1020,21 @@ namespace LabServerClient
             });
         }
 
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            if (!_allowClose)
+            {
+                e.Cancel = true;
+                if (WindowState != WindowState.Minimized)
+                {
+                    WindowState = WindowState.Minimized;
+                }
+                return;
+            }
+
+            base.OnClosing(e);
+        }
+
         protected override void OnClosed(EventArgs e)
         {
             if (_isConnected)
@@ -1062,6 +1079,7 @@ namespace LabServerClient
             }
             else
             {
+                _allowClose = true;
                 app.Shutdown();
             }
         }
