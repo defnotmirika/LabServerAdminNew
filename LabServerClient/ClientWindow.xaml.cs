@@ -159,7 +159,7 @@ namespace LabServerClient
                 _isConnected = true;
                 StatusText.Text = "Connected";
                 StatusText.Style = (Style)FindResource("StatusConnected");
-                
+
                 ConnectButton.IsEnabled = false;
                 DisconnectButton.IsEnabled = true;
                 ServerIpTextBox.IsEnabled = false;
@@ -167,13 +167,13 @@ namespace LabServerClient
 
                 // Send registration message
                 await SendRegistrationMessage();
-                
+
                 // Start listening for commands
                 _ = Task.Run(ListenForCommands);
-                
+
                 // Start heartbeat
                 _heartbeatTimer.Start();
-                
+
                 SaveSettings();
                 UpdateStatus($"Connected to {ServerIpTextBox.Text}");
                 LogMessage($"Connected to server {ServerIpTextBox.Text}");
@@ -190,14 +190,14 @@ namespace LabServerClient
             try
             {
                 _heartbeatTimer.Stop();
-                
+
                 if (_stream != null)
                 {
                     await _stream.FlushAsync();
                     _stream.Close();
                     _stream = null;
                 }
-                
+
                 if (_tcpClient != null)
                 {
                     _tcpClient.Close();
@@ -207,7 +207,7 @@ namespace LabServerClient
                 _isConnected = false;
                 StatusText.Text = "Disconnected";
                 StatusText.Style = (Style)FindResource("StatusDisconnected");
-                
+
                 ConnectButton.IsEnabled = true;
                 DisconnectButton.IsEnabled = false;
                 ServerIpTextBox.IsEnabled = true;
@@ -224,6 +224,7 @@ namespace LabServerClient
                 LogMessage($"Disconnect error: {ex.Message}");
             }
         }
+
 
         private async Task SendRegistrationMessage()
         {

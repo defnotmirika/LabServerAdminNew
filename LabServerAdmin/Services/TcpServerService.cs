@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using LabServerAdmin.Models;
 
 namespace LabServerAdmin.Services
@@ -101,17 +102,56 @@ namespace LabServerAdmin.Services
 
                     // Process complete messages (assuming they end with newline)
                     var fullMessage = messageBuilder.ToString();
-                    var lines = fullMessage.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                    var lines = fullMessage.Split('\n');
 
-                    foreach (var line in lines)
+                    // Process all complete lines (those that end with \n)
+                    // Keep the last line in the builder if it doesn't end with \n (partial message)
+                    for (int i = 0; i < lines.Length - 1; i++)
                     {
+                        var line = lines[i].Trim();
                         if (!string.IsNullOrWhiteSpace(line))
                         {
-                            await ProcessMessageAsync(line.Trim(), client);
+                            // Extract clientName from registration messages for tracking
+                            if (clientName == null && (line.Contains("\"type\":\"register\"", StringComparison.OrdinalIgnoreCase) || 
+                                                       line.Contains("\"type\":\"register\"", StringComparison.OrdinalIgnoreCase)))
+                            {
+                                try
+                                {
+                                    var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                                    var msg = JsonSerializer.Deserialize<ClientMessage>(line, options);
+                                    if (msg != null)
+                                    {
+                                        if (!string.IsNullOrWhiteSpace(msg.ClientName))
+                                        {
+                                            clientName = msg.ClientName;
+                                        }
+                                        else
+                                        {
+                                            // Try to extract from JSON directly
+                                            using var doc = JsonDocument.Parse(line);
+                                            if (doc.RootElement.TryGetProperty("clientName", out var clientNameElement))
+                                            {
+                                                clientName = clientNameElement.GetString();
+                                            }
+                                        }
+                                    }
+                                }
+                                catch
+                                {
+                                    // Ignore parsing errors here - ProcessMessageAsync will handle it
+                                }
+                            }
+                            
+                            await ProcessMessageAsync(line, client);
                         }
                     }
 
+                    // Keep the last line (which might be partial) in the builder
                     messageBuilder.Clear();
+                    if (lines.Length > 0 && !fullMessage.EndsWith('\n'))
+                    {
+                        messageBuilder.Append(lines[lines.Length - 1]);
+                    }
                 }
             }
             catch (Exception ex)
@@ -135,14 +175,45 @@ namespace LabServerAdmin.Services
         {
             try
             {
-                var messageData = JsonSerializer.Deserialize<ClientMessage>(message);
-                if (messageData == null) return;
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                };
+                var messageData = JsonSerializer.Deserialize<ClientMessage>(message, options);
+                if (messageData == null) 
+                {
+                    await _databaseService.LogSystemActionAsync("Message Processing Error", "Unknown", "Error", "Failed to deserialize message");
+                    return;
+                }
 
                 var clientEndpoint = client.Client.RemoteEndPoint?.ToString() ?? "Unknown";
-                var clientName = messageData.ClientName ?? $"Client_{clientEndpoint}";
+                // Extract clientName from message - check both ClientName and clientName properties
+                var clientName = messageData.ClientName;
+                
+                // If ClientName is null, try to extract from JSON directly (for camelCase)
+                if (string.IsNullOrWhiteSpace(clientName))
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(message);
+                        if (doc.RootElement.TryGetProperty("clientName", out var clientNameElement))
+                        {
+                            clientName = clientNameElement.GetString();
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore parsing errors
+                    }
+                }
+                
+                if (string.IsNullOrWhiteSpace(clientName))
+                {
+                    clientName = $"Client_{clientEndpoint}";
+                }
 
                 // Handle different message types
-                switch (messageData.Type)
+                switch (messageData.Type.ToLower())
                 {
                     case "register":
                         await HandleClientRegistrationAsync(clientName, clientEndpoint, client);
@@ -156,29 +227,50 @@ namespace LabServerAdmin.Services
                     case "screen":
                         HandleScreenData(clientName, messageData);
                         break;
+                    default:
+                        await _databaseService.LogSystemActionAsync("Unknown Message Type", clientName, "Warning", $"Received unknown message type: {messageData.Type}");
+                        break;
                 }
+            }
+            catch (JsonException ex)
+            {
+                await _databaseService.LogSystemActionAsync("JSON Parse Error", "Unknown", "Error", $"Failed to parse JSON: {ex.Message}. Message: {message.Substring(0, Math.Min(100, message.Length))}");
             }
             catch (Exception ex)
             {
-                await _databaseService.LogSystemActionAsync("Message Processing Error", "Unknown", "Error", ex.Message);
+                await _databaseService.LogSystemActionAsync("Message Processing Error", "Unknown", "Error", $"{ex.GetType().Name}: {ex.Message}");
             }
         }
 
         private async Task HandleClientRegistrationAsync(string clientName, string clientEndpoint, TcpClient client)
         {
-            _connectedClients[clientName] = client;
-            _clientInfo[clientName] = new ClientInfo
+            try
             {
-                Name = clientName,
-                IpAddress = clientEndpoint.Split(':')[0],
-                LastResponse = DateTime.UtcNow,
-                IsConnected = true
-            };
+                var ipAddress = clientEndpoint.Split(':')[0];
+                
+                _connectedClients[clientName] = client;
+                _clientInfo[clientName] = new ClientInfo
+                {
+                    Name = clientName,
+                    IpAddress = ipAddress,
+                    LastResponse = DateTime.UtcNow,
+                    IsConnected = true
+                };
 
-            await _databaseService.UpdateClientStatusAsync(clientName, _clientInfo[clientName].IpAddress, true, "Online");
-            ClientConnected?.Invoke(this, new ClientConnectedEventArgs(clientName, _clientInfo[clientName].IpAddress));
-
-            await _databaseService.LogSystemActionAsync("Client Registered", clientName, "Success", $"Client {clientName} connected from {clientEndpoint}");
+                // Update database - this should now work with the UNIQUE constraint
+                await _databaseService.UpdateClientStatusAsync(clientName, ipAddress, true, "Online");
+                
+                // Log the registration
+                await _databaseService.LogSystemActionAsync("Client Registered", clientName, "Success", $"Client {clientName} connected from {clientEndpoint}");
+                
+                // Notify UI
+                ClientConnected?.Invoke(this, new ClientConnectedEventArgs(clientName, ipAddress));
+            }
+            catch (Exception ex)
+            {
+                await _databaseService.LogSystemActionAsync("Client Registration Error", clientName, "Error", $"Failed to register client: {ex.Message}");
+                throw;
+            }
         }
 
         private async Task HandleClientResponseAsync(string clientName, ClientMessage messageData)
@@ -306,10 +398,19 @@ namespace LabServerAdmin.Services
 
     public class ClientMessage
     {
+        [JsonPropertyName("type")]
         public string Type { get; set; } = string.Empty;
+        
+        [JsonPropertyName("clientName")]
         public string? ClientName { get; set; }
+        
+        [JsonPropertyName("data")]
         public string Data { get; set; } = string.Empty;
+        
+        [JsonPropertyName("timestamp")]
         public DateTime Timestamp { get; set; }
+        
+        [JsonPropertyName("metadata")]
         public Dictionary<string, string>? Metadata { get; set; }
     }
 

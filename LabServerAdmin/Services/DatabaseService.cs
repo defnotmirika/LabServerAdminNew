@@ -61,7 +61,7 @@ namespace LabServerAdmin.Services
 
                 CREATE TABLE IF NOT EXISTS connected_clients (
                     id SERIAL PRIMARY KEY,
-                    name VARCHAR(100) NOT NULL,
+                    name VARCHAR(100) NOT NULL UNIQUE,
                     ip_address VARCHAR(45) NOT NULL,
                     last_response TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     is_connected BOOLEAN DEFAULT TRUE,
@@ -85,6 +85,21 @@ namespace LabServerAdmin.Services
 
             using var command = new NpgsqlCommand(createTables, connection);
             await command.ExecuteNonQueryAsync();
+
+            // Ensure UNIQUE constraint exists on connected_clients.name
+            var ensureUniqueConstraint = @"
+                DO $$ 
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint 
+                        WHERE conname = 'connected_clients_name_key'
+                    ) THEN
+                        ALTER TABLE connected_clients ADD CONSTRAINT connected_clients_name_key UNIQUE (name);
+                    END IF;
+                END $$;
+            ";
+            using var constraintCommand = new NpgsqlCommand(ensureUniqueConstraint, connection);
+            await constraintCommand.ExecuteNonQueryAsync();
 
             // Create default admin if none exists
             await CreateDefaultAdminAsync(connection);
@@ -364,28 +379,51 @@ namespace LabServerAdmin.Services
 
         public async Task UpdateClientStatusAsync(string clientName, string ipAddress, bool isConnected, string status = "Online")
         {
-            using var connection = new NpgsqlConnection(_connectionString);
-            await connection.OpenAsync();
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
 
-            var query = @"
-                INSERT INTO connected_clients (name, ip_address, is_connected, status, last_response) 
-                VALUES (@name, @ipAddress, @isConnected, @status, @lastResponse)
-                ON CONFLICT (name) 
-                DO UPDATE SET 
-                    ip_address = @ipAddress,
-                    is_connected = @isConnected,
-                    status = @status,
-                    last_response = @lastResponse
-            ";
+                // First, ensure the UNIQUE constraint exists
+                var ensureConstraint = @"
+                    DO $$ 
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_constraint 
+                            WHERE conname = 'connected_clients_name_key'
+                        ) THEN
+                            ALTER TABLE connected_clients ADD CONSTRAINT connected_clients_name_key UNIQUE (name);
+                        END IF;
+                    END $$;
+                ";
+                using var constraintCommand = new NpgsqlCommand(ensureConstraint, connection);
+                await constraintCommand.ExecuteNonQueryAsync();
 
-            using var command = new NpgsqlCommand(query, connection);
-            command.Parameters.AddWithValue("@name", clientName);
-            command.Parameters.AddWithValue("@ipAddress", ipAddress);
-            command.Parameters.AddWithValue("@isConnected", isConnected);
-            command.Parameters.AddWithValue("@status", status);
-            command.Parameters.AddWithValue("@lastResponse", DateTime.UtcNow);
+                var query = @"
+                    INSERT INTO connected_clients (name, ip_address, is_connected, status, last_response) 
+                    VALUES (@name, @ipAddress, @isConnected, @status, @lastResponse)
+                    ON CONFLICT (name) 
+                    DO UPDATE SET 
+                        ip_address = EXCLUDED.ip_address,
+                        is_connected = EXCLUDED.is_connected,
+                        status = EXCLUDED.status,
+                        last_response = EXCLUDED.last_response
+                ";
 
-            await command.ExecuteNonQueryAsync();
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@name", clientName);
+                command.Parameters.AddWithValue("@ipAddress", ipAddress);
+                command.Parameters.AddWithValue("@isConnected", isConnected);
+                command.Parameters.AddWithValue("@status", status);
+                command.Parameters.AddWithValue("@lastResponse", DateTime.UtcNow);
+
+                await command.ExecuteNonQueryAsync();
+            }
+            catch (Exception ex)
+            {
+                // Log error but don't throw - we don't want to break the connection flow
+                await LogSystemActionAsync("Database Update Error", clientName, "Error", $"Failed to update client status: {ex.Message}");
+            }
         }
 
         public async Task<List<ConnectedClient>> GetConnectedClientsAsync()
