@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <None Remove="Images\trinity.png" />
+    <None Remove="learniq.png" />
     <None Remove="trinity.png" />
   </ItemGroup>
 
@@ -33,6 +34,7 @@
     <Resource Include="Images\trinity.png">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </Resource>
+    <Resource Include="learniq.png" />
     <Resource Include="trinity.png" />
   </ItemGroup>
 

@@ -59,7 +59,7 @@
                 </Grid.ColumnDefinitions>
                 
                 <StackPanel Grid.Column="0" Orientation="Horizontal">
-                    <TextBlock Text="🔧 Lab Server Admin" FontSize="24" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
+                    <TextBlock Text=" Lab Server Admin" FontSize="24" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
                     <TextBlock x:Name="ServerStatusText" Text="Server: Stopped" FontSize="14" Foreground="LightBlue" Margin="20,0,0,0" VerticalAlignment="Center"/>
                 </StackPanel>
                 
@@ -121,19 +121,19 @@
                                         <DataTemplate>
                                             <StackPanel Orientation="Horizontal">
                                                 <Button Content="🔒" ToolTip="Lock" Style="{StaticResource ModernButton}" 
-                                                        Click="LockClientButton_Click" Tag="{Binding Name}" Width="30" Height="25"/>
+                                                        Click="LockClientButton_Click" Tag="{Binding Name}" Width="35" Height="25"/>
                                                 <Button Content="🔓" ToolTip="Unlock" Style="{StaticResource ModernButton}" 
-                                                        Click="UnlockClientButton_Click" Tag="{Binding Name}" Width="30" Height="25"/>
+                                                        Click="UnlockClientButton_Click" Tag="{Binding Name}" Width="35" Height="25"/>
                                                 <Button Content="⏹️" ToolTip="Shutdown" Style="{StaticResource DangerButton}" 
-                                                        Click="ShutdownClientButton_Click" Tag="{Binding Name}" Width="30" Height="25"/>
+                                                        Click="ShutdownClientButton_Click" Tag="{Binding Name}" Width="35" Height="25"/>
                                                 <Button Content="🔄" ToolTip="Restart" Style="{StaticResource DangerButton}" 
-                                                        Click="RestartClientButton_Click" Tag="{Binding Name}" Width="30" Height="25"/>
+                                                        Click="RestartClientButton_Click" Tag="{Binding Name}" Width="35" Height="25"/>
                                                 <Button Content="😴" ToolTip="Sleep" Style="{StaticResource ModernButton}" 
-                                                        Click="SleepClientButton_Click" Tag="{Binding Name}" Width="30" Height="25"/>
+                                                        Click="SleepClientButton_Click" Tag="{Binding Name}" Width="35" Height="25"/>
                                                 <Button Content="📋" ToolTip="View Logs" Style="{StaticResource ModernButton}" 
-                                                        Click="ViewLogsButton_Click" Tag="{Binding Name}" Width="30" Height="25"/>
+                                                        Click="ViewLogsButton_Click" Tag="{Binding Name}" Width="35" Height="25"/>
                                                 <Button Content="🖥️" ToolTip="Remote View" Style="{StaticResource ModernButton}"
-                                                        Click="ViewScreenButton_Click" Tag="{Binding Name}" Width="30" Height="25"/>
+                                                        Click="ViewScreenButton_Click" Tag="{Binding Name}" Width="35" Height="25"/>
                                             </StackPanel>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
@@ -154,7 +154,7 @@
 
                     <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
                         <Button x:Name="RefreshLogsButton" Content="🔄 Refresh Logs" Style="{StaticResource ModernButton}" Click="RefreshLogsButton_Click"/>
-                        <Button x:Name="ExportLogsButton" Content="📤 Export Logs" Style="{StaticResource ModernButton}" Click="ExportLogsButton_Click" Margin="10,0,0,0"/>
+                        <Button x:Name="ExportLogsButton" Content="📤 Export Logs" Style="{StaticResource ModernButton}" Click="ExportLogsButton_Click" Height="26" Margin="10,0,0,0"/>
                     </StackPanel>
 
                     <DataGrid x:Name="SystemLogsDataGrid" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" 

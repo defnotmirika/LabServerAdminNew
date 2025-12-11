@@ -4,27 +4,31 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="Remote Control" Height="650" Width="950"
+        Title="Remote Client Control" Height="600" Width="900"
         WindowStartupLocation="CenterOwner">
 
     <Grid Background="#1E1E1E">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="561*"/>
+            <ColumnDefinition Width="389*"/>
+        </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <DockPanel Grid.Row="0" Margin="10" LastChildFill="False">
+        <DockPanel Grid.Row="0" Margin="10,10,10,10" LastChildFill="False" Grid.ColumnSpan="2">
             <StackPanel Orientation="Horizontal">
-                <TextBlock x:Name="HeaderText" Text="Client" FontSize="18" FontWeight="Bold" Foreground="White"/>
-                <TextBlock x:Name="StatusText" Text="Waiting for stream..." FontSize="14" Foreground="LightGray" Margin="20,0,0,0" VerticalAlignment="Center"/>
+                <TextBlock x:Name="HeaderText" Text="Client" FontSize="15" FontWeight="Bold" Foreground="White" Margin="10,0,0,0"/>
+                <TextBlock x:Name="StatusText" Text="Waiting for stream..." FontSize="10" Foreground="LightGray" Margin="20,0,0,0" VerticalAlignment="Center"/>
             </StackPanel>
 
-            <ToggleButton x:Name="ControlToggleButton" Content="Enable Control" Width="140" Margin="20,0,0,0"
+            <ToggleButton x:Name="ControlToggleButton" Content="Enable Control" FontSize="10" Width="100" Margin="20,0,0,0"
                           VerticalAlignment="Center" Checked="ControlToggleButton_Checked" Unchecked="ControlToggleButton_Unchecked"/>
 
             <StackPanel Orientation="Horizontal" Margin="20,0,0,0" VerticalAlignment="Center">
-                <TextBlock Text="Refresh:" Foreground="White" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                <ComboBox x:Name="RefreshRateComboBox" Width="120" SelectionChanged="RefreshRateComboBox_SelectionChanged">
+                <TextBlock Text="Refresh rate:" FontSize="10" Foreground="White" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <ComboBox x:Name="RefreshRateComboBox" Height="20" Width="120" SelectionChanged="RefreshRateComboBox_SelectionChanged">
                     <ComboBoxItem Content="1 FPS" Tag="1000"/>
                     <ComboBoxItem Content="2 FPS" Tag="500"/>
                     <ComboBoxItem Content="5 FPS" Tag="200"/>
@@ -32,7 +36,7 @@
             </StackPanel>
         </DockPanel>
 
-        <Border Grid.Row="1" Margin="10" Background="Black" CornerRadius="4" BorderBrush="#2A2A2A" BorderThickness="1">
+        <Border Grid.Row="1" Margin="10,10,10,10" Background="Black" CornerRadius="4" BorderBrush="#2A2A2A" BorderThickness="1" Grid.ColumnSpan="2">
             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" PreviewMouseWheel="ScrollViewer_PreviewMouseWheel">
                 <Image x:Name="ScreenImage" Stretch="Uniform" Focusable="True" FocusVisualStyle="{x:Null}" Cursor="Cross"
                        MouseMove="ScreenImage_MouseMove"

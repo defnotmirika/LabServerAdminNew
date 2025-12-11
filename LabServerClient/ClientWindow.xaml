@@ -38,9 +38,9 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Text="🖥️ Lab Server Client" FontSize="20" FontWeight="Bold" 
-                       HorizontalAlignment="Center"/>
-            <Button Grid.Column="1" x:Name="LogoutButton" Content="🚪 Logout" Padding="12,6" Margin="10,0,0,0"
+            <TextBlock Text="Client Configuration" FontSize="15" FontWeight="Bold" 
+                       HorizontalAlignment="Left"/>
+            <Button Grid.Column="1" x:Name="LogoutButton" Content="🚪 Logout" Height="30" Padding="12,6" Margin="10,0,0,0"
                     Click="LogoutButton_Click"/>
         </Grid>
 
