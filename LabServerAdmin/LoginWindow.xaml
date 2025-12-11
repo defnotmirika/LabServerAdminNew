@@ -50,19 +50,27 @@
                 </Grid.RowDefinitions>
 
                 <!-- Header -->
-                <StackPanel Grid.Row="0" Margin="0,0,0,20">
+                <StackPanel Grid.Row="0" Margin="0,0,0,20" HorizontalAlignment="Center">
+
+                    <!-- Small Logo Icon -->
+                    <Image Source="/trinity.png"
+                            Width="60"
+                            Height="60"
+                            Margin="0,0,0,10"/>
+
                     <TextBlock Text="Log In" 
-                           FontSize="28" 
-                           FontWeight="Bold" 
-                           HorizontalAlignment="Center"
-                           Foreground="#2C3E50"/>
+                            FontSize="28" 
+                            FontWeight="Bold" 
+                            HorizontalAlignment="Center"
+                            Foreground="#2C3E50"/>
 
                     <TextBlock Text="Please login to continue" 
-                           FontSize="14" 
-                           HorizontalAlignment="Center"
-                           Foreground="#7F8C8D"
-                           Margin="0,5,0,0"/>
+                            FontSize="14" 
+                            HorizontalAlignment="Center"
+                            Foreground="#7F8C8D"
+                            Margin="0,5,0,0"/>
                 </StackPanel>
+
 
                 <!-- Login Form -->
                 <StackPanel Grid.Row="1">

@@ -50,7 +50,14 @@
                 </Grid.RowDefinitions>
 
                 <!-- Header -->
-                <StackPanel Grid.Row="0" Margin="0,0,0,20">
+                <StackPanel Grid.Row="0" Margin="0,0,0,20" HorizontalAlignment="Center">
+
+                    <!-- Small Logo Icon -->
+                    <Image Source="/trinity.png"
+                           Width="60"
+                           Height="60"
+                           Margin="0,0,0,10"/>
+
                     <TextBlock Text="Log In" 
                            FontSize="28" 
                            FontWeight="Bold" 
