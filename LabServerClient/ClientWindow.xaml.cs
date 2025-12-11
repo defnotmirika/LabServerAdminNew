@@ -269,19 +269,41 @@ namespace LabServerClient
                     var message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
                     messageBuilder.Append(message);
 
-                    // Process complete messages
+                    // Process complete messages while preserving any partial trailing chunk
                     var fullMessage = messageBuilder.ToString();
-                    var lines = fullMessage.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                    var startIndex = 0;
 
-                    foreach (var line in lines)
+                    while (true)
                     {
-                        if (!string.IsNullOrWhiteSpace(line))
+                        var newlineIndex = fullMessage.IndexOf('\n', startIndex);
+                        if (newlineIndex == -1)
                         {
-                            await ProcessCommand(line.Trim());
+                            break; // No complete message available yet
                         }
+
+                        var lineLength = newlineIndex - startIndex;
+                        if (lineLength > 0)
+                        {
+                            var line = fullMessage.Substring(startIndex, lineLength).Trim();
+                            if (!string.IsNullOrWhiteSpace(line))
+                            {
+                                await ProcessCommand(line);
+                            }
+                        }
+
+                        startIndex = newlineIndex + 1;
                     }
 
-                    messageBuilder.Clear();
+                    // Keep any partial message for the next read
+                    if (startIndex >= fullMessage.Length)
+                    {
+                        messageBuilder.Clear();
+                    }
+                    else
+                    {
+                        messageBuilder.Clear();
+                        messageBuilder.Append(fullMessage.AsSpan(startIndex));
+                    }
                 }
                 catch (Exception ex)
                 {

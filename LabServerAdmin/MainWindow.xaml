@@ -32,7 +32,7 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
-        
+
         <Style x:Key="SuccessButton" TargetType="Button" BasedOn="{StaticResource ModernButton}">
             <Setter Property="Background" Value="#4CAF50"/>
             <Style.Triggers>
@@ -40,6 +40,13 @@
                     <Setter Property="Background" Value="#388E3C"/>
                 </Trigger>
             </Style.Triggers>
+        </Style>
+
+        <Style TargetType="{x:Type DatePickerTextBox}">
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="White"/>
         </Style>
     </Window.Resources>
 
@@ -177,8 +184,9 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
+                    
 
-                    <StackPanel Grid.Row="0" Orientation="Vertical" Margin="0,0,0,10">
+                    <StackPanel Grid.Row="0" Orientation="Vertical" Margin="0,5,0,20">
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                             <Button x:Name="RefreshAttendanceButton" Content="🔄 Refresh" Style="{StaticResource ModernButton}" Click="RefreshAttendanceButton_Click"/>
                             <Button x:Name="ExportAttendanceButton" Content="📤 Export Attendance" Style="{StaticResource ModernButton}" Click="ExportAttendanceButton_Click" Margin="10,0,0,0"/>
@@ -188,9 +196,9 @@
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="Filter by Date:" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="SemiBold"/>
                             <TextBlock Text="From:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                            <DatePicker x:Name="StartDatePicker" Width="150" Margin="0,0,20,0" SelectedDateChanged="DatePicker_SelectedDateChanged"/>
+                            <DatePicker x:Name="StartDatePicker" Width="110" Margin="0,0,20,0" SelectedDateChanged="DatePicker_SelectedDateChanged"/>
                             <TextBlock Text="To:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                            <DatePicker x:Name="EndDatePicker" Width="150" Margin="0,0,20,0" SelectedDateChanged="DatePicker_SelectedDateChanged"/>
+                            <DatePicker x:Name="EndDatePicker" Width="110" Margin="0,0,20,0" SelectedDateChanged="DatePicker_SelectedDateChanged"/>
                             <Button x:Name="ApplyDateFilterButton" Content="Apply Filter" Style="{StaticResource ModernButton}" Click="ApplyDateFilterButton_Click"/>
                         </StackPanel>
                     </StackPanel>
@@ -221,10 +229,12 @@
 
                     <GroupBox Header="Client Usage Limit" Margin="0,0,0,10">
                         <StackPanel Orientation="Horizontal" Margin="10" VerticalAlignment="Center">
-                            <TextBlock Text="Usage limit for all clients (hours):" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <TextBox x:Name="UsageLimitHoursTextBox" Width="80" Margin="0,0,10,0"/>
+                            <TextBlock Text="Usage limit (hours):" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <TextBox x:Name="UsageLimitHoursTextBox" PreviewTextInput="UsageLimitHoursTextBox_PreviewTextInput"
+                                   PreviewKeyDown="UsageLimitHoursTextBox_PreviewKeyDown"
+                                   DataObject.Pasting="UsageLimitHoursTextBox_Pasting" Width="80" Margin="0,0,10,0"/>
                             <Button Content="Apply to All" Style="{StaticResource ModernButton}" Click="ApplyUsageLimitButton_Click"/>
-                            <Button Content="Clear Limit" Style="{StaticResource ModernButton}" Click="ClearUsageLimitButton_Click" Margin="10,0,0,0"/>
+                            <Button Content="Clear Limit" Style="{StaticResource ModernButton}" Click="ClearUsageLimitButton_Click" Margin="10,0,0,0" Height="26"/>
                         </StackPanel>
                     </GroupBox>
 
