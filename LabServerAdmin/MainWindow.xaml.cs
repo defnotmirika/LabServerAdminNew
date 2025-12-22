@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -937,6 +938,96 @@ namespace LabServerAdmin
             public double Hours { get; set; }
             public DateTime SessionStartUtc { get; set; }
             public DateTime ExpiresUtc { get; set; }
+        }
+
+        private void UsageLimitHoursTextBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
+        {
+            var textBox = sender as TextBox;
+            if (textBox == null) return;
+
+            // Allow decimal point and digits
+            foreach (char c in e.Text)
+            {
+                if (!char.IsDigit(c) && c != '.' && c != ',')
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+
+            // Prevent multiple decimal points
+            var currentText = textBox.Text;
+            var selectionStart = textBox.SelectionStart;
+            var newText = currentText.Insert(selectionStart, e.Text);
+            
+            if ((newText.Count(c => c == '.') > 1 && newText.Count(c => c == ',') > 1) ||
+                (newText.Count(c => c == '.') > 1) ||
+                (newText.Count(c => c == ',') > 1))
+            {
+                e.Handled = true;
+            }
+        }
+
+        private void UsageLimitHoursTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            // Allow navigation, editing, and control keys
+            if (e.Key == Key.Back || e.Key == Key.Delete || 
+                e.Key == Key.Tab || e.Key == Key.Enter ||
+                e.Key == Key.Left || e.Key == Key.Right ||
+                e.Key == Key.Up || e.Key == Key.Down || 
+                e.Key == Key.Home || e.Key == Key.End ||
+                e.Key == Key.Escape)
+            {
+                return;
+            }
+
+            // Allow Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+Z
+            if (Keyboard.Modifiers == ModifierKeys.Control &&
+                (e.Key == Key.A || e.Key == Key.C || e.Key == Key.V || 
+                 e.Key == Key.X || e.Key == Key.Z))
+            {
+                return;
+            }
+
+            // Allow Shift for selection
+            if (Keyboard.Modifiers == ModifierKeys.Shift &&
+                (e.Key == Key.Left || e.Key == Key.Right || 
+                 e.Key == Key.Up || e.Key == Key.Down ||
+                 e.Key == Key.Home || e.Key == Key.End))
+            {
+                return;
+            }
+
+            // Allow digits and decimal separators - actual validation in PreviewTextInput
+            if ((e.Key >= Key.D0 && e.Key <= Key.D9) ||
+                (e.Key >= Key.NumPad0 && e.Key <= Key.NumPad9) ||
+                e.Key == Key.OemPeriod || e.Key == Key.OemComma || 
+                e.Key == Key.Decimal)
+            {
+                return;
+            }
+
+            // Block other keys
+            e.Handled = true;
+        }
+
+        private void UsageLimitHoursTextBox_Pasting(object sender, DataObjectPastingEventArgs e)
+        {
+            if (e.DataObject.GetDataPresent(typeof(string)))
+            {
+                var text = (string)e.DataObject.GetData(typeof(string));
+                
+                // Validate pasted text is numeric
+                if (!double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out _) &&
+                    !double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out _))
+                {
+                    e.CancelCommand();
+                }
+            }
+            else
+            {
+                e.CancelCommand();
+            }
         }
 
         private async void ApplyUsageLimitButton_Click(object sender, RoutedEventArgs e)

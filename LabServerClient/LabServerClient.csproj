@@ -15,9 +15,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="Images\learniq.png" />
     <None Remove="Images\trinity.png" />
-    <None Remove="learniq.png" />
-    <None Remove="trinity.png" />
   </ItemGroup>
 
   <ItemGroup>
@@ -31,11 +30,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Resource Include="Images\learniq.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
     <Resource Include="Images\trinity.png">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </Resource>
-    <Resource Include="learniq.png" />
-    <Resource Include="trinity.png" />
   </ItemGroup>
 
   <ItemGroup>

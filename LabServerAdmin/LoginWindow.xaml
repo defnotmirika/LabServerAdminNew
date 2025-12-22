@@ -1,14 +1,15 @@
 <Window x:Class="LabServerAdmin.LoginWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Lab Server Admin - Login" 
-        Height="800" Width="1300"
-        WindowStartupLocation="CenterScreen"
+        Title="Lab Server Admin - Login"
+        WindowState="Maximized"
         WindowStyle="None"
         ResizeMode="NoResize"
         Topmost="True"
         ShowInTaskbar="True"
         Background="#F5F5F5">
+
+
 
     <Window.Resources>
         <Style TargetType="Button">
