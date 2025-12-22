@@ -8,6 +8,8 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Drawing;
+using System.Drawing.Imaging;
 using LabServerAdmin.Services;
 
 namespace LabServerAdmin
@@ -73,11 +75,28 @@ namespace LabServerAdmin
         {
             if (!string.Equals(e.ClientName, _clientName, StringComparison.OrdinalIgnoreCase))
             {
+                // Debug: log when we receive data for a different client
+                Dispatcher.Invoke(() =>
+                {
+                    if (StatusText.Text.Contains("Requesting") || StatusText.Text.Contains("Error"))
+                    {
+                        StatusText.Text = $"Received data for {e.ClientName}, expecting {_clientName}";
+                    }
+                });
                 return;
             }
 
             try
             {
+                if (e.ImageBytes == null || e.ImageBytes.Length == 0)
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        StatusText.Text = "Error: Received empty image data";
+                    });
+                    return;
+                }
+
                 var metadata = e.Metadata;
                 if (metadata.TryGetValue("width", out var widthStr) && double.TryParse(widthStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var width))
                 {
@@ -89,23 +108,64 @@ namespace LabServerAdmin
                     _remoteScreenHeight = height;
                 }
 
-                using var ms = new MemoryStream(e.ImageBytes);
-                var bitmap = new BitmapImage();
-                bitmap.BeginInit();
-                bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.StreamSource = ms;
-                bitmap.EndInit();
-                bitmap.Freeze();
+                BitmapImage bitmap;
+                var ms = new MemoryStream(e.ImageBytes);
+                try
+                {
+                    bitmap = new BitmapImage();
+                    bitmap.BeginInit();
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmap.StreamSource = ms;
+                    bitmap.EndInit();
+                    bitmap.Freeze();
+                    ms.Dispose(); // Dispose after EndInit completes
+                }
+                catch (Exception imgEx)
+                {
+                    ms.Dispose();
+                    // If direct loading fails, try converting via System.Drawing
+                    try
+                    {
+                        using (var inputStream = new MemoryStream(e.ImageBytes))
+                        using (var bmp = new Bitmap(inputStream))
+                        {
+                            using (var outStream = new MemoryStream())
+                            {
+                                bmp.Save(outStream, ImageFormat.Png);
+                                outStream.Position = 0;
+                                
+                                bitmap = new BitmapImage();
+                                bitmap.BeginInit();
+                                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                                bitmap.StreamSource = outStream;
+                                bitmap.EndInit();
+                                bitmap.Freeze();
+                            }
+                        }
+                    }
+                    catch (Exception convertEx)
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            StatusText.Text = $"Image error: {imgEx.Message} / {convertEx.Message}";
+                        });
+                        return;
+                    }
+                }
 
+                var finalBitmap = bitmap; // Capture for closure
                 Dispatcher.Invoke(() =>
                 {
-                    ScreenImage.Source = bitmap;
-                    StatusText.Text = $"Last frame: {DateTime.Now:T}";
+                    ScreenImage.Source = finalBitmap;
+                    StatusText.Text = $"Last frame: {DateTime.Now:T} ({e.ImageBytes.Length} bytes)";
                 });
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignore decoding errors
+                Dispatcher.Invoke(() =>
+                {
+                    StatusText.Text = $"Error decoding image: {ex.Message}";
+                });
             }
         }
 

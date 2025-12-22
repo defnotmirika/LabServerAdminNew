@@ -33,6 +33,7 @@ namespace LabServerClient
         private int _screenShareIntervalMs = 500;
         private readonly DatabaseService? _databaseService;
         private bool _allowClose = false;
+        private LockpcWindow? _kioskModeWindow;
 
         public ClientWindow(DatabaseService? databaseService = null)
         {
@@ -216,6 +217,17 @@ namespace LabServerClient
                 ResetUsageLimitState(true);
                 ResetScreenShareState();
 
+                // Close kiosk mode window if open
+                if (_kioskModeWindow != null)
+                {
+                    try
+                    {
+                        Dispatcher.Invoke(() => _kioskModeWindow.Close());
+                    }
+                    catch { }
+                    _kioskModeWindow = null;
+                }
+
                 UpdateStatus("Disconnected from server");
                 LogMessage("Disconnected from server");
             }
@@ -380,14 +392,29 @@ namespace LabServerClient
         {
             try
             {
-                // Lock the workstation
-                await Task.Run(() => 
+                await Dispatcher.InvokeAsync(() =>
                 {
-                    // Use Windows API to lock the workstation
-                    System.Diagnostics.Process.Start("rundll32.exe", "user32.dll,LockWorkStation");
+                    // Close existing kiosk window if any
+                    if (_kioskModeWindow != null)
+                    {
+                        try
+                        {
+                            _kioskModeWindow.Close();
+                        }
+                        catch { }
+                        _kioskModeWindow = null;
+                    }
+
+                    // Show kiosk mode window
+                    _kioskModeWindow = new LockpcWindow();
+                    _kioskModeWindow.WindowState = WindowState.Maximized;
+                    _kioskModeWindow.Show();
+                    _kioskModeWindow.Activate();
+                    _kioskModeWindow.Focus();
+                    _kioskModeWindow.BringIntoView();
                 });
                 
-                LogMessage("System locked");
+                LogMessage("System locked - Kiosk mode activated");
                 return "System locked successfully";
             }
             catch (Exception ex)
@@ -401,9 +428,22 @@ namespace LabServerClient
         {
             try
             {
-                // Note: Unlocking requires user interaction, so we just log it
-                LogMessage("Unlock command received (requires user interaction)");
-                return Task.FromResult("Unlock command received - user interaction required");
+                Dispatcher.Invoke(() =>
+                {
+                    // Close kiosk mode window if it's open
+                    if (_kioskModeWindow != null)
+                    {
+                        try
+                        {
+                            _kioskModeWindow.Close();
+                        }
+                        catch { }
+                        _kioskModeWindow = null;
+                    }
+                });
+                
+                LogMessage("System unlocked - Kiosk mode deactivated");
+                return Task.FromResult("System unlocked successfully");
             }
             catch (Exception ex)
             {
@@ -1060,6 +1100,17 @@ namespace LabServerClient
 
         protected override void OnClosed(EventArgs e)
         {
+            // Close kiosk mode window if open
+            if (_kioskModeWindow != null)
+            {
+                try
+                {
+                    _kioskModeWindow.Close();
+                }
+                catch { }
+                _kioskModeWindow = null;
+            }
+
             if (_isConnected)
             {
                 _ = Task.Run(async () => await DisconnectFromServer());
