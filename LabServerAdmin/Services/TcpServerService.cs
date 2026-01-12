@@ -280,6 +280,13 @@ namespace LabServerAdmin.Services
                 _clientInfo[clientName].LastResponse = DateTime.UtcNow;
             }
 
+            // Skip logging heartbeats to avoid cluttering the logs
+            if (!string.IsNullOrWhiteSpace(messageData.Data) && 
+                messageData.Data.Equals("heartbeat", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             await _databaseService.LogSystemActionAsync("Client Response", clientName, "Success", messageData.Data);
             CommandReceived?.Invoke(this, new CommandReceivedEventArgs(clientName, messageData.Data));
         }

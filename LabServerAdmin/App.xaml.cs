@@ -46,11 +46,12 @@ namespace LabServerAdmin
                 // Only show main window if login was successful
                 if (loginWindow != null && loginWindow.IsAuthenticated && dialogResult == true)
                 {
+                    var username = loginWindow.AuthenticatedUsername;
                     await Application.Current.Dispatcher.InvokeAsync(() =>
                     {
                         try
                         {
-                            var mainWindow = new MainWindow();
+                            var mainWindow = new MainWindow(username);
                             mainWindow.Show();
                             mainWindow.Activate();
                             mainWindow.Focus();

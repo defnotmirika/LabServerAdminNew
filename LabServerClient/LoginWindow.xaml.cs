@@ -41,6 +41,9 @@ namespace LabServerClient
 
         private HwndSource? _source;
         public bool IsAuthenticated { get; private set; } = false;
+        public string? AuthenticatedUsername { get; private set; } = null;
+        public string? UserRole { get; private set; } = null;
+        public int? AuthenticatedClientId { get; private set; } = null;
 
         public LoginWindow(DatabaseService? databaseService = null, bool requireAuthenticationToClose = true)
         {
@@ -187,22 +190,68 @@ namespace LabServerClient
             try
             {
                 bool isValid = false;
+                string? role = null;
 
                 // Validate credentials against database if available
                 if (_databaseService != null)
                 {
-                    isValid = await _databaseService.ValidateClientAsync(username, password);
+                    // Try to get role (works for both admin and client)
+                    role = await _databaseService.GetUserRoleAsync(username, password);
+                    if (role != null)
+                    {
+                        isValid = true;
+                    }
+                    else
+                    {
+                        // Fallback: try client validation
+                        isValid = await _databaseService.ValidateClientAsync(username, password);
+                        if (isValid)
+                        {
+                            role = "Student"; // Default to Student for client validation
+                        }
+                    }
                 }
-                else
+
+                // Always allow fallback hardcoded credentials
+                if (!isValid)
                 {
-                    // Fallback to hardcoded credentials if database is not available
-                    isValid = (username == "client" && password == "client123");
+                    if (username == "admin" && password == "admin123")
+                    {
+                        isValid = true;
+                        role = "Admin";
+                    }
+                    else if (username == "student" && password == "student123")
+                    {
+                        isValid = true;
+                        role = "Student";
+                    }
+                    else if (username == "client" && password == "client123")
+                    {
+                        isValid = true;
+                        role = "Student";
+                    }
                 }
 
                 if (isValid)
                 {
-                    // Set authenticated flag first
+                    // Set authenticated flag, username, and role
                     IsAuthenticated = true;
+                    AuthenticatedUsername = username;
+                    UserRole = role;
+
+                    // Resolve client id for non-admin users when DB is available
+                    if (_databaseService != null && role != null && !role.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            AuthenticatedClientId = await _databaseService.EnsureClientIdAsync(username, password, Environment.MachineName);
+                        }
+                        catch
+                        {
+                            AuthenticatedClientId = null;
+                        }
+                    }
+
                     ErrorTextBlock.Visibility = Visibility.Collapsed;
                     
                     // Set DialogResult and close window
@@ -211,6 +260,7 @@ namespace LabServerClient
                 }
                 else
                 {
+                    AuthenticatedClientId = null;
                     ShowError("Invalid username or password. Please try again.");
                     PasswordBox.Password = "";
                     PasswordBox.Focus();

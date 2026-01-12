@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:LabServerAdmin"
         mc:Ignorable="d"
-        Title="Lab Server Admin - PC Management System" Height="800" Width="1200"
+        Title="Instructor Interface - Lab Management System" Height="800" Width="1200"
         WindowStartupLocation="CenterScreen">
     
     <Window.Resources>
@@ -66,7 +66,7 @@
                 </Grid.ColumnDefinitions>
                 
                 <StackPanel Grid.Column="0" Orientation="Horizontal">
-                    <TextBlock Text=" Lab Server Admin" FontSize="24" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
+                    <TextBlock Text=" Instructor UI" FontSize="24" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
                     <TextBlock x:Name="ServerStatusText" Text="Server: Stopped" FontSize="14" Foreground="LightBlue" Margin="20,0,0,0" VerticalAlignment="Center"/>
                 </StackPanel>
                 
@@ -178,7 +178,7 @@
             </TabItem>
 
             <!-- Attendance Logs Tab -->
-            <TabItem Header="👥 Attendance Logs">
+            <TabItem Header="👥 Attendance Logs" Height="19">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>

@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace LabServerAdmin.Models
 {
-    public class Admin
+    public class User
     {
         [Key]
         public int Id { get; set; }
@@ -14,9 +14,58 @@ namespace LabServerAdmin.Models
         
         [Required]
         [MaxLength(255)]
-        public string PasswordHash { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty; // Hashed password
+        
+        [Required]
+        [MaxLength(20)]
+        public string Role { get; set; } = "Student"; // Admin, Student, Teacher
+        
+        [MaxLength(100)]
+        public string? Email { get; set; }
+        
+        [MaxLength(100)]
+        public string? FullName { get; set; }
         
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+        
+        public bool IsActive { get; set; } = true;
+    }
+
+    public class Computer
+    {
+        [Key]
+        public int Id { get; set; }
+        
+        [Required]
+        [MaxLength(100)]
+        public string ClientName { get; set; } = string.Empty;
+        
+        [Required]
+        public string IpAddress { get; set; } = string.Empty;
+        
+        [MaxLength(17)]
+        public string? MacAddress { get; set; }
+        
+        [MaxLength(20)]
+        public string Status { get; set; } = "Offline"; // Online, Offline, Maintenance
+        
+        public bool IsLocked { get; set; } = false;
+        
+        public bool IsOnline { get; set; } = false;
+        
+        public DateTime? LastSeen { get; set; }
+        
+        [MaxLength(100)]
+        public string? Location { get; set; }
+        
+        [MaxLength(50)]
+        public string? LabRoom { get; set; }
+        
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     }
 
     public class SystemLog
@@ -24,20 +73,32 @@ namespace LabServerAdmin.Models
         [Key]
         public int Id { get; set; }
         
-        public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+        [Required]
+        [MaxLength(10)]
+        public string LogLevel { get; set; } = "INFO"; // INFO, WARNING, ERROR, DEBUG
         
         [Required]
-        [MaxLength(100)]
-        public string Action { get; set; } = string.Empty;
+        public string LogMessage { get; set; } = string.Empty;
         
-        [MaxLength(100)]
-        public string ClientName { get; set; } = string.Empty;
+        public DateTime LogTime { get; set; } = DateTime.UtcNow;
+        
+        public int? ComputerId { get; set; }
+        
+        public int? UserId { get; set; }
         
         [MaxLength(50)]
-        public string Status { get; set; } = string.Empty;
+        public string? ActionType { get; set; } // Login, Logout, Lock, Unlock, etc.
         
-        [MaxLength(500)]
-        public string? Details { get; set; }
+        // Computed properties for display compatibility
+        public DateTime Timestamp => LogTime;
+        
+        public string Action => ActionType ?? LogMessage;
+        
+        public string ClientName { get; set; } = string.Empty; // Populated from join
+        
+        public string Status => LogLevel;
+        
+        public string? Details => LogMessage;
     }
 
     public class AttendanceLog
@@ -45,28 +106,43 @@ namespace LabServerAdmin.Models
         [Key]
         public int Id { get; set; }
         
-        [Required]
-        [MaxLength(100)]
-        public string StudentName { get; set; } = string.Empty;
+        public int? UserId { get; set; }
         
-        [Required]
-        [MaxLength(100)]
-        public string PcName { get; set; } = string.Empty;
+        public int? ComputerId { get; set; }
         
-        public DateTime TimeIn { get; set; }
+        public DateTime LoginTime { get; set; }
         
-        public DateTime? TimeOut { get; set; }
+        public DateTime? LogoutTime { get; set; }
         
-        public bool IsActive { get; set; } = true;
+        public TimeSpan? SessionDuration { get; set; }
+        
+        [MaxLength(20)]
+        public string Status { get; set; } = "Active"; // Active, Completed, Forced_Logout
+        
+        // Computed properties for display compatibility
+        public string StudentName { get; set; } = string.Empty; // Populated from join
+        
+        public string PcName { get; set; } = string.Empty; // Populated from join
+        
+        public DateTime TimeIn => LoginTime;
+        
+        public DateTime? TimeOut => LogoutTime;
+        
+        public bool IsActive => Status == "Active";
 
         // Computed property for display
         public string Duration
         {
             get
             {
-                if (TimeOut.HasValue)
+                if (LogoutTime.HasValue && LoginTime != default)
                 {
-                    var duration = TimeOut.Value - TimeIn;
+                    var duration = LogoutTime.Value - LoginTime;
+                    return $"{duration.Hours:D2}:{duration.Minutes:D2}:{duration.Seconds:D2}";
+                }
+                if (SessionDuration.HasValue)
+                {
+                    var duration = SessionDuration.Value;
                     return $"{duration.Hours:D2}:{duration.Minutes:D2}:{duration.Seconds:D2}";
                 }
                 return "Active";

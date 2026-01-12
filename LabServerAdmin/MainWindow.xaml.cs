@@ -10,6 +10,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -34,6 +35,7 @@ namespace LabServerAdmin
         private ObservableCollection<AttendanceLog> _attendanceLogs = new();
         
         private bool _isServerRunning = false;
+        private readonly DispatcherTimer _clientsRefreshTimer;
         private bool _isVoiceEnabled = false;
         private double? _currentUsageLimitHours = null;
         private readonly Dictionary<string, RemoteControlWindow> _remoteWindows = new();
@@ -44,9 +46,11 @@ namespace LabServerAdmin
 
         private DateTime? _usageLimitSessionStartUtc = null;
         private DateTime? _currentUsageLimitExpiryUtc = null;
+        private readonly string? _currentAdminUsername;
 
-        public MainWindow()
+        public MainWindow(string? adminUsername = null)
         {
+            _currentAdminUsername = adminUsername;
             InitializeComponent();
             
             // Setup dependency injection
@@ -62,6 +66,18 @@ namespace LabServerAdmin
             
             // Setup event handlers
             SetupEventHandlers();
+            // Auto-refresh connected clients list while server is running
+            _clientsRefreshTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(3)
+            };
+            _clientsRefreshTimer.Tick += (s, e) =>
+            {
+                if (_isServerRunning)
+                {
+                    _ = RefreshConnectedClients();
+                }
+            };
             Loaded += MainWindow_Loaded;
             Closing += MainWindow_Closing;
             
@@ -77,7 +93,9 @@ namespace LabServerAdmin
             {
                 await _databaseService.InitializeDatabaseAsync();
                 await LoadUsageLimitAsync();
-                // Load attendance logs when server starts
+                // Load system logs when application starts
+                await RefreshSystemLogs();
+                // Load attendance logs when application starts
                 await RefreshAttendanceLogs();
             }
             catch (Exception ex)
@@ -130,14 +148,22 @@ namespace LabServerAdmin
                 {
                     await _tcpServerService.StartServerAsync();
                     _isServerRunning = true;
+                    _clientsRefreshTimer.Start();
                     ServerToggleButton.Content = "⏹️ Stop Server";
                     ServerToggleButton.Style = (Style)FindResource("DangerButton");
                     ServerStatusText.Text = "Server: Running on Port 9000";
                     UpdateStatus("Server started successfully");
                     
+                    // Log admin action
+                    if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                    {
+                        await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Start Server", "Server started on port 9000");
+                    }
+                    
                     await HandleUsageLimitOnServerStartAsync();
                     
-                    // Refresh attendance logs when server starts
+                    // Refresh system logs and attendance logs when server starts
+                    await RefreshSystemLogs();
                     await RefreshAttendanceLogs();
                 }
                 else
@@ -151,11 +177,22 @@ namespace LabServerAdmin
 
                     await _tcpServerService.StopServerAsync();
                     _isServerRunning = false;
+                    _clientsRefreshTimer.Stop();
                     ServerToggleButton.Content = "▶️ Start Server";
                     ServerToggleButton.Style = (Style)FindResource("SuccessButton");
                     ServerStatusText.Text = "Server: Stopped";
                     UpdateStatus("Server stopped");
+                    
+                    // Log admin action
+                    if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                    {
+                        await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Stop Server", "Server stopped");
+                    }
+                    
                     CloseAllRemoteWindows();
+                    
+                    // Refresh system logs when server stops
+                    await RefreshSystemLogs();
                 }
             }
             catch (Exception ex)
@@ -217,12 +254,30 @@ namespace LabServerAdmin
         {
             await _tcpServerService.SendCommandToAllAsync("lock");
             UpdateStatus("Lock command sent to all clients");
+            
+            // Log admin action
+            if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+            {
+                await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Lock All Clients", "Lock command sent to all connected clients");
+            }
+            
+            // Refresh system logs after action
+            await RefreshSystemLogs();
         }
 
         private async void UnlockAllButton_Click(object sender, RoutedEventArgs e)
         {
             await _tcpServerService.SendCommandToAllAsync("unlock");
             UpdateStatus("Unlock command sent to all clients");
+            
+            // Log admin action
+            if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+            {
+                await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Unlock All Clients", "Unlock command sent to all connected clients");
+            }
+            
+            // Refresh system logs after action
+            await RefreshSystemLogs();
         }
 
         private async void ShutdownAllButton_Click(object sender, RoutedEventArgs e)
@@ -234,6 +289,15 @@ namespace LabServerAdmin
             {
                 await _tcpServerService.SendCommandToAllAsync("shutdown");
                 UpdateStatus("Shutdown command sent to all clients");
+                
+                // Log admin action
+                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                {
+                    await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Shutdown All Clients", "Shutdown command sent to all connected clients");
+                }
+                
+                // Refresh system logs after action
+                await RefreshSystemLogs();
             }
         }
 
@@ -246,6 +310,15 @@ namespace LabServerAdmin
             {
                 await _tcpServerService.SendCommandToAllAsync("restart");
                 UpdateStatus("Restart command sent to all clients");
+                
+                // Log admin action
+                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                {
+                    await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Restart All Clients", "Restart command sent to all connected clients");
+                }
+                
+                // Refresh system logs after action
+                await RefreshSystemLogs();
             }
         }
 
@@ -253,6 +326,15 @@ namespace LabServerAdmin
         {
             await _tcpServerService.SendCommandToAllAsync("sleep");
             UpdateStatus("Sleep command sent to all clients");
+            
+            // Log admin action
+            if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+            {
+                await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Sleep All Clients", "Sleep command sent to all connected clients");
+            }
+            
+            // Refresh system logs after action
+            await RefreshSystemLogs();
         }
 
         private async void RefreshClientsButton_Click(object sender, RoutedEventArgs e)
@@ -271,6 +353,15 @@ namespace LabServerAdmin
             {
                 await _tcpServerService.SendCommandAsync(clientName, "lock");
                 UpdateStatus($"Lock command sent to {clientName}");
+                
+                // Log admin action
+                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                {
+                    await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Lock Client", $"Lock command sent to {clientName}", clientName);
+                }
+                
+                // Refresh system logs after action
+                await RefreshSystemLogs();
             }
         }
 
@@ -280,6 +371,15 @@ namespace LabServerAdmin
             {
                 await _tcpServerService.SendCommandAsync(clientName, "unlock");
                 UpdateStatus($"Unlock command sent to {clientName}");
+                
+                // Log admin action
+                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                {
+                    await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Unlock Client", $"Unlock command sent to {clientName}", clientName);
+                }
+                
+                // Refresh system logs after action
+                await RefreshSystemLogs();
             }
         }
 
@@ -294,6 +394,15 @@ namespace LabServerAdmin
                 {
                     await _tcpServerService.SendCommandAsync(clientName, "shutdown");
                     UpdateStatus($"Shutdown command sent to {clientName}");
+                    
+                    // Log admin action
+                    if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                    {
+                        await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Shutdown Client", $"Shutdown command sent to {clientName}", clientName);
+                    }
+                    
+                    // Refresh system logs after action
+                    await RefreshSystemLogs();
                 }
             }
         }
@@ -309,6 +418,15 @@ namespace LabServerAdmin
                 {
                     await _tcpServerService.SendCommandAsync(clientName, "restart");
                     UpdateStatus($"Restart command sent to {clientName}");
+                    
+                    // Log admin action
+                    if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                    {
+                        await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Restart Client", $"Restart command sent to {clientName}", clientName);
+                    }
+                    
+                    // Refresh system logs after action
+                    await RefreshSystemLogs();
                 }
             }
         }
@@ -319,6 +437,15 @@ namespace LabServerAdmin
             {
                 await _tcpServerService.SendCommandAsync(clientName, "sleep");
                 UpdateStatus($"Sleep command sent to {clientName}");
+                
+                // Log admin action
+                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                {
+                    await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Sleep Client", $"Sleep command sent to {clientName}", clientName);
+                }
+                
+                // Refresh system logs after action
+                await RefreshSystemLogs();
             }
         }
 
@@ -504,6 +631,9 @@ namespace LabServerAdmin
                         }
                     });
                 }
+                
+                // Refresh system logs when client connects
+                _ = RefreshSystemLogs();
             });
         }
 
@@ -519,6 +649,9 @@ namespace LabServerAdmin
                 }
                 UpdateConnectedClientsCount();
                 UpdateStatus($"Client {e.ClientName} disconnected");
+                
+                // Refresh system logs when client disconnects
+                _ = RefreshSystemLogs();
             });
         }
 
@@ -1055,6 +1188,16 @@ namespace LabServerAdmin
                 {
                     await ActivateUsageLimitSessionAsync(forceRestart: true);
                 UpdateStatus($"Usage limit of {hours:0.##} hours applied to all clients");
+                
+                // Log admin action
+                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                {
+                    await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Set Usage Limit", $"Usage limit of {hours:0.##} hours applied to all clients");
+                }
+                
+                // Refresh system logs after action
+                await RefreshSystemLogs();
+                
                 MessageBox.Show($"Usage limit of {hours:0.##} hours applied to all connected clients.", "Usage Limit Applied", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 else
@@ -1086,6 +1229,16 @@ namespace LabServerAdmin
                 }
 
                 UpdateStatus("Usage limit cleared");
+                
+                // Log admin action
+                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                {
+                    await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Clear Usage Limit", "Usage limit cleared for all clients");
+                }
+                
+                // Refresh system logs after action
+                await RefreshSystemLogs();
+                
                 MessageBox.Show("Usage limit cleared for all clients.", "Usage Limit Cleared", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
@@ -1101,6 +1254,12 @@ namespace LabServerAdmin
 
         private async Task HandleLogoutAsync()
         {
+            // Log admin action
+            if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+            {
+                await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Logout", "Admin logged out");
+            }
+            
             await CleanupSessionStateAsync();
 
             var app = Application.Current;

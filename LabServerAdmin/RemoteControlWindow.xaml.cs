@@ -8,8 +8,6 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Drawing;
-using System.Drawing.Imaging;
 using LabServerAdmin.Services;
 
 namespace LabServerAdmin
@@ -109,8 +107,7 @@ namespace LabServerAdmin
                 }
 
                 BitmapImage bitmap;
-                var ms = new MemoryStream(e.ImageBytes);
-                try
+                using (var ms = new MemoryStream(e.ImageBytes))
                 {
                     bitmap = new BitmapImage();
                     bitmap.BeginInit();
@@ -118,45 +115,11 @@ namespace LabServerAdmin
                     bitmap.StreamSource = ms;
                     bitmap.EndInit();
                     bitmap.Freeze();
-                    ms.Dispose(); // Dispose after EndInit completes
-                }
-                catch (Exception imgEx)
-                {
-                    ms.Dispose();
-                    // If direct loading fails, try converting via System.Drawing
-                    try
-                    {
-                        using (var inputStream = new MemoryStream(e.ImageBytes))
-                        using (var bmp = new Bitmap(inputStream))
-                        {
-                            using (var outStream = new MemoryStream())
-                            {
-                                bmp.Save(outStream, ImageFormat.Png);
-                                outStream.Position = 0;
-                                
-                                bitmap = new BitmapImage();
-                                bitmap.BeginInit();
-                                bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                                bitmap.StreamSource = outStream;
-                                bitmap.EndInit();
-                                bitmap.Freeze();
-                            }
-                        }
-                    }
-                    catch (Exception convertEx)
-                    {
-                        Dispatcher.Invoke(() =>
-                        {
-                            StatusText.Text = $"Image error: {imgEx.Message} / {convertEx.Message}";
-                        });
-                        return;
-                    }
                 }
 
-                var finalBitmap = bitmap; // Capture for closure
                 Dispatcher.Invoke(() =>
                 {
-                    ScreenImage.Source = finalBitmap;
+                    ScreenImage.Source = bitmap;
                     StatusText.Text = $"Last frame: {DateTime.Now:T} ({e.ImageBytes.Length} bytes)";
                 });
             }

@@ -41,6 +41,7 @@ namespace LabServerAdmin
 
         private HwndSource? _source;
         public bool IsAuthenticated { get; private set; } = false;
+        public string? AuthenticatedUsername { get; private set; } = null;
 
         public LoginWindow(DatabaseService? databaseService = null, bool requireAuthenticationToClose = true)
         {
@@ -201,8 +202,9 @@ namespace LabServerAdmin
 
                 if (isValid)
                 {
-                    // Set authenticated flag first
+                    // Set authenticated flag and username first
                     IsAuthenticated = true;
+                    AuthenticatedUsername = username;
                     ErrorTextBlock.Visibility = Visibility.Collapsed;
                     
                     // Log successful login attempt (fire and forget to not delay window close)

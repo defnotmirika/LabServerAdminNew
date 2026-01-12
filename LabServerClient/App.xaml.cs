@@ -9,6 +9,45 @@ namespace LabServerClient
     public partial class App : Application
     {
         private DatabaseService? _databaseService;
+        
+        public void ShowLoginWindow()
+        {
+            var loginWindow = new LoginWindow(_databaseService);
+            bool? dialogResult = loginWindow.ShowDialog();
+            
+            if (loginWindow.IsAuthenticated && dialogResult == true)
+            {
+                var username = loginWindow.AuthenticatedUsername;
+                var userRole = loginWindow.UserRole;
+                var isAdmin = userRole == "Admin";
+                var clientId = loginWindow.AuthenticatedClientId;
+                
+                var clientWindow = new ClientWindow(_databaseService, isAdmin);
+                
+                if (isAdmin)
+                {
+                    clientWindow.Show();
+                    clientWindow.Activate();
+                    clientWindow.Focus();
+                }
+                else
+                {
+                    clientWindow.WindowState = WindowState.Minimized;
+                    clientWindow.ShowInTaskbar = false;
+                    clientWindow.Show();
+                    
+                    var sessionWindow = new SessionWindow(clientWindow, clientId, _databaseService);
+                    clientWindow.SetSessionWindow(sessionWindow); // Set reference for remote viewing
+                    sessionWindow.Show();
+                    sessionWindow.Activate();
+                    sessionWindow.Focus();
+                }
+            }
+            else
+            {
+                Shutdown();
+            }
+        }
 
         private void Application_Startup(object sender, StartupEventArgs e)
         {
@@ -44,14 +83,37 @@ namespace LabServerClient
                 // Only show main window if login was successful
                 if (loginWindow != null && loginWindow.IsAuthenticated && dialogResult == true)
                 {
+                    var username = loginWindow.AuthenticatedUsername;
+                    var userRole = loginWindow.UserRole;
+                    var isAdmin = userRole == "Admin";
+                    var clientId = loginWindow.AuthenticatedClientId;
+                    
                     await Application.Current.Dispatcher.InvokeAsync(() =>
                     {
                         try
                         {
-                            var clientWindow = new ClientWindow(_databaseService);
-                            clientWindow.Show();
-                            clientWindow.Activate();
-                            clientWindow.Focus();
+                            var clientWindow = new ClientWindow(_databaseService, isAdmin);
+                            
+                            if (isAdmin)
+                            {
+                                // Admin: Show ClientWindow with configuration
+                                clientWindow.Show();
+                                clientWindow.Activate();
+                                clientWindow.Focus();
+                            }
+                            else
+                            {
+                                // Regular user: Show SessionWindow with timer and logout, hide ClientWindow
+                                clientWindow.WindowState = WindowState.Minimized;
+                                clientWindow.ShowInTaskbar = false;
+                                clientWindow.Show();
+                                
+                                var sessionWindow = new SessionWindow(clientWindow, clientId, _databaseService);
+                                clientWindow.SetSessionWindow(sessionWindow); // Set reference for remote viewing
+                                sessionWindow.Show();
+                                sessionWindow.Activate();
+                                sessionWindow.Focus();
+                            }
                             
                             // Change shutdown mode to normal now that we have a main window
                             this.ShutdownMode = ShutdownMode.OnMainWindowClose;

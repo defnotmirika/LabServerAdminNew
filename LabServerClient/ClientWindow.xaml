@@ -3,104 +3,128 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:LabServerClient"
         mc:Ignorable="d"
-        Title="Lab Server Client" Height="344" Width="400"
+        Title="Lab Server Client"
+        Height="420"
+        Width="420"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
-        WindowStyle="SingleBorderWindow">
-    
+        Background="#050d60">
     <Window.Resources>
-        <Style x:Key="StatusConnected" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="Green"/>
-            <Setter Property="FontWeight" Value="Bold"/>
+        <SolidColorBrush x:Key="PrimaryBrush" Color="#050d60" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#f8b800" />
+
+        <Style x:Key="PrimaryButton" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Padding" Value="14,8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#ffd24d" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#e0aa00" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.6" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
-        
+
+        <Style x:Key="StatusConnected" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
         <Style x:Key="StatusDisconnected" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="Red"/>
-            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="#E53935" />
+            <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
     </Window.Resources>
 
     <Grid Margin="20">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+        <Border Background="White"
+                CornerRadius="12"
+                Padding="20">
+            <StackPanel>
+                <TextBlock Text="Client Configuration"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource PrimaryBrush}"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,16" />
 
-        <!-- Header -->
-        <Grid Grid.Row="0" Margin="0,0,0,20">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock Text="Client Configuration" FontSize="15" FontWeight="Bold" 
-                       HorizontalAlignment="Left"/>
-            <Button Grid.Column="1" x:Name="LogoutButton" Content="🚪 Logout" Height="30" Padding="12,6" Margin="10,0,0,0"
-                    Click="LogoutButton_Click"/>
-        </Grid>
+                <StackPanel Margin="0,0,0,12">
+                    <TextBlock Text="Server IP" FontSize="13" Foreground="{StaticResource PrimaryBrush}" />
+                    <TextBox x:Name="ServerIpTextBox"
+                             Height="28"
+                             Margin="0,4,0,0"
+                             LostFocus="ServerIpTextBox_LostFocus" />
+                </StackPanel>
 
-        <!-- Connection Status -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
-            <TextBlock Text="Status:" FontWeight="SemiBold" Margin="0,0,10,0"/>
-            <TextBlock x:Name="StatusText" Text="Disconnected" Style="{StaticResource StatusDisconnected}"/>
-        </StackPanel>
+                <StackPanel Margin="0,0,0,12">
+                    <TextBlock Text="PC Name" FontSize="13" Foreground="{StaticResource PrimaryBrush}" />
+                    <TextBox x:Name="PcNameTextBox"
+                             Height="28"
+                             Margin="0,4,0,0"
+                             LostFocus="PcNameTextBox_LostFocus" />
+                </StackPanel>
 
-        <!-- Server Configuration -->
-        <GroupBox Grid.Row="2" Header="Server Configuration" Margin="0,0,0,10">
-            <Grid Margin="10">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Center"
+                            Margin="0,10,0,0">
+                    <Button x:Name="SaveButton"
+                            Content="Save Configuration"
+                            Width="170"
+                            Style="{StaticResource PrimaryButton}"
+                            Click="SaveButton_Click" />
+                </StackPanel>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Server IP:" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <TextBox x:Name="ServerIpTextBox" Grid.Row="0" Grid.Column="1" Text="192.168.1.100" Margin="0,0,10,0"/>
-                <Button x:Name="ConnectButton" Grid.Row="0" Grid.Column="2" Content="Connect" 
-                        Click="ConnectButton_Click" Padding="10,5"/>
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Center"
+                            Margin="0,16,0,0">
+                    <Button x:Name="LogoutButton"
+                            Content="Logout"
+                            Width="160"
+                            Style="{StaticResource PrimaryButton}"
+                            Background="#f0625f"
+                            Foreground="White"
+                            Click="LogoutButton_Click" />
+                </StackPanel>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="PC Name:" VerticalAlignment="Center" Margin="0,10,10,0"/>
-                <TextBox x:Name="PcNameTextBox" Grid.Row="1" Grid.Column="1" Text="PC 1" Margin="0,10,10,0"/>
-                <Button x:Name="DisconnectButton" Grid.Row="1" Grid.Column="2" Content="Disconnect" 
-                        Click="DisconnectButton_Click" Padding="10,5" Margin="0,10,0,0" IsEnabled="False"/>
-            </Grid>
-        </GroupBox>
-
-        <!-- Current Command -->
-        <GroupBox Grid.Row="3" Header="Current Command" Margin="0,0,0,10">
-            <StackPanel Margin="10">
-                <TextBlock x:Name="CurrentCommandText" Text="None" FontStyle="Italic"
-                           HorizontalAlignment="Center" Foreground="Gray"/>
-                <TextBlock x:Name="UsageLimitStatusText" Text="Usage limit: none" Margin="0,10,0,0"
-                           HorizontalAlignment="Center" Foreground="Gray"/>
+                <Border Background="#FAFAFA"
+                        CornerRadius="8"
+                        Padding="12"
+                        Margin="0,16,0,0"
+                        BorderBrush="#E0E0E0"
+                        BorderThickness="1">
+                    <StackPanel>
+                        <TextBlock Text="Status"
+                                   FontSize="13"
+                                   Foreground="{StaticResource PrimaryBrush}" />
+                        <TextBlock x:Name="StatusText"
+                                   Text="Disconnected"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   Style="{StaticResource StatusDisconnected}" />
+                    </StackPanel>
+                </Border>
             </StackPanel>
-        </GroupBox>
-
-        <!-- Logs -->
-        <GroupBox Grid.Row="4" Header="Activity Log">
-            <ScrollViewer>
-                <TextBlock x:Name="LogTextBlock" TextWrapping="Wrap" Margin="10" 
-                           FontFamily="Consolas" FontSize="10"/>
-            </ScrollViewer>
-        </GroupBox>
-
-        <!-- Status Bar -->
-        <StatusBar Grid.Row="5" Background="#F5F5F5">
-            <StatusBarItem>
-                <TextBlock x:Name="StatusBarText" Text="Ready"/>
-            </StatusBarItem>
-            <StatusBarItem HorizontalAlignment="Right">
-                <TextBlock x:Name="LastResponseText" Text="Last Response: Never"/>
-            </StatusBarItem>
-        </StatusBar>
+        </Border>
     </Grid>
 </Window>
