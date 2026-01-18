@@ -153,25 +153,33 @@ namespace LabServerClient.Services
         {
             try
             {
-                using var connection = new NpgsqlConnection(_connectionString);
+                using var connection = new Npgsql.NpgsqlConnection(_connectionString);
                 await connection.OpenAsync();
 
                 var passwordHash = BCrypt.Net.BCrypt.HashPassword(password);
 
                 var sql = @"
-                    INSERT INTO clients (username, password_hash, pc_name, created_at)
-                    VALUES (@username, @password_hash, @pc_name, NOW())
-                    ON CONFLICT (username) DO UPDATE
-                        SET pc_name = EXCLUDED.pc_name
+                    INSERT INTO clients (username, password_hash, created_at)
+                    VALUES (@username, @password_hash, NOW())
+                    ON CONFLICT (username) DO NOTHING
                     RETURNING id;";
 
-                using var cmd = new NpgsqlCommand(sql, connection);
+                using var cmd = new Npgsql.NpgsqlCommand(sql, connection);
                 cmd.Parameters.AddWithValue("@username", username);
                 cmd.Parameters.AddWithValue("@password_hash", passwordHash);
-                cmd.Parameters.AddWithValue("@pc_name", pcName);
 
                 var result = await cmd.ExecuteScalarAsync();
-                return result != null && result != DBNull.Value ? Convert.ToInt32(result) : null;
+                if (result != null && result != DBNull.Value)
+                {
+                    return Convert.ToInt32(result);
+                }
+
+                // If conflict (user exists), just return the existing ID
+                var getIdSql = "SELECT id FROM clients WHERE username = @username LIMIT 1";
+                using var getCmd = new Npgsql.NpgsqlCommand(getIdSql, connection);
+                getCmd.Parameters.AddWithValue("@username", username);
+                var existingId = await getCmd.ExecuteScalarAsync();
+                return existingId != null && existingId != DBNull.Value ? Convert.ToInt32(existingId) : null;
             }
             catch
             {

@@ -50,6 +50,28 @@ namespace LabServerAdmin.Services
             using var command = new NpgsqlCommand(createConnectedClients, connection);
             await command.ExecuteNonQueryAsync();
 
+            // Create login_requests table if it doesn't exist
+            var createLoginRequests = @"
+                CREATE TABLE IF NOT EXISTS login_requests (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(50) NOT NULL,
+                    pc_name VARCHAR(100) NOT NULL,
+                    ip_address VARCHAR(45),
+                    request_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    request_message VARCHAR(500),
+                    status VARCHAR(20) NOT NULL DEFAULT 'Pending',
+                    processed_by VARCHAR(50),
+                    processed_timestamp TIMESTAMP,
+                    CONSTRAINT chk_status CHECK (status IN ('Pending', 'Approved', 'Declined'))
+                );
+                
+                CREATE INDEX IF NOT EXISTS idx_login_requests_status ON login_requests(status);
+                CREATE INDEX IF NOT EXISTS idx_login_requests_timestamp ON login_requests(request_timestamp DESC);
+            ";
+
+            using var loginRequestCommand = new NpgsqlCommand(createLoginRequests, connection);
+            await loginRequestCommand.ExecuteNonQueryAsync();
+
             // Ensure UNIQUE constraint exists on connected_clients.name
             var ensureUniqueConstraint = @"
                 DO $$ 
@@ -935,5 +957,254 @@ namespace LabServerAdmin.Services
                 await LogSystemActionAsync("Admin Action Logging Error", username, "Error", $"Failed to log admin action: {ex.Message}");
             }
         }
+
+        #region Login Request Management
+
+        /// <summary>
+        /// Creates a new login request from a client
+        /// </summary>
+        /// <param name="username">Username requesting access</param>
+        /// <param name="pcName">PC name making the request</param>
+        /// <param name="ipAddress">IP address of the client</param>
+        /// <param name="requestMessage">Optional message from client</param>
+        /// <returns>The ID of the created request</returns>
+        public async Task<int> CreateLoginRequestAsync(string username, string pcName, string? ipAddress = null, string? requestMessage = null)
+        {
+            using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var query = @"
+                INSERT INTO login_requests (username, pc_name, ip_address, request_message, request_timestamp, status)
+                VALUES (@username, @pcName, @ipAddress, @requestMessage, CURRENT_TIMESTAMP, 'Pending')
+                RETURNING id
+            ";
+
+            using var command = new NpgsqlCommand(query, connection);
+            command.Parameters.AddWithValue("@username", username);
+            command.Parameters.AddWithValue("@pcName", pcName);
+            command.Parameters.AddWithValue("@ipAddress", ipAddress ?? (object)DBNull.Value);
+            command.Parameters.AddWithValue("@requestMessage", requestMessage ?? (object)DBNull.Value);
+
+            var requestId = await command.ExecuteScalarAsync();
+            
+            // Log the request in system logs
+            await LogSystemActionAsync(
+                "Login Request", 
+                pcName, 
+                "INFO", 
+                $"{pcName} requests to approve login for user '{username}'"
+            );
+
+            return Convert.ToInt32(requestId);
+        }
+
+        /// <summary>
+        /// Retrieves all pending login requests
+        /// </summary>
+        /// <returns>List of pending LoginRequest objects</returns>
+        public async Task<List<LoginRequest>> GetPendingLoginRequestsAsync()
+        {
+            using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var query = @"
+                SELECT id, username, pc_name, ip_address, request_timestamp, 
+                       request_message, status, processed_by, processed_timestamp
+                FROM login_requests
+                WHERE status = 'Pending'
+                ORDER BY request_timestamp DESC
+            ";
+
+            using var command = new NpgsqlCommand(query, connection);
+            var requests = new List<LoginRequest>();
+            using var reader = await command.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                requests.Add(new LoginRequest
+                {
+                    Id = reader.GetInt32("id"),
+                    Username = reader.GetString("username"),
+                    PcName = reader.GetString("pc_name"),
+                    IpAddress = reader.IsDBNull("ip_address") ? null : reader.GetString("ip_address"),
+                    RequestTimestamp = reader.GetDateTime("request_timestamp"),
+                    RequestMessage = reader.IsDBNull("request_message") ? null : reader.GetString("request_message"),
+                    Status = reader.GetString("status"),
+                    ProcessedBy = reader.IsDBNull("processed_by") ? null : reader.GetString("processed_by"),
+                    ProcessedTimestamp = reader.IsDBNull("processed_timestamp") ? null : reader.GetDateTime("processed_timestamp")
+                });
+            }
+
+            return requests;
+        }
+
+        /// <summary>
+        /// Retrieves all login requests (for history/reporting)
+        /// </summary>
+        /// <param name="limit">Maximum number of requests to return</param>
+        /// <returns>List of LoginRequest objects</returns>
+        public async Task<List<LoginRequest>> GetAllLoginRequestsAsync(int limit = 100)
+        {
+            using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var query = @"
+                SELECT id, username, pc_name, ip_address, request_timestamp, 
+                       request_message, status, processed_by, processed_timestamp
+                FROM login_requests
+                ORDER BY request_timestamp DESC
+                LIMIT @limit
+            ";
+
+            using var command = new NpgsqlCommand(query, connection);
+            command.Parameters.AddWithValue("@limit", limit);
+
+            var requests = new List<LoginRequest>();
+            using var reader = await command.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                requests.Add(new LoginRequest
+                {
+                    Id = reader.GetInt32("id"),
+                    Username = reader.GetString("username"),
+                    PcName = reader.GetString("pc_name"),
+                    IpAddress = reader.IsDBNull("ip_address") ? null : reader.GetString("ip_address"),
+                    RequestTimestamp = reader.GetDateTime("request_timestamp"),
+                    RequestMessage = reader.IsDBNull("request_message") ? null : reader.GetString("request_message"),
+                    Status = reader.GetString("status"),
+                    ProcessedBy = reader.IsDBNull("processed_by") ? null : reader.GetString("processed_by"),
+                    ProcessedTimestamp = reader.IsDBNull("processed_timestamp") ? null : reader.GetDateTime("processed_timestamp")
+                });
+            }
+
+            return requests;
+        }
+
+        /// <summary>
+        /// Approves a login request
+        /// </summary>
+        /// <param name="requestId">ID of the request to approve</param>
+        /// <param name="adminUsername">Username of the admin approving the request</param>
+        /// <returns>True if successful, false otherwise</returns>
+        public async Task<bool> ApproveLoginRequestAsync(int requestId, string adminUsername)
+        {
+            using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            // First, get the request details for logging
+            var getRequestQuery = "SELECT username, pc_name FROM login_requests WHERE id = @id AND status = 'Pending'";
+            using var getCmd = new NpgsqlCommand(getRequestQuery, connection);
+            getCmd.Parameters.AddWithValue("@id", requestId);
+            
+            string? username = null;
+            string? pcName = null;
+            
+            using (var reader = await getCmd.ExecuteReaderAsync())
+            {
+                if (await reader.ReadAsync())
+                {
+                    username = reader.GetString("username");
+                    pcName = reader.GetString("pc_name");
+                }
+                else
+                {
+                    return false; // Request not found or already processed
+                }
+            }
+
+            // Update the request status
+            var query = @"
+                UPDATE login_requests
+                SET status = 'Approved',
+                    processed_by = @processedBy,
+                    processed_timestamp = CURRENT_TIMESTAMP
+                WHERE id = @id AND status = 'Pending'
+            ";
+
+            using var command = new NpgsqlCommand(query, connection);
+            command.Parameters.AddWithValue("@id", requestId);
+            command.Parameters.AddWithValue("@processedBy", adminUsername);
+
+            var rowsAffected = await command.ExecuteNonQueryAsync();
+
+            if (rowsAffected > 0)
+            {
+                // Log the approval
+                await LogSystemActionAsync(
+                    "Login Request Approved",
+                    pcName ?? "Unknown",
+                    "INFO",
+                    $"Admin '{adminUsername}' approved login request for user '{username}' on PC '{pcName}'"
+                );
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Declines a login request
+        /// </summary>
+        /// <param name="requestId">ID of the request to decline</param>
+        /// <param name="adminUsername">Username of the admin declining the request</param>
+        /// <returns>True if successful, false otherwise</returns>
+        public async Task<bool> DeclineLoginRequestAsync(int requestId, string adminUsername)
+        {
+            using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            // First, get the request details for logging
+            var getRequestQuery = "SELECT username, pc_name FROM login_requests WHERE id = @id AND status = 'Pending'";
+            using var getCmd = new NpgsqlCommand(getRequestQuery, connection);
+            getCmd.Parameters.AddWithValue("@id", requestId);
+            
+            string? username = null;
+            string? pcName = null;
+            
+            using (var reader = await getCmd.ExecuteReaderAsync())
+            {
+                if (await reader.ReadAsync())
+                {
+                    username = reader.GetString("username");
+                    pcName = reader.GetString("pc_name");
+                }
+                else
+                {
+                    return false; // Request not found or already processed
+                }
+            }
+
+            // Update the request status
+            var query = @"
+                UPDATE login_requests
+                SET status = 'Declined',
+                    processed_by = @processedBy,
+                    processed_timestamp = CURRENT_TIMESTAMP
+                WHERE id = @id AND status = 'Pending'
+            ";
+
+            using var command = new NpgsqlCommand(query, connection);
+            command.Parameters.AddWithValue("@id", requestId);
+            command.Parameters.AddWithValue("@processedBy", adminUsername);
+
+            var rowsAffected = await command.ExecuteNonQueryAsync();
+
+            if (rowsAffected > 0)
+            {
+                // Log the decline
+                await LogSystemActionAsync(
+                    "Login Request Declined",
+                    pcName ?? "Unknown",
+                    "INFO",
+                    $"Admin '{adminUsername}' declined login request for user '{username}' on PC '{pcName}'"
+                );
+                return true;
+            }
+
+            return false;
+        }
+
+        #endregion
     }
 }

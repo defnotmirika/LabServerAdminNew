@@ -38,6 +38,7 @@ namespace LabServerClient
         private readonly DispatcherTimer _updateTimer;
         private readonly int? _clientId;
         private readonly string? _connectionString;
+
         public event EventHandler<string>? CurrentCommandChanged;
 
         // Remote viewing (screen sharing) fields
@@ -155,8 +156,40 @@ namespace LabServerClient
 
             if (result == MessageBoxResult.Yes)
             {
+                var app = Application.Current as App;
+
+                // Prevent app shutdown when closing windows during logout
+                if (app != null)
+                {
+                    app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                }
+
                 _allowClose = true;
-                Close();
+
+                // Close this window
+                try
+                {
+                    Close();
+                }
+                catch { }
+
+                // Close ClientWindow
+                if (_clientWindow != null)
+                {
+                    try
+                    {
+                        await _clientWindow.DisconnectFromServer();
+                        _clientWindow.Close();
+                    }
+                    catch { }
+                }
+
+                // Show login again
+                if (app != null)
+                {
+                    app.ShowLoginWindow();
+                    app.ShutdownMode = ShutdownMode.OnMainWindowClose;
+                }
             }
         }
 

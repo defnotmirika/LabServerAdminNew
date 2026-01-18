@@ -5,10 +5,9 @@
         WindowStyle="None"
         ResizeMode="NoResize"
         Topmost="True"
-        ShowInTaskbar="True"
+        ShowInTaskbar="False"
+        AllowsTransparency="False"
         Background="#F5F5F5">
-
-
 
     <Window.Resources>
         <Style TargetType="Button">
@@ -34,7 +33,7 @@
     <Grid Background="#F5F5F5">
 
         <!-- Centered Login Card -->
-        <Border Width="400"
+        <Border Width="420"
             Padding="30"
             CornerRadius="10"
             Background="White"
@@ -74,6 +73,24 @@
 
                 <!-- Login Form -->
                 <StackPanel Grid.Row="1">
+
+                    <!-- PC Name Display -->
+                    <TextBlock Text="PC Name" 
+                           FontWeight="SemiBold" 
+                           FontSize="12"
+                           Foreground="#7F8C8D"
+                           Margin="0,0,0,5"/>
+
+                    <TextBlock x:Name="PcNameTextBlock"
+                           Text=""
+                           FontSize="13"
+                           Background="#ECF0F1"
+                           Padding="10"
+                           Margin="0,0,0,15"
+                           Foreground="#34495E"
+                           TextAlignment="Center"
+                           VerticalAlignment="Center"
+                           MinHeight="40"/>
 
                     <!-- Username -->
                     <TextBlock Text="Username" 

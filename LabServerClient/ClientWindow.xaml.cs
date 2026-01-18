@@ -27,7 +27,7 @@ namespace LabServerClient
             _sessionWindow = sessionWindow;
         }
 
-        public ClientWindow(DatabaseService? databaseService = null, bool isAdmin = false)
+        public ClientWindow(DatabaseService? databaseService = null, bool isAdmin = false, string? username = null)
         {
             _databaseService = databaseService;
             _isAdmin = isAdmin;
@@ -219,7 +219,7 @@ namespace LabServerClient
             }
         }
 
-        private void SaveButton_Click(object sender, RoutedEventArgs e)
+        private async void SaveButton_Click(object sender, RoutedEventArgs e)
         {
             SaveSettings();
             UpdateStatus("Configuration saved");

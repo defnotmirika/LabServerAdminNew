@@ -7,7 +7,10 @@
         ResizeMode="NoResize"
         Topmost="True"
         ShowInTaskbar="True"
-        Background="#F5F5F5">
+        Background="#F5F5F5"
+        AllowsTransparency="False"
+        SnapsToDevicePixels="True"
+        UseLayoutRounding="True">
 
 
 

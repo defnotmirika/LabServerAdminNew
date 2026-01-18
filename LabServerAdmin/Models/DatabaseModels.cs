@@ -169,4 +169,74 @@ namespace LabServerAdmin.Models
         
         public string Status { get; set; } = "Online";
     }
+
+    /// <summary>
+    /// Represents a login request from a client application
+    /// </summary>
+    public class LoginRequest
+    {
+        [Key]
+        public int Id { get; set; }
+        
+        /// <summary>
+        /// The username requesting to log in
+        /// </summary>
+        [Required]
+        [MaxLength(50)]
+        public string Username { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// The PC name (client name) making the request
+        /// </summary>
+        [Required]
+        [MaxLength(100)]
+        public string PcName { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// IP address of the client making the request
+        /// </summary>
+        [MaxLength(45)]
+        public string? IpAddress { get; set; }
+        
+        /// <summary>
+        /// Timestamp when the request was created
+        /// </summary>
+        public DateTime RequestTimestamp { get; set; } = DateTime.UtcNow;
+        
+        /// <summary>
+        /// Optional message from the client
+        /// </summary>
+        [MaxLength(500)]
+        public string? RequestMessage { get; set; }
+        
+        /// <summary>
+        /// Status: Pending, Approved, Declined
+        /// </summary>
+        [Required]
+        [MaxLength(20)]
+        public string Status { get; set; } = "Pending";
+        
+        /// <summary>
+        /// Username of the admin who approved/declined
+        /// </summary>
+        [MaxLength(50)]
+        public string? ProcessedBy { get; set; }
+        
+        /// <summary>
+        /// Timestamp when the request was processed
+        /// </summary>
+        public DateTime? ProcessedTimestamp { get; set; }
+        
+        /// <summary>
+        /// Computed property for display - formatted request time
+        /// </summary>
+        [NotMapped]
+        public string RequestTimeFormatted => RequestTimestamp.ToString("yyyy-MM-dd HH:mm:ss");
+        
+        /// <summary>
+        /// Computed property for display - pending status check
+        /// </summary>
+        [NotMapped]
+        public bool IsPending => Status == "Pending";
+    }
 }

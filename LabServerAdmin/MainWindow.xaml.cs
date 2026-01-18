@@ -33,7 +33,8 @@ namespace LabServerAdmin
         private ObservableCollection<ClientInfo> _connectedClients = new();
         private ObservableCollection<SystemLog> _systemLogs = new();
         private ObservableCollection<AttendanceLog> _attendanceLogs = new();
-        
+        private ObservableCollection<LoginRequest> _loginRequests = new();
+
         private bool _isServerRunning = false;
         private readonly DispatcherTimer _clientsRefreshTimer;
         private bool _isVoiceEnabled = false;
@@ -63,7 +64,8 @@ namespace LabServerAdmin
             ClientsDataGrid.ItemsSource = _connectedClients;
             SystemLogsDataGrid.ItemsSource = _systemLogs;
             AttendanceLogsDataGrid.ItemsSource = _attendanceLogs;
-            
+            LoginRequestsDataGrid.ItemsSource = _loginRequests;
+
             // Setup event handlers
             SetupEventHandlers();
             // Auto-refresh connected clients list while server is running
@@ -97,6 +99,8 @@ namespace LabServerAdmin
                 await RefreshSystemLogs();
                 // Load attendance logs when application starts
                 await RefreshAttendanceLogs();
+                // Load login requests when application starts
+                await RefreshLoginRequests();
             }
             catch (Exception ex)
             {
@@ -745,6 +749,33 @@ namespace LabServerAdmin
             }
         }
 
+        private async Task RefreshLoginRequests()
+        {
+            try
+            {
+                var logs = await _databaseService.GetPendingLoginRequestsAsync();
+                _loginRequests.Clear();
+                
+                foreach (var log in logs)
+                {
+                    _loginRequests.Add(log);
+                }
+                
+                UpdatePendingRequestsCount();
+                UpdateStatus($"Loaded {logs.Count} login request(s)");
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Error refreshing login requests: {ex.Message}");
+            }
+        }
+
+        private void UpdatePendingRequestsCount()
+        {
+            var pendingCount = _loginRequests.Count(r => r.Status == "Pending");
+            PendingRequestsCountText.Text = $"Pending: {pendingCount}";
+        }
+
         private void FilterTodayButton_Click(object sender, RoutedEventArgs e)
         {
             var today = DateTime.Today;
@@ -786,6 +817,141 @@ namespace LabServerAdmin
         {
             // Allow default sorting behavior
             e.Handled = false;
+        }
+
+        /// <summary>
+        /// Refresh the login requests button click handler
+        /// </summary>
+        private async void RefreshLoginRequestsButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RefreshLoginRequests();
+            UpdateStatus("Login requests refreshed");
+        }
+
+        /// <summary>
+        /// Approve a login request
+        /// </summary>
+        private async void ApproveLoginRequestButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button || button.Tag is not int requestId)
+            {
+                return;
+            }
+
+            var request = _loginRequests.FirstOrDefault(r => r.Id == requestId);
+            if (request == null)
+            {
+                MessageBox.Show("Login request not found.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            var result = MessageBox.Show(
+                $"Approve login request for user '{request.Username}' on PC '{request.PcName}'?",
+                "Confirm Approval",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            try
+            {
+                var success = await _databaseService.ApproveLoginRequestAsync(requestId, _currentAdminUsername ?? "admin");
+
+                if (success)
+                {
+                    await RefreshLoginRequests();
+                    UpdateStatus($"Login request from {request.PcName} approved");
+
+                    MessageBox.Show(
+                        $"Login request approved for '{request.Username}' on '{request.PcName}'.",
+                        "Request Approved",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+                else
+                {
+                    MessageBox.Show(
+                        "Failed to approve login request. It may have already been processed.",
+                        "Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Error approving login request: {ex.Message}",
+                    "Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                UpdateStatus($"Error approving login request: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Decline a login request
+        /// </summary>
+        private async void DeclineLoginRequestButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button || button.Tag is not int requestId)
+            {
+                return;
+            }
+
+            var request = _loginRequests.FirstOrDefault(r => r.Id == requestId);
+            if (request == null)
+            {
+                MessageBox.Show("Login request not found.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            var result = MessageBox.Show(
+                $"Decline login request for user '{request.Username}' on PC '{request.PcName}'?",
+                "Confirm Decline",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (result != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            try
+            {
+                var success = await _databaseService.DeclineLoginRequestAsync(requestId, _currentAdminUsername ?? "admin");
+
+                if (success)
+                {
+                    await RefreshLoginRequests();
+                    UpdateStatus($"Login request from {request.PcName} declined");
+
+                    MessageBox.Show(
+                        $"Login request declined for '{request.Username}' on '{request.PcName}'.",
+                        "Request Declined",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+                else
+                {
+                    MessageBox.Show(
+                        "Failed to decline login request. It may have already been processed.",
+                        "Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Error declining login request: {ex.Message}",
+                    "Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                UpdateStatus($"Error declining login request: {ex.Message}");
+            }
         }
 
         private async Task ExportSystemLogs(string filePath)
@@ -1332,6 +1498,7 @@ namespace LabServerAdmin
             _connectedClients.Clear();
             _systemLogs.Clear();
             _attendanceLogs.Clear();
+            _loginRequests.Clear();
             UpdateConnectedClientsCount();
             UpdateStatus("Session cleared");
         }

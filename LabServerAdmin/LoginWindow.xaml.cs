@@ -30,6 +30,9 @@ namespace LabServerAdmin
         [DllImport("user32.dll")]
         private static extern bool BlockInput(bool fBlockIt);
 
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
         private const int GWL_EXSTYLE = -20;
         private const int WS_EX_TOPMOST = 0x00000008;
         private const int WS_EX_NOACTIVATE = 0x08000000;
@@ -70,6 +73,21 @@ namespace LabServerAdmin
             {
                 RegisterHotKey(hwnd, HOTKEY_ID, MOD_ALT, VK_TAB);
             }
+            
+            // Disable window animations and transitions
+            DisableWindowAnimations(hwnd);
+        }
+
+        /// <summary>
+        /// Disables window animations and transitions for a specific window
+        /// </summary>
+        private void DisableWindowAnimations(IntPtr hwnd)
+        {
+            const int WM_CHANGEUISTATE = 0x0127;
+            const int UIS_INITIALIZE = 3;
+            
+            // Disable UI state animations
+            SendMessage(hwnd, WM_CHANGEUISTATE, new IntPtr(UIS_INITIALIZE), IntPtr.Zero);
         }
 
         private void LoginWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
