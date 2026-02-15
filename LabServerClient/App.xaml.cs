@@ -30,23 +30,25 @@ namespace LabServerClient
                     clientWindow.Activate();
                     clientWindow.Focus();
                 }
-                else
-                {
-                    clientWindow.WindowState = WindowState.Minimized;
-                    clientWindow.ShowInTaskbar = false;
-                    clientWindow.Show();
-                    
-                    var sessionWindow = new SessionWindow(clientWindow, clientId, _databaseService);
-                    clientWindow.SetSessionWindow(sessionWindow); // Set reference for remote viewing
-                    sessionWindow.Show();
-                    sessionWindow.Activate();
-                    sessionWindow.Focus();
-                }
-            }
             else
             {
-                Shutdown();
+                clientWindow.WindowState = WindowState.Minimized;
+                clientWindow.ShowInTaskbar = false;
+                clientWindow.Show();
+                
+                var sessionWindow = new SessionWindow(clientWindow, clientId, _databaseService);
+                sessionWindow.SetUsername(username ?? string.Empty);
+                clientWindow.SetSessionWindow(sessionWindow); // Set reference for remote viewing
+                sessionWindow.InitializeTcpListening(); // Initialize TCP command listening
+                sessionWindow.Show();
+                sessionWindow.Activate();
+                sessionWindow.Focus();
             }
+        }
+        else
+        {
+            Shutdown();
+        }
         }
 
         private void Application_Startup(object sender, StartupEventArgs e)
@@ -101,22 +103,24 @@ namespace LabServerClient
                                 clientWindow.Activate();
                                 clientWindow.Focus();
                             }
-                            else
-                            {
-                                // Regular user: Show SessionWindow with timer and logout, hide ClientWindow
-                                clientWindow.WindowState = WindowState.Minimized;
-                                clientWindow.ShowInTaskbar = false;
-                                clientWindow.Show();
-                                
-                                var sessionWindow = new SessionWindow(clientWindow, clientId, _databaseService);
-                                clientWindow.SetSessionWindow(sessionWindow); // Set reference for remote viewing
-                                sessionWindow.Show();
-                                sessionWindow.Activate();
-                                sessionWindow.Focus();
-                            }
+                        else
+                        {
+                            // Regular user: Show SessionWindow with timer and logout, hide ClientWindow
+                            clientWindow.WindowState = WindowState.Minimized;
+                            clientWindow.ShowInTaskbar = false;
+                            clientWindow.Show();
                             
-                            // Change shutdown mode to normal now that we have a main window
-                            this.ShutdownMode = ShutdownMode.OnMainWindowClose;
+                            var sessionWindow = new SessionWindow(clientWindow, clientId, _databaseService);
+                            sessionWindow.SetUsername(username ?? string.Empty);
+                            clientWindow.SetSessionWindow(sessionWindow); // Set reference for remote viewing
+                            sessionWindow.InitializeTcpListening(); // Initialize TCP command listening
+                            sessionWindow.Show();
+                            sessionWindow.Activate();
+                            sessionWindow.Focus();
+                        }
+                        
+                        // Change shutdown mode to normal now that we have a main window
+                        this.ShutdownMode = ShutdownMode.OnMainWindowClose;
                         }
                         catch (Exception ex)
                         {

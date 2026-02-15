@@ -45,6 +45,7 @@ namespace LabServerAdmin
         private HwndSource? _source;
         public bool IsAuthenticated { get; private set; } = false;
         public string? AuthenticatedUsername { get; private set; } = null;
+        public string? UserRole { get; private set; } = null;
 
         public LoginWindow(DatabaseService? databaseService = null, bool requireAuthenticationToClose = true)
         {
@@ -206,16 +207,32 @@ namespace LabServerAdmin
             try
             {
                 bool isValid = false;
+                string role = "";
 
                 // Validate credentials against database if available
                 if (_databaseService != null)
                 {
+                    // Try admin first
                     isValid = await _databaseService.ValidateAdminAsync(username, password);
+                    if (isValid)
+                    {
+                        role = "ADMIN";
+                    }
+                    else
+                    {
+                        // Try instructor credentials
+                        isValid = await _databaseService.ValidateInstructorAsync(username, password);
+                        if (isValid)
+                        {
+                            role = "INSTRUCTOR";
+                        }
+                    }
                 }
                 else
                 {
                     // Fallback to hardcoded credentials if database is not available
                     isValid = (username == "admin" && password == "admin123");
+                    role = isValid ? "ADMIN" : string.Empty;
                 }
 
                 if (isValid)
@@ -223,6 +240,7 @@ namespace LabServerAdmin
                     // Set authenticated flag and username first
                     IsAuthenticated = true;
                     AuthenticatedUsername = username;
+                    UserRole = string.IsNullOrWhiteSpace(role) ? "ADMIN" : role;
                     ErrorTextBlock.Visibility = Visibility.Collapsed;
                     
                     // Log successful login attempt (fire and forget to not delay window close)
@@ -236,7 +254,7 @@ namespace LabServerAdmin
                                     "Login",
                                     username,
                                     "Success",
-                                    "User logged in successfully"
+                                    $"User ({UserRole}) logged in successfully"
                                 );
                             }
                             catch

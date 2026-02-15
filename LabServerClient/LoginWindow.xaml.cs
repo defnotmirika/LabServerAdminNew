@@ -90,8 +90,17 @@ namespace LabServerClient
             // Display current PC Name from registry
             PcNameTextBlock.Text = _viewModel.CurrentPcName;
 
-            // Prevent alt-tab and make window stay on top
+            // Enable kiosk mode - fullscreen with no taskbar
             var hwnd = new WindowInteropHelper(this).Handle;
+            
+            // Make window fullscreen (borderless)
+            this.WindowState = WindowState.Normal;
+            this.Top = 0;
+            this.Left = 0;
+            this.Width = SystemParameters.PrimaryScreenWidth;
+            this.Height = SystemParameters.PrimaryScreenHeight;
+            
+            // Set window to topmost and prevent interactions with other windows
             SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_TOPMOST);
             SetForegroundWindow(hwnd);
 
@@ -108,13 +117,18 @@ namespace LabServerClient
 
         private void LoginWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
+            System.Diagnostics.Debug.WriteLine($"[LOGIN] LoginWindow_Closing - _requireAuthenticationToClose: {_requireAuthenticationToClose}, IsAuthenticated: {IsAuthenticated}");
+            
             // Prevent closing unless authenticated
             if (_requireAuthenticationToClose && !IsAuthenticated)
             {
+                System.Diagnostics.Debug.WriteLine($"[LOGIN] Canceling close - not authenticated");
                 e.Cancel = true;
                 MessageBox.Show("You must login to exit the application.", "Login Required", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
+            
+            System.Diagnostics.Debug.WriteLine($"[LOGIN] Allowing close");
             
             // Unregister hotkeys only if closing is allowed
             var hwnd = new WindowInteropHelper(this).Handle;
@@ -223,6 +237,15 @@ namespace LabServerClient
         /// </summary>
         private async void AttemptLogin()
         {
+            // Manually bind PasswordBox to ViewModel (PasswordBox doesn't support binding for security)
+            System.Diagnostics.Debug.WriteLine($"[LOGIN] AttemptLogin called");
+            System.Diagnostics.Debug.WriteLine($"[LOGIN] Username from UI: '{UsernameTextBox.Text}'");
+            System.Diagnostics.Debug.WriteLine($"[LOGIN] Password length: {PasswordBox.Password?.Length ?? 0}");
+            
+            _viewModel.Password = PasswordBox.Password;
+            System.Diagnostics.Debug.WriteLine($"[LOGIN] ViewModel.Password set to: '{_viewModel.Password}'");
+            System.Diagnostics.Debug.WriteLine($"[LOGIN] ViewModel.Username: '{_viewModel.Username}'");
+            
             await _viewModel.AttemptLoginAsync();
         }
 
@@ -232,16 +255,21 @@ namespace LabServerClient
         /// </summary>
         private void ViewModel_LoginSuccess()
         {
+            System.Diagnostics.Debug.WriteLine($"[LOGIN] ViewModel_LoginSuccess called");
+            
             // Set authenticated properties from ViewModel
             IsAuthenticated = _viewModel.IsAuthenticated;
             AuthenticatedUsername = _viewModel.AuthenticatedUsername;
             UserRole = _viewModel.UserRole;
             AuthenticatedClientId = _viewModel.AuthenticatedClientId;
 
+            System.Diagnostics.Debug.WriteLine($"[LOGIN] Window IsAuthenticated set to: {IsAuthenticated}");
+            
             ErrorTextBlock.Visibility = Visibility.Collapsed;
             
             // Set DialogResult and close window
             this.DialogResult = true;
+            System.Diagnostics.Debug.WriteLine($"[LOGIN] DialogResult set to true, closing window");
             this.Close();
         }
 
@@ -295,7 +323,10 @@ namespace LabServerClient
         {
             // ViewModel already set the error message
             // Just make sure UI is in correct state
-            PasswordBox.Password = "";
+            // Only clear password if this is truly a cancellation (not just validation failure)
+            // Don't clear password - let user retry without retyping
+            System.Diagnostics.Debug.WriteLine($"[LOGIN] Login cancelled. Error message: {_viewModel.ErrorMessage}");
+            MessageBox.Show(_viewModel.ErrorMessage, "Login Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
             PasswordBox.Focus();
         }
 

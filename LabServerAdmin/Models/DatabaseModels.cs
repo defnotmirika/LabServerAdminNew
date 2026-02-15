@@ -42,11 +42,10 @@ namespace LabServerAdmin.Models
         [MaxLength(100)]
         public string ClientName { get; set; } = string.Empty;
         
-        [Required]
+        [MaxLength(45)]
         public string IpAddress { get; set; } = string.Empty;
         
-        [MaxLength(17)]
-        public string? MacAddress { get; set; }
+        public int? LabId { get; set; }
         
         [MaxLength(20)]
         public string Status { get; set; } = "Offline"; // Online, Offline, Maintenance
@@ -57,15 +56,19 @@ namespace LabServerAdmin.Models
         
         public DateTime? LastSeen { get; set; }
         
-        [MaxLength(100)]
-        public string? Location { get; set; }
-        
-        [MaxLength(50)]
-        public string? LabRoom { get; set; }
-        
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+        
+        // Computed properties for backward compatibility
+        [NotMapped]
+        public string? MacAddress { get; set; }
+        
+        [NotMapped]
+        public string? Location { get; set; }
+        
+        [NotMapped]
+        public string? LabRoom { get; set; }
     }
 
     public class SystemLog
@@ -84,10 +87,19 @@ namespace LabServerAdmin.Models
         
         public int? ComputerId { get; set; }
         
-        public int? UserId { get; set; }
+        [MaxLength(20)]
+        public string? UserIdString { get; set; }
         
         [MaxLength(50)]
         public string? ActionType { get; set; } // Login, Logout, Lock, Unlock, etc.
+        
+        // Backward compatibility - UserId as int (deprecated)
+        [NotMapped]
+        public int? UserId 
+        { 
+            get => string.IsNullOrWhiteSpace(UserIdString) ? null : (int.TryParse(UserIdString, out var id) ? id : null);
+            set => UserIdString = value?.ToString();
+        }
         
         // Computed properties for display compatibility
         public DateTime Timestamp => LogTime;
@@ -106,7 +118,8 @@ namespace LabServerAdmin.Models
         [Key]
         public int Id { get; set; }
         
-        public int? UserId { get; set; }
+        [MaxLength(20)]
+        public string? StudNo { get; set; }
         
         public int? ComputerId { get; set; }
         
@@ -130,6 +143,14 @@ namespace LabServerAdmin.Models
         
         public bool IsActive => Status == "Active";
 
+        // Backward compatibility - UserId as int (deprecated)
+        [NotMapped]
+        public int? UserId 
+        { 
+            get => string.IsNullOrWhiteSpace(StudNo) ? null : (int.TryParse(StudNo, out var id) ? id : null);
+            set => StudNo = value?.ToString();
+        }
+
         // Computed property for display
         public string Duration
         {
@@ -148,6 +169,32 @@ namespace LabServerAdmin.Models
                 return "Active";
             }
         }
+    }
+
+    public class ActivityLog
+    {
+        [Key]
+        public int Id { get; set; }
+        
+        [Required]
+        [MaxLength(20)]
+        public string StudNo { get; set; } = string.Empty;
+        
+        [Required]
+        public int ComputerId { get; set; }
+        
+        [Required]
+        [MaxLength(100)]
+        public string Action { get; set; } = string.Empty;
+        
+        public string? Description { get; set; }
+        
+        public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+        
+        // Computed properties for display (populated from joins)
+        public string StudentName { get; set; } = string.Empty;
+        
+        public string PcName { get; set; } = string.Empty;
     }
 
     public class ConnectedClient
@@ -179,16 +226,26 @@ namespace LabServerAdmin.Models
         public int Id { get; set; }
         
         /// <summary>
-        /// The username requesting to log in
+        /// The student number requesting to log in
         /// </summary>
         [Required]
-        [MaxLength(50)]
-        public string Username { get; set; } = string.Empty;
+        [MaxLength(20)]
+        public string StudNo { get; set; } = string.Empty;
         
         /// <summary>
-        /// The PC name (client name) making the request
+        /// The resolved student full name (from join)
         /// </summary>
-        [Required]
+        [NotMapped]
+        public string? StudentName { get; set; }
+        
+        /// <summary>
+        /// The computer identifier making the request
+        /// </summary>
+        public int ComputerId { get; set; }
+        
+        /// <summary>
+        /// The PC name (client name) making the request (from join)
+        /// </summary>
         [MaxLength(100)]
         public string PcName { get; set; } = string.Empty;
         
@@ -197,6 +254,13 @@ namespace LabServerAdmin.Models
         /// </summary>
         [MaxLength(45)]
         public string? IpAddress { get; set; }
+        
+        /// <summary>
+        /// Type of request: Login or Logout
+        /// </summary>
+        [Required]
+        [MaxLength(20)]
+        public string RequestType { get; set; } = "Login";
         
         /// <summary>
         /// Timestamp when the request was created
@@ -238,5 +302,35 @@ namespace LabServerAdmin.Models
         /// </summary>
         [NotMapped]
         public bool IsPending => Status == "Pending";
+    }
+
+    public class InstructorClassListItem
+    {
+        [MaxLength(20)]
+        public string StudNo { get; set; } = string.Empty;
+        
+        [MaxLength(100)]
+        public string FirstName { get; set; } = string.Empty;
+        
+        [MaxLength(100)]
+        public string LastName { get; set; } = string.Empty;
+        
+        [MaxLength(50)]
+        public string SectionName { get; set; } = string.Empty;
+        
+        public DateTime? LoginTime { get; set; }
+        
+        public DateTime? LogoutTime { get; set; }
+        
+        [MaxLength(20)]
+        public string? Status { get; set; }
+        
+        [MaxLength(100)]
+        public string? ClientName { get; set; }
+        
+        [NotMapped]
+        public string FullName => string.IsNullOrWhiteSpace(FirstName) && string.IsNullOrWhiteSpace(LastName)
+            ? string.Empty
+            : $"{LastName}, {FirstName}".Trim(',', ' ');
     }
 }

@@ -1,4 +1,4 @@
-<Window x:Class="LabServerClient.StorageWindow"
+﻿<Window x:Class="LabServerClient.StorageWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -68,7 +68,7 @@
 
                 <StackPanel Orientation="Horizontal" Grid.Row="1" Margin="0,10,0,10" HorizontalAlignment="Left">
                     <Button Content="Upload Files" Width="120" Style="{StaticResource AccentButton}" Margin="0,0,12,0" Click="UploadButton_Click"/>
-                    <Button Content="Refresh" Width="100" Style="{StaticResource AccentButton}" Margin="0,0,12,0" Click="RefreshButton_Click"/>
+                    <Button Content="🔄" Width="40" Style="{StaticResource AccentButton}" Margin="0,0,12,0" Click="RefreshButton_Click" ToolTip="Refresh"/>
                     <TextBlock Text="Drag and drop files to upload" VerticalAlignment="Center" Foreground="{StaticResource PrimaryBrush}" Margin="12,0,0,0"/>
                 </StackPanel>
 

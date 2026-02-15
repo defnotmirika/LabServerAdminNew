@@ -38,6 +38,9 @@ namespace LabServerClient
         private readonly DispatcherTimer _updateTimer;
         private readonly int? _clientId;
         private readonly string? _connectionString;
+        private string? _username;
+        private readonly DispatcherTimer _logoutRequestCheckTimer;
+        private bool _hasPendingLogoutRequest = false;
 
         public event EventHandler<string>? CurrentCommandChanged;
 
@@ -68,6 +71,7 @@ namespace LabServerClient
             _clientId = clientId;
             _databaseService = databaseService;
             _connectionString = _databaseService?.ConnectionString;
+            _username = Environment.UserName;
             InitializeComponent();
 
             _heartbeatTimer = new DispatcherTimer
@@ -90,6 +94,13 @@ namespace LabServerClient
             };
             _usageLimitUiTimer.Tick += UsageLimitUiTimer_Tick;
 
+            // Timer to check for logout request approval
+            _logoutRequestCheckTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(5) // Check every 5 seconds
+            };
+            _logoutRequestCheckTimer.Tick += LogoutRequestCheckTimer_Tick;
+
             // Usage limit now managed independently; default to no limit
             _usageLimitExpiryUtc = null;
 
@@ -97,8 +108,38 @@ namespace LabServerClient
             Closing += SessionWindow_Closing;
         }
 
+        public void SetUsername(string username)
+        {
+            _username = username;
+            Dispatcher.Invoke(() => UsernameText.Text = _username ?? string.Empty);
+        }
+
+        public void InitializeTcpListening()
+        {
+            if (_clientWindow == null || !_clientWindow.IsConnected())
+            {
+                LogMessage("Cannot initialize TCP listening - client not connected");
+                return;
+            }
+
+            _stream = _clientWindow.GetNetworkStream();
+            if (_stream != null)
+            {
+                _isConnected = true;
+                LogMessage("TCP listening initialized - starting command listener");
+                _ = Task.Run(() => ListenForCommands());
+            }
+            else
+            {
+                LogMessage("TCP listening failed - network stream is null");
+            }
+        }
+
         private void UpdateDisplay()
         {
+            UsernameText.Text = _username ?? string.Empty;
+            TimeRemainingText.Visibility = Visibility.Visible;
+
             if (_usageLimitExpiryUtc.HasValue)
             {
                 var now = DateTime.UtcNow;
@@ -111,9 +152,7 @@ namespace LabServerClient
                     var seconds = remaining.Seconds;
 
                     TimeRemainingText.Text = $"{hours:D2}:{minutes:D2}:{seconds:D2}";
-                    UsageLimitText.Text = "Time Remaining:";
 
-                    // Change color based on remaining time
                     if (remaining.TotalMinutes < 5)
                     {
                         TimeRemainingText.Foreground = System.Windows.Media.Brushes.Red;
@@ -131,13 +170,12 @@ namespace LabServerClient
                 {
                     TimeRemainingText.Text = "00:00:00";
                     TimeRemainingText.Foreground = System.Windows.Media.Brushes.Red;
-                    UsageLimitText.Text = "Session Expired";
                 }
             }
             else
             {
-                TimeRemainingText.Text = "";
-                UsageLimitText.Text = "No usage limit set";
+                TimeRemainingText.Text = "00:00:00";
+                TimeRemainingText.Foreground = System.Windows.Media.Brushes.DarkBlue;
             }
         }
 
@@ -148,48 +186,132 @@ namespace LabServerClient
 
         private async void LogoutButton_Click(object sender, RoutedEventArgs e)
         {
+            // Check if student is in active schedule
+            if (_databaseService != null && !string.IsNullOrWhiteSpace(_username))
+            {
+                var pcName = _clientWindow?.GetClientName() ?? Environment.MachineName;
+                var isInActiveSchedule = await _databaseService.IsStudentInActiveScheduleAsync(_username, pcName);
+
+                if (isInActiveSchedule)
+                {
+                    // Show logout request dialog
+                    var logoutRequestDialog = new LogoutRequestDialog();
+                    var dialogResult = logoutRequestDialog.ShowDialog();
+
+                    if (dialogResult == true && logoutRequestDialog.UserConfirmed)
+                    {
+                        // User wants to send logout request
+                        var requestId = await _databaseService.CreateLogoutRequestAsync(
+                            _username,
+                            pcName,
+                            $"Student '{_username}' requesting early logout during active schedule"
+                        );
+
+                        if (requestId.HasValue)
+                        {
+                            MessageBox.Show(
+                                "Your logout request has been sent to the instructor.\n\nYou will be notified when it is approved.",
+                                "Request Sent",
+                                MessageBoxButton.OK,
+                                MessageBoxImage.Information);
+
+                            // Log the logout request activity
+                            await _databaseService.LogStudentActivityAsync(_username, pcName, "Logout Request", "Student requested early logout");
+                            
+                            // Start polling for approval
+                            _hasPendingLogoutRequest = true;
+                            _logoutRequestCheckTimer.Start();
+                        }
+                        else
+                        {
+                            MessageBox.Show(
+                                "Failed to send logout request. Please try again or contact your instructor.",
+                                "Request Failed",
+                                MessageBoxButton.OK,
+                                MessageBoxImage.Error);
+                        }
+
+                        // Don't log out - wait for approval
+                        return;
+                    }
+                    else
+                    {
+                        // User cancelled the logout request
+                        return;
+                    }
+                }
+            }
+
+            // Not in active schedule - show normal logout confirmation
             var result = MessageBox.Show(
                 "Are you sure you want to log out?",
                 "Confirm Logout",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question);
 
-            if (result == MessageBoxResult.Yes)
+            if (result != MessageBoxResult.Yes)
             {
-                var app = Application.Current as App;
+                return;
+            }
 
-                // Prevent app shutdown when closing windows during logout
-                if (app != null)
-                {
-                    app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-                }
-
-                _allowClose = true;
-
-                // Close this window
+            // Record logout in attendance logs before closing
+            if (_databaseService != null && !string.IsNullOrWhiteSpace(_username))
+            {
+                var pcName = _clientWindow?.GetClientName() ?? Environment.MachineName;
+                
                 try
                 {
-                    Close();
+                    // Record logout attendance
+                    var logoutRecorded = await _databaseService.RecordStudentLogoutAsync(_username, pcName);
+                    
+                    if (logoutRecorded)
+                    {
+                        LogMessage($"Logout attendance recorded for {_username}");
+                    }
+                    
+                    // Log logout activity
+                    await _databaseService.LogStudentActivityAsync(_username, pcName, "Logout", "Student logged out");
+                }
+                catch (Exception ex)
+                {
+                    LogMessage($"Error recording logout: {ex.Message}");
+                }
+            }
+
+            // Proceed with logout
+            var app = Application.Current as App;
+
+            // Prevent app shutdown when closing windows during logout
+            if (app != null)
+            {
+                app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            }
+
+            _allowClose = true;
+
+            // Close this window
+            try
+            {
+                Close();
+            }
+            catch { }
+
+            // Close ClientWindow
+            if (_clientWindow != null)
+            {
+                try
+                {
+                    await _clientWindow.DisconnectFromServer();
+                    _clientWindow.Close();
                 }
                 catch { }
+            }
 
-                // Close ClientWindow
-                if (_clientWindow != null)
-                {
-                    try
-                    {
-                        await _clientWindow.DisconnectFromServer();
-                        _clientWindow.Close();
-                    }
-                    catch { }
-                }
-
-                // Show login again
-                if (app != null)
-                {
-                    app.ShowLoginWindow();
-                    app.ShutdownMode = ShutdownMode.OnMainWindowClose;
-                }
+            // Show login again
+            if (app != null)
+            {
+                app.ShowLoginWindow();
+                app.ShutdownMode = ShutdownMode.OnMainWindowClose;
             }
         }
 
@@ -199,6 +321,13 @@ namespace LabServerClient
             {
                 MessageBox.Show("Storage is unavailable because the client account id is missing.", "Storage", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
+            }
+
+            // Log activity: Opened Storage
+            if (_databaseService != null && !string.IsNullOrWhiteSpace(_username))
+            {
+                var pcName = _clientWindow?.GetClientName() ?? Environment.MachineName;
+                _ = _databaseService.LogStudentActivityAsync(_username, pcName, "Open Storage", "Student accessed My Storage");
             }
 
             var storageWindow = new StorageWindow(_clientId.Value, _connectionString)
@@ -548,12 +677,10 @@ namespace LabServerClient
             var buffer = new byte[4096];
             var messageBuilder = new StringBuilder();
 
-            while (_isConnected && _tcpClient?.Connected == true)
+            while (_isConnected && _stream != null)
             {
                 try
                 {
-                    if (_stream == null) break;
-
                     var bytesRead = await _stream.ReadAsync(buffer, 0, buffer.Length);
                     if (bytesRead == 0) break;
 
@@ -602,6 +729,8 @@ namespace LabServerClient
                     break;
                 }
             }
+
+            LogMessage("ListenForCommands loop ended");
         }
 
         private async Task ProcessCommand(string commandJson)
@@ -674,8 +803,42 @@ namespace LabServerClient
                     return await StopScreenShare();
                 case "remote_input":
                     return await HandleRemoteInput(parameters);
+                case "force_logout":
+                    return await ForceLogout();
                 default:
                     return $"Unknown command: {command}";
+            }
+        }
+
+        private async Task<string> ForceLogout()
+        {
+            try
+            {
+                LogMessage("Force logout command received - logout request approved");
+                
+                // Stop polling timer if active
+                _logoutRequestCheckTimer?.Stop();
+                _hasPendingLogoutRequest = false;
+
+                // Show notification
+                Dispatcher.Invoke(() =>
+                {
+                    MessageBox.Show(
+                        "Your logout request has been approved by the instructor.\n\nYou will now be logged out.",
+                        "Logout Approved",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                });
+
+                // Perform logout
+                await PerformLogout();
+
+                return "Logout successful";
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Force logout error: {ex.Message}");
+                return $"Force logout failed: {ex.Message}";
             }
         }
 
@@ -1026,6 +1189,99 @@ namespace LabServerClient
             Dispatcher.Invoke(UpdateDisplay);
         }
 
+        private async void LogoutRequestCheckTimer_Tick(object? sender, EventArgs e)
+        {
+            if (!_hasPendingLogoutRequest || _databaseService == null || string.IsNullOrWhiteSpace(_username))
+            {
+                return;
+            }
+
+            try
+            {
+                var pcName = _clientWindow?.GetClientName() ?? Environment.MachineName;
+                var isApproved = await _databaseService.CheckLogoutRequestApprovalAsync(_username, pcName);
+
+                if (isApproved)
+                {
+                    // Stop checking
+                    _logoutRequestCheckTimer.Stop();
+                    _hasPendingLogoutRequest = false;
+
+                    // Show notification
+                    MessageBox.Show(
+                        "Your logout request has been approved by the instructor.\n\nYou will now be logged out.",
+                        "Logout Approved",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+
+                    // Proceed with logout
+                    await PerformLogout();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Error checking logout request: {ex.Message}");
+            }
+        }
+
+        private async Task PerformLogout()
+        {
+            // Record logout time in attendance logs
+            if (_databaseService != null && !string.IsNullOrWhiteSpace(_username))
+            {
+                var pcName = _clientWindow?.GetClientName() ?? Environment.MachineName;
+                
+                try
+                {
+                    // Record logout attendance
+                    var logoutRecorded = await _databaseService.RecordStudentLogoutAsync(_username, pcName);
+                    
+                    if (logoutRecorded)
+                    {
+                        LogMessage($"Logout attendance recorded for {_username}");
+                    }
+                    
+                    // Log logout activity
+                    await _databaseService.LogStudentActivityAsync(_username, pcName, "Logout", "Student logged out");
+                }
+                catch (Exception ex)
+                {
+                    LogMessage($"Error recording logout: {ex.Message}");
+                }
+            }
+
+            var app = Application.Current as App;
+
+            if (app != null)
+            {
+                app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            }
+
+            _allowClose = true;
+
+            try
+            {
+                Close();
+            }
+            catch { }
+
+            if (_clientWindow != null)
+            {
+                try
+                {
+                    await _clientWindow.DisconnectFromServer();
+                    _clientWindow.Close();
+                }
+                catch { }
+            }
+
+            if (app != null)
+            {
+                app.ShowLoginWindow();
+                app.ShutdownMode = ShutdownMode.OnMainWindowClose;
+            }
+        }
+
         private async Task DisconnectFromServer()
         {
             try
@@ -1033,6 +1289,7 @@ namespace LabServerClient
                 _isConnected = false;
                 _heartbeatTimer?.Stop();
                 _usageLimitUiTimer?.Stop();
+                _logoutRequestCheckTimer?.Stop();
 
                 ResetUsageLimitState(true);
                 ResetScreenShareState();

@@ -112,7 +112,7 @@
                     <Button x:Name="LoginButton" 
                         Content="Login" 
                         Click="LoginButton_Click"
-                        Background="#3498DB"
+                        Background="#050d60"
                         Foreground="White"
                         FontWeight="Bold"
                         Height="40"

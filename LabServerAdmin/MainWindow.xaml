@@ -239,7 +239,8 @@
                             <Button x:Name="ShutdownAllButton" Content="⏹️ Shutdown All" Style="{StaticResource DangerButton}" Click="ShutdownAllButton_Click"/>
                             <Button x:Name="RestartAllButton" Content="🔄 Restart All" Style="{StaticResource DangerButton}" Click="RestartAllButton_Click"/>
                             <Button x:Name="SleepAllButton" Content="😴 Sleep All" Style="{StaticResource ModernButton}" Click="SleepAllButton_Click"/>
-                            <Button x:Name="RefreshClientsButton" Content="🔄 Refresh" Style="{StaticResource GoldButton}" Click="RefreshClientsButton_Click"/>
+                            <Button x:Name="RefreshClientsButton" Content="🔄" ToolTip="Refresh Clients" Style="{StaticResource GoldButton}" 
+                                    Click="RefreshClientsButton_Click" Width="40" Height="35" Padding="0"/>
                         </StackPanel>
                     </GroupBox>
 
@@ -299,84 +300,8 @@
                 </Grid>
             </TabItem>
 
-            <!-- System Logs Tab -->
-            <TabItem Header="📋 System Logs">
-                <Grid Margin="10">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
-                        <Button x:Name="RefreshLogsButton" Content="🔄 Refresh Logs" Style="{StaticResource GoldButton}" 
-                                Click="RefreshLogsButton_Click"/>
-                        <Button x:Name="ExportLogsButton" Content="📤 Export Logs" Style="{StaticResource ModernButton}" 
-                                Click="ExportLogsButton_Click"/>
-                    </StackPanel>
-
-                    <DataGrid x:Name="SystemLogsDataGrid" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" 
-                              GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150"/>
-                            <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="150"/>
-                            <DataGridTextColumn Header="Client" Binding="{Binding ClientName}" Width="120"/>
-                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100"/>
-                            <DataGridTextColumn Header="Details" Binding="{Binding Details}" Width="*"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </Grid>
-            </TabItem>
-
-            <!-- Attendance Logs Tab -->
-            <TabItem Header="👥 Attendance Logs">
-                <Grid Margin="10">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <StackPanel Grid.Row="0" Orientation="Vertical" Margin="0,5,0,20">
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <Button x:Name="RefreshAttendanceButton" Content="🔄 Refresh" Style="{StaticResource GoldButton}" 
-                                    Click="RefreshAttendanceButton_Click"/>
-                            <Button x:Name="ExportAttendanceButton" Content="📤 Export Attendance" Style="{StaticResource ModernButton}" 
-                                    Click="ExportAttendanceButton_Click"/>
-                            <Button x:Name="FilterTodayButton" Content="📅 Today" Style="{StaticResource ModernButton}" 
-                                    Click="FilterTodayButton_Click"/>
-                            <Button x:Name="FilterAllButton" Content="📋 All Records" Style="{StaticResource ModernButton}" 
-                                    Click="FilterAllButton_Click"/>
-                        </StackPanel>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Filter by Date:" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="SemiBold" Foreground="#050d60"/>
-                            <TextBlock Text="From:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                            <DatePicker x:Name="StartDatePicker" Width="120" Height="32" Margin="0,0,20,0" 
-                                        SelectedDateChanged="DatePicker_SelectedDateChanged" VerticalContentAlignment="Center"/>
-                            <TextBlock Text="To:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                            <DatePicker x:Name="EndDatePicker" Width="120" Height="32" Margin="0,0,20,0" 
-                                        SelectedDateChanged="DatePicker_SelectedDateChanged" VerticalContentAlignment="Center"/>
-                            <Button x:Name="ApplyDateFilterButton" Content="Apply Filter" Style="{StaticResource GoldButton}" 
-                                    Click="ApplyDateFilterButton_Click"/>
-                        </StackPanel>
-                    </StackPanel>
-
-                    <DataGrid x:Name="AttendanceLogsDataGrid" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" 
-                              GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True" 
-                              CanUserSortColumns="True" Sorting="AttendanceLogsDataGrid_Sorting">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Date" Binding="{Binding TimeIn, StringFormat=yyyy-MM-dd}" Width="120" SortMemberPath="TimeIn"/>
-                            <DataGridTextColumn Header="Student Name" Binding="{Binding StudentName}" Width="150" SortMemberPath="StudentName"/>
-                            <DataGridTextColumn Header="PC Name" Binding="{Binding PcName}" Width="120" SortMemberPath="PcName"/>
-                            <DataGridTextColumn Header="Time In" Binding="{Binding TimeIn, StringFormat=HH:mm:ss}" Width="100" SortMemberPath="TimeIn"/>
-                            <DataGridTextColumn Header="Time Out" Binding="{Binding TimeOut, StringFormat=HH:mm:ss}" Width="100" SortMemberPath="TimeOut"/>
-                            <DataGridTextColumn Header="Duration" Binding="{Binding Duration}" Width="100"/>
-                            <DataGridCheckBoxColumn Header="Active" Binding="{Binding IsActive}" Width="80" SortMemberPath="IsActive"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </Grid>
-            </TabItem>
-
-            <!-- Login Requests Tab -->
-            <TabItem Header="🔐 Login Requests">
+            <!-- Requests Tab -->
+            <TabItem Header="🔐 Requests">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -385,14 +310,14 @@
 
                     <!-- Header Controls -->
                     <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
-                        <Button x:Name="RefreshLoginRequestsButton" Content="🔄 Refresh Requests" Style="{StaticResource GoldButton}" 
-                                Click="RefreshLoginRequestsButton_Click"/>
+                        <Button x:Name="RefreshLoginRequestsButton" Content="🔄" ToolTip="Refresh Requests" Style="{StaticResource GoldButton}" 
+                                Click="RefreshLoginRequestsButton_Click" Width="40" Height="35" Padding="0"/>
                         <TextBlock x:Name="PendingRequestsCountText" Text="Pending: 0" 
                                    FontSize="14" FontWeight="SemiBold" Foreground="#050d60" 
                                    VerticalAlignment="Center" Margin="20,0,0,0"/>
                     </StackPanel>
 
-                    <!-- Login Requests DataGrid -->
+                    <!-- Requests DataGrid -->
                     <DataGrid x:Name="LoginRequestsDataGrid" Grid.Row="1" AutoGenerateColumns="False" 
                               CanUserAddRows="False" CanUserDeleteRows="False"
                               GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True">
@@ -400,8 +325,11 @@
                             <!-- Request ID -->
                             <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="50"/>
                             
+                            <!-- Request Type -->
+                            <DataGridTextColumn Header="Type" Binding="{Binding RequestType}" Width="80"/>
+                            
                             <!-- Username -->
-                            <DataGridTextColumn Header="Username" Binding="{Binding Username}" Width="120"/>
+                            <DataGridTextColumn Header="Student No" Binding="{Binding StudNo}" Width="120"/>
                             
                             <!-- PC Name -->
                             <DataGridTextColumn Header="PC Name" Binding="{Binding PcName}" Width="150"/>
@@ -459,6 +387,237 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- Class List Tab -->
+            <TabItem x:Name="ClassListTab" Header="📚 Class List">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Vertical" Margin="0,5,0,20">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <Button x:Name="RefreshClassListButton" Content="🔄" ToolTip="Refresh Class List" Style="{StaticResource GoldButton}"
+                                    Click="RefreshClassListButton_Click" Width="40" Height="35" Padding="0"/>
+                            <Button x:Name="ExportClassListButton" Content="📤 Export" ToolTip="Export Class List" Style="{StaticResource ModernButton}"
+                                    Click="ExportClassListButton_Click"/>
+                            <Button x:Name="ClassListTodayButton" Content="📅 Today" Style="{StaticResource ModernButton}" Click="ClassListTodayButton_Click"/>
+                            <Button x:Name="ClassListAllButton" Content="📋 All Records" Style="{StaticResource ModernButton}" Click="ClassListAllButton_Click"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Filter by Date:" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="SemiBold" Foreground="#050d60"/>
+                            <TextBlock Text="Date:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <DatePicker x:Name="ClassListDatePicker" Width="140" Height="32" Margin="0,0,20,0" SelectedDateChanged="ClassListDatePicker_SelectedDateChanged" VerticalContentAlignment="Center"/>
+                            <Button x:Name="ClassListApplyButton" Content="Apply Filter" Style="{StaticResource GoldButton}" Click="ClassListApplyButton_Click"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <DataGrid x:Name="ClassListDataGrid" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False"
+                              GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True"
+                              CanUserSortColumns="True">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Student No" Binding="{Binding StudNo}" Width="120" SortMemberPath="StudNo"/>
+                            <DataGridTextColumn Header="Last Name" Binding="{Binding LastName}" Width="150" SortMemberPath="LastName"/>
+                            <DataGridTextColumn Header="First Name" Binding="{Binding FirstName}" Width="150" SortMemberPath="FirstName"/>
+                            <DataGridTextColumn Header="Section" Binding="{Binding SectionName}" Width="120" SortMemberPath="SectionName"/>
+                            <DataGridTextColumn Header="Login Time" Binding="{Binding LoginTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="170" SortMemberPath="LoginTime"/>
+                            <DataGridTextColumn Header="Logout Time" Binding="{Binding LogoutTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="170" SortMemberPath="LogoutTime"/>
+                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="120" SortMemberPath="Status"/>
+                            <DataGridTextColumn Header="PC Name" Binding="{Binding ClientName}" Width="140" SortMemberPath="ClientName"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- Computers Tab -->
+            <TabItem Header="💻 Computers" Height="22" Margin="-2,-2,-2,0" VerticalAlignment="Top">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                        <Button x:Name="RefreshComputersButton" Content="🔄" ToolTip="Refresh Computers" Style="{StaticResource GoldButton}" 
+                                Click="RefreshComputersButton_Click" Width="40" Height="35" Padding="0"/>
+                    </StackPanel>
+
+                    <DataGrid x:Name="ComputersDataGrid" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" 
+                              GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="50"/>
+                            <DataGridTextColumn Header="Client Name" Binding="{Binding ClientName}" Width="150"/>
+                            <DataGridTextColumn Header="IP Address" Binding="{Binding IpAddress}" Width="120"/>
+                            <DataGridTextColumn Header="Lab ID" Binding="{Binding LabId}" Width="80"/>
+                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Status}" Value="Online">
+                                                <Setter Property="Foreground" Value="Green"/>
+                                                <Setter Property="FontWeight" Value="Bold"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Status}" Value="Offline">
+                                                <Setter Property="Foreground" Value="Red"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Status}" Value="Maintenance">
+                                                <Setter Property="Foreground" Value="Orange"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridCheckBoxColumn Header="Online" Binding="{Binding IsOnline}" Width="60"/>
+                            <DataGridCheckBoxColumn Header="Locked" Binding="{Binding IsLocked}" Width="60"/>
+                            <DataGridTextColumn Header="Last Seen" Binding="{Binding LastSeen, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- Attendance Logs Tab -->
+            <TabItem Header="👥 Attendance Logs">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Vertical" Margin="0,5,0,20">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <Button x:Name="RefreshAttendanceButton" Content="🔄" ToolTip="Refresh Attendance" Style="{StaticResource GoldButton}" 
+                                    Click="RefreshAttendanceButton_Click" Width="40" Height="35" Padding="0"/>
+                            <Button x:Name="ExportAttendanceButton" Content="📤 Export" ToolTip="Export Attendance Logs" Style="{StaticResource ModernButton}" 
+                                    Click="ExportAttendanceButton_Click"/>
+                            <Button x:Name="FilterTodayButton" Content="📅 Today" Style="{StaticResource ModernButton}" 
+                                    Click="FilterTodayButton_Click"/>
+                            <Button x:Name="FilterAllButton" Content="📋 All Records" Style="{StaticResource ModernButton}" 
+                                    Click="FilterAllButton_Click"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Filter by Date:" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="SemiBold" Foreground="#050d60"/>
+                            <TextBlock Text="From:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <DatePicker x:Name="StartDatePicker" Width="120" Height="32" Margin="0,0,20,0" 
+                                        SelectedDateChanged="DatePicker_SelectedDateChanged" VerticalContentAlignment="Center"/>
+                            <TextBlock Text="To:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <DatePicker x:Name="EndDatePicker" Width="120" Height="32" Margin="0,0,20,0" 
+                                        SelectedDateChanged="DatePicker_SelectedDateChanged" VerticalContentAlignment="Center"/>
+                            <Button x:Name="ApplyDateFilterButton" Content="Apply Filter" Style="{StaticResource GoldButton}" 
+                                    Click="ApplyDateFilterButton_Click"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <DataGrid x:Name="AttendanceLogsDataGrid" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" 
+                              GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True" 
+                              CanUserSortColumns="True" Sorting="AttendanceLogsDataGrid_Sorting">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Date" Binding="{Binding TimeIn, StringFormat=yyyy-MM-dd}" Width="120" SortMemberPath="TimeIn"/>
+                            <DataGridTextColumn Header="Student No" Binding="{Binding StudNo}" Width="120" SortMemberPath="StudNo"/>
+                            <DataGridTextColumn Header="Student Name" Binding="{Binding StudentName}" Width="150" SortMemberPath="StudentName"/>
+                            <DataGridTextColumn Header="PC Name" Binding="{Binding PcName}" Width="120" SortMemberPath="PcName"/>
+                            <DataGridTextColumn Header="Time In" Binding="{Binding TimeIn, StringFormat=HH:mm:ss}" Width="100" SortMemberPath="TimeIn"/>
+                            <DataGridTextColumn Header="Time Out" Binding="{Binding TimeOut, StringFormat=HH:mm:ss}" Width="100" SortMemberPath="TimeOut"/>
+                            <DataGridTextColumn Header="Duration" Binding="{Binding Duration}" Width="100"/>
+                            <DataGridCheckBoxColumn Header="Active" Binding="{Binding IsActive}" Width="80" SortMemberPath="IsActive"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- Activity Logs Tab -->
+            <TabItem Header="📝 Activity Logs">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Vertical" Margin="0,5,0,20">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <Button x:Name="RefreshActivityLogsButton" Content="🔄" ToolTip="Refresh Activity Logs" Style="{StaticResource GoldButton}" 
+                                    Click="RefreshActivityLogsButton_Click" Width="40" Height="35" Padding="0"/>
+                            <Button x:Name="ExportActivityLogsButton" Content="📤 Export" ToolTip="Export Activity Logs" Style="{StaticResource ModernButton}" 
+                                    Click="ExportActivityLogsButton_Click"/>
+                            <Button x:Name="FilterActivityTodayButton" Content="📅 Today" Style="{StaticResource ModernButton}" 
+                                    Click="FilterActivityTodayButton_Click"/>
+                            <Button x:Name="FilterActivityAllButton" Content="📋 All Records" Style="{StaticResource ModernButton}" 
+                                    Click="FilterActivityAllButton_Click"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Filter by Date:" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="SemiBold" Foreground="#050d60"/>
+                            <TextBlock Text="From:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <DatePicker x:Name="ActivityStartDatePicker" Width="120" Height="32" Margin="0,0,20,0" 
+                                        SelectedDateChanged="ActivityDatePicker_SelectedDateChanged" VerticalContentAlignment="Center"/>
+                            <TextBlock Text="To:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <DatePicker x:Name="ActivityEndDatePicker" Width="120" Height="32" Margin="0,0,20,0" 
+                                        SelectedDateChanged="ActivityDatePicker_SelectedDateChanged" VerticalContentAlignment="Center"/>
+                            <Button x:Name="ApplyActivityDateFilterButton" Content="Apply Filter" Style="{StaticResource GoldButton}" 
+                                    Click="ApplyActivityDateFilterButton_Click"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <DataGrid x:Name="ActivityLogsDataGrid" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" 
+                              GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True" 
+                              CanUserSortColumns="True">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150" SortMemberPath="Timestamp"/>
+                            <DataGridTextColumn Header="Student No" Binding="{Binding StudNo}" Width="120" SortMemberPath="StudNo"/>
+                            <DataGridTextColumn Header="Student Name" Binding="{Binding StudentName}" Width="150" SortMemberPath="StudentName"/>
+                            <DataGridTextColumn Header="PC Name" Binding="{Binding PcName}" Width="120" SortMemberPath="PcName"/>
+                            <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="150" SortMemberPath="Action"/>
+                            <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- System Logs Tab -->
+            <TabItem Header="📋 System Logs">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Vertical" Margin="0,5,0,20">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <Button x:Name="RefreshLogsButton" Content="🔄" ToolTip="Refresh Logs" Style="{StaticResource GoldButton}" 
+                                    Click="RefreshLogsButton_Click" Width="40" Height="35" Padding="0"/>
+                            <Button x:Name="ExportLogsButton" Content="📤 Export" ToolTip="Export System Logs" Style="{StaticResource ModernButton}" 
+                                    Click="ExportLogsButton_Click"/>
+                            <Button x:Name="FilterSystemLogsTodayButton" Content="📅 Today" Style="{StaticResource ModernButton}" 
+                                    Click="FilterSystemLogsTodayButton_Click"/>
+                            <Button x:Name="FilterSystemLogsAllButton" Content="📋 All Records" Style="{StaticResource ModernButton}" 
+                                    Click="FilterSystemLogsAllButton_Click"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Filter by Date:" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="SemiBold" Foreground="#050d60"/>
+                            <TextBlock Text="From:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <DatePicker x:Name="SystemLogsStartDatePicker" Width="120" Height="32" Margin="0,0,20,0" 
+                                        SelectedDateChanged="SystemLogsDatePicker_SelectedDateChanged" VerticalContentAlignment="Center"/>
+                            <TextBlock Text="To:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <DatePicker x:Name="SystemLogsEndDatePicker" Width="120" Height="32" Margin="0,0,20,0" 
+                                        SelectedDateChanged="SystemLogsDatePicker_SelectedDateChanged" VerticalContentAlignment="Center"/>
+                            <Button x:Name="ApplySystemLogsDateFilterButton" Content="Apply Filter" Style="{StaticResource GoldButton}" 
+                                    Click="ApplySystemLogsDateFilterButton_Click"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <DataGrid x:Name="SystemLogsDataGrid" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" 
+                              GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True"
+                              CanUserSortColumns="True">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150" SortMemberPath="Timestamp"/>
+                            <DataGridTextColumn Header="User ID" Binding="{Binding UserIdString}" Width="100" SortMemberPath="UserIdString"/>
+                            <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="150" SortMemberPath="Action"/>
+                            <DataGridTextColumn Header="Client" Binding="{Binding ClientName}" Width="120" SortMemberPath="ClientName"/>
+                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100" SortMemberPath="Status"/>
+                            <DataGridTextColumn Header="Details" Binding="{Binding Details}" Width="*"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>

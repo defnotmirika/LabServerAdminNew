@@ -32,8 +32,11 @@ namespace LabServerAdmin
         
         private ObservableCollection<ClientInfo> _connectedClients = new();
         private ObservableCollection<SystemLog> _systemLogs = new();
+        private ObservableCollection<Computer> _computers = new();
         private ObservableCollection<AttendanceLog> _attendanceLogs = new();
+        private ObservableCollection<ActivityLog> _activityLogs = new();
         private ObservableCollection<LoginRequest> _loginRequests = new();
+        private ObservableCollection<InstructorClassListItem> _classList = new();
 
         private bool _isServerRunning = false;
         private readonly DispatcherTimer _clientsRefreshTimer;
@@ -48,10 +51,23 @@ namespace LabServerAdmin
         private DateTime? _usageLimitSessionStartUtc = null;
         private DateTime? _currentUsageLimitExpiryUtc = null;
         private readonly string? _currentAdminUsername;
+        private readonly string? _currentAdminRole;
 
-        public MainWindow(string? adminUsername = null)
+        private DateTime? _attendanceStartDate = null;
+        private DateTime? _attendanceEndDate = null;
+
+        private DateTime? _activityStartDate = null;
+        private DateTime? _activityEndDate = null;
+
+        private DateTime? _systemLogsStartDate = null;
+        private DateTime? _systemLogsEndDate = null;
+
+        private DateTime? _classListDate = null;
+
+        public MainWindow(string? adminUsername = null, string? adminRole = null)
         {
             _currentAdminUsername = adminUsername;
+            _currentAdminRole = adminRole;
             InitializeComponent();
             
             // Setup dependency injection
@@ -63,8 +79,11 @@ namespace LabServerAdmin
             // Setup data binding
             ClientsDataGrid.ItemsSource = _connectedClients;
             SystemLogsDataGrid.ItemsSource = _systemLogs;
+            ComputersDataGrid.ItemsSource = _computers;
             AttendanceLogsDataGrid.ItemsSource = _attendanceLogs;
+            ActivityLogsDataGrid.ItemsSource = _activityLogs;
             LoginRequestsDataGrid.ItemsSource = _loginRequests;
+            ClassListDataGrid.ItemsSource = _classList;
 
             // Setup event handlers
             SetupEventHandlers();
@@ -86,6 +105,11 @@ namespace LabServerAdmin
             // Set window to fullscreen on startup (but still resizable)
             WindowState = WindowState.Maximized;
             
+            // Hide class list tab unless role is instructor
+            var isInstructor = string.Equals(_currentAdminRole, "INSTRUCTOR", StringComparison.OrdinalIgnoreCase) ||
+                               string.Equals(_currentAdminRole, "Instructor", StringComparison.OrdinalIgnoreCase);
+            ClassListTab.Visibility = isInstructor ? Visibility.Visible : Visibility.Collapsed;
+
             UpdateStatus("Ready - Click 'Start Server' to begin");
         }
 
@@ -97,10 +121,19 @@ namespace LabServerAdmin
                 await LoadUsageLimitAsync();
                 // Load system logs when application starts
                 await RefreshSystemLogs();
+                // Load computers when application starts
+                await RefreshComputers();
                 // Load attendance logs when application starts
                 await RefreshAttendanceLogs();
+                // Load activity logs when application starts
+                await RefreshActivityLogs();
                 // Load login requests when application starts
                 await RefreshLoginRequests();
+                // Load class list when application starts (only for instructors)
+                if (ClassListTab.Visibility == Visibility.Visible)
+                {
+                    await RefreshClassList();
+                }
             }
             catch (Exception ex)
             {
@@ -545,6 +578,12 @@ namespace LabServerAdmin
             }
         }
 
+        private async void RefreshComputersButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RefreshComputers();
+            UpdateStatus("Computers list refreshed");
+        }
+
         private async void RefreshAttendanceButton_Click(object sender, RoutedEventArgs e)
         {
             await RefreshAttendanceLogs();
@@ -553,49 +592,39 @@ namespace LabServerAdmin
 
         private async void ExportAttendanceButton_Click(object sender, RoutedEventArgs e)
         {
-            // Show date selection window
-            var exportWindow = new ExportAttendanceWindow
+            var saveDialog = new SaveFileDialog
             {
-                Owner = this
+                Filter = "CSV files (*.csv)|*.csv|Text files (*.txt)|*.txt",
+                DefaultExt = "csv",
+                FileName = $"attendance_logs_{DateTime.Now:yyyyMMdd_HHmmss}"
             };
 
-            if (exportWindow.ShowDialog() == true && exportWindow.IsExportConfirmed)
+            if (saveDialog.ShowDialog() == true)
             {
-                try
-                {
-                    // Get attendance logs for selected date range
-                    var logs = await _databaseService.GetAttendanceLogsAsync(
-                        exportWindow.SelectedStartDate, 
-                        exportWindow.SelectedEndDate);
+                await ExportAttendanceLogs(saveDialog.FileName);
+                UpdateStatus($"Attendance logs exported to {Path.GetFileName(saveDialog.FileName)}");
+            }
+        }
 
-                    if (logs.Count == 0)
-                    {
-                        MessageBox.Show(
-                            "No attendance records found for the selected date range.",
-                            "No Data",
-                            MessageBoxButton.OK,
-                            MessageBoxImage.Information);
-                        return;
-                    }
+        private async void RefreshClassListButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RefreshClassList();
+            UpdateStatus("Class list refreshed");
+        }
 
-                    // Export to file
-                    await ExportAttendanceLogs(exportWindow.SelectedFilePath!, logs);
-                    UpdateStatus($"Attendance logs exported to {Path.GetFileName(exportWindow.SelectedFilePath)} ({logs.Count} records)");
-                    
-                    MessageBox.Show(
-                        $"Successfully exported {logs.Count} attendance record(s) to:\n{exportWindow.SelectedFilePath}",
-                        "Export Successful",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show(
-                        $"Error exporting attendance logs: {ex.Message}",
-                        "Export Error",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Error);
-                }
+        private async void ExportClassListButton_Click(object sender, RoutedEventArgs e)
+        {
+            var saveDialog = new SaveFileDialog
+            {
+                Filter = "CSV files (*.csv)|*.csv|Text files (*.txt)|*.txt",
+                DefaultExt = "csv",
+                FileName = $"class_list_{DateTime.Now:yyyyMMdd_HHmmss}"
+            };
+
+            if (saveDialog.ShowDialog() == true)
+            {
+                await ExportClassList(saveDialog.FileName);
+                UpdateStatus($"Class list exported to {Path.GetFileName(saveDialog.FileName)}");
             }
         }
 
@@ -712,13 +741,15 @@ namespace LabServerAdmin
         {
             try
             {
-                var logs = await _databaseService.GetSystemLogsAsync();
+                var logs = await _databaseService.GetSystemLogsAsync(_systemLogsStartDate, _systemLogsEndDate);
                 _systemLogs.Clear();
                 
                 foreach (var log in logs)
                 {
                     _systemLogs.Add(log);
                 }
+                
+                UpdateStatus($"Loaded {logs.Count} system log(s)");
             }
             catch (Exception ex)
             {
@@ -726,8 +757,37 @@ namespace LabServerAdmin
             }
         }
 
-        private DateTime? _attendanceStartDate = null;
-        private DateTime? _attendanceEndDate = null;
+        private async Task RefreshComputers()
+        {
+            try
+            {
+                var computers = await _databaseService.GetComputersAsync();
+                _computers.Clear();
+                
+                foreach (var computer in computers)
+                {
+                    _computers.Add(computer);
+                }
+                
+                if (computers.Count == 0)
+                {
+                    UpdateStatus("No computers found in database. Please run database_setup.sql to add sample data.");
+                }
+                else
+                {
+                    UpdateStatus($"Loaded {computers.Count} computer(s)");
+                }
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Error refreshing computers: {ex.Message}");
+                MessageBox.Show(
+                    $"Error loading computers from database:\n{ex.Message}\n\nPlease ensure:\n1. Database is running\n2. database_setup.sql has been executed\n3. Connection string is correct in appsettings.json",
+                    "Database Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
 
         private async Task RefreshAttendanceLogs()
         {
@@ -749,6 +809,26 @@ namespace LabServerAdmin
             }
         }
 
+        private async Task RefreshActivityLogs()
+        {
+            try
+            {
+                var logs = await _databaseService.GetActivityLogsAsync(_activityStartDate, _activityEndDate);
+                _activityLogs.Clear();
+                
+                foreach (var log in logs)
+                {
+                    _activityLogs.Add(log);
+                }
+                
+                UpdateStatus($"Loaded {logs.Count} activity record(s)");
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Error refreshing activity logs: {ex.Message}");
+            }
+        }
+
         private async Task RefreshLoginRequests()
         {
             try
@@ -767,6 +847,36 @@ namespace LabServerAdmin
             catch (Exception ex)
             {
                 UpdateStatus($"Error refreshing login requests: {ex.Message}");
+            }
+        }
+
+        private async Task RefreshClassList()
+        {
+            try
+            {
+                if (ClassListTab.Visibility != Visibility.Visible)
+                {
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(_currentAdminUsername))
+                {
+                    UpdateStatus("No instructor ID available for class list");
+                    return;
+                }
+
+                var list = await _databaseService.GetInstructorClassListAsync(_currentAdminUsername, _classListDate);
+                _classList.Clear();
+                foreach (var item in list)
+                {
+                    _classList.Add(item);
+                }
+
+                UpdateStatus($"Loaded {list.Count} class record(s)");
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Error refreshing class list: {ex.Message}");
             }
         }
 
@@ -813,6 +923,11 @@ namespace LabServerAdmin
             }
         }
 
+        private AttendanceLog? GetSelectedAttendanceLog()
+        {
+            return AttendanceLogsDataGrid.SelectedItem as AttendanceLog;
+        }
+
         private void AttendanceLogsDataGrid_Sorting(object sender, System.Windows.Controls.DataGridSortingEventArgs e)
         {
             // Allow default sorting behavior
@@ -820,137 +935,146 @@ namespace LabServerAdmin
         }
 
         /// <summary>
-        /// Refresh the login requests button click handler
+        /// Refresh activity logs button click handler
         /// </summary>
-        private async void RefreshLoginRequestsButton_Click(object sender, RoutedEventArgs e)
+        private async void RefreshActivityLogsButton_Click(object sender, RoutedEventArgs e)
         {
-            await RefreshLoginRequests();
-            UpdateStatus("Login requests refreshed");
+            await RefreshActivityLogs();
+            UpdateStatus("Activity logs refreshed");
         }
 
-        /// <summary>
-        /// Approve a login request
-        /// </summary>
-        private async void ApproveLoginRequestButton_Click(object sender, RoutedEventArgs e)
+        private async void ExportActivityLogsButton_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is not Button button || button.Tag is not int requestId)
+            var saveDialog = new SaveFileDialog
             {
-                return;
-            }
+                Filter = "CSV files (*.csv)|*.csv|Text files (*.txt)|*.txt",
+                DefaultExt = "csv",
+                FileName = $"activity_logs_{DateTime.Now:yyyyMMdd_HHmmss}"
+            };
 
-            var request = _loginRequests.FirstOrDefault(r => r.Id == requestId);
-            if (request == null)
+            if (saveDialog.ShowDialog() == true)
             {
-                MessageBox.Show("Login request not found.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
+                await ExportActivityLogs(saveDialog.FileName);
+                UpdateStatus($"Activity logs exported to {Path.GetFileName(saveDialog.FileName)}");
             }
+        }
 
-            var result = MessageBox.Show(
-                $"Approve login request for user '{request.Username}' on PC '{request.PcName}'?",
-                "Confirm Approval",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
+        private void ActivityLogsDataGrid_Sorting(object sender, System.Windows.Controls.DataGridSortingEventArgs e)
+        {
+            // Allow default sorting behavior
+            e.Handled = false;
+        }
 
-            if (result != MessageBoxResult.Yes)
+        private void FilterActivityTodayButton_Click(object sender, RoutedEventArgs e)
+        {
+            var today = DateTime.Today;
+            ActivityStartDatePicker.SelectedDate = today;
+            ActivityEndDatePicker.SelectedDate = today;
+            _activityStartDate = today;
+            _activityEndDate = today;
+            _ = RefreshActivityLogs();
+        }
+
+        private void FilterActivityAllButton_Click(object sender, RoutedEventArgs e)
+        {
+            ActivityStartDatePicker.SelectedDate = null;
+            ActivityEndDatePicker.SelectedDate = null;
+            _activityStartDate = null;
+            _activityEndDate = null;
+            _ = RefreshActivityLogs();
+        }
+
+        private void ApplyActivityDateFilterButton_Click(object sender, RoutedEventArgs e)
+        {
+            _activityStartDate = ActivityStartDatePicker.SelectedDate;
+            _activityEndDate = ActivityEndDatePicker.SelectedDate;
+            _ = RefreshActivityLogs();
+        }
+
+        private void ActivityDatePicker_SelectedDateChanged(object? sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (ActivityStartDatePicker.SelectedDate != null || ActivityEndDatePicker.SelectedDate != null)
             {
-                return;
+                _activityStartDate = ActivityStartDatePicker.SelectedDate;
+                _activityEndDate = ActivityEndDatePicker.SelectedDate;
+                _ = RefreshActivityLogs();
             }
+        }
 
+        private async Task ExportActivityLogs(string filePath)
+        {
             try
             {
-                var success = await _databaseService.ApproveLoginRequestAsync(requestId, _currentAdminUsername ?? "admin");
-
-                if (success)
+                var logs = await _databaseService.GetActivityLogsAsync(_activityStartDate, _activityEndDate, 1000);
+                
+                if (Path.GetExtension(filePath).ToLower() == ".csv")
                 {
-                    await RefreshLoginRequests();
-                    UpdateStatus($"Login request from {request.PcName} approved");
-
-                    MessageBox.Show(
-                        $"Login request approved for '{request.Username}' on '{request.PcName}'.",
-                        "Request Approved",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
+                    await ExportToCsv(logs.Select(l => new
+                    {
+                        l.Timestamp,
+                        l.StudNo,
+                        l.StudentName,
+                        l.PcName,
+                        l.Action,
+                        l.Description
+                    }), filePath);
                 }
                 else
                 {
-                    MessageBox.Show(
-                        "Failed to approve login request. It may have already been processed.",
-                        "Error",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Error);
+                    await ExportToText(logs, filePath);
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    $"Error approving login request: {ex.Message}",
-                    "Error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-                UpdateStatus($"Error approving login request: {ex.Message}");
+                MessageBox.Show($"Export error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
         /// <summary>
-        /// Decline a login request
+        /// Filter system logs to today
         /// </summary>
-        private async void DeclineLoginRequestButton_Click(object sender, RoutedEventArgs e)
+        private void FilterSystemLogsTodayButton_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is not Button button || button.Tag is not int requestId)
+            var today = DateTime.Today;
+            SystemLogsStartDatePicker.SelectedDate = today;
+            SystemLogsEndDatePicker.SelectedDate = today;
+            _systemLogsStartDate = today;
+            _systemLogsEndDate = today;
+            _ = RefreshSystemLogs();
+        }
+
+        /// <summary>
+        /// Show all system log records
+        /// </summary>
+        private void FilterSystemLogsAllButton_Click(object sender, RoutedEventArgs e)
+        {
+            SystemLogsStartDatePicker.SelectedDate = null;
+            SystemLogsEndDatePicker.SelectedDate = null;
+            _systemLogsStartDate = null;
+            _systemLogsEndDate = null;
+            _ = RefreshSystemLogs();
+        }
+
+        /// <summary>
+        /// Apply system logs date filter
+        /// </summary>
+        private void ApplySystemLogsDateFilterButton_Click(object sender, RoutedEventArgs e)
+        {
+            _systemLogsStartDate = SystemLogsStartDatePicker.SelectedDate;
+            _systemLogsEndDate = SystemLogsEndDatePicker.SelectedDate;
+            _ = RefreshSystemLogs();
+        }
+
+        /// <summary>
+        /// Auto-apply filter when system logs dates are selected
+        /// </summary>
+        private void SystemLogsDatePicker_SelectedDateChanged(object? sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (SystemLogsStartDatePicker.SelectedDate != null || SystemLogsEndDatePicker.SelectedDate != null)
             {
-                return;
-            }
-
-            var request = _loginRequests.FirstOrDefault(r => r.Id == requestId);
-            if (request == null)
-            {
-                MessageBox.Show("Login request not found.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
-
-            var result = MessageBox.Show(
-                $"Decline login request for user '{request.Username}' on PC '{request.PcName}'?",
-                "Confirm Decline",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
-
-            if (result != MessageBoxResult.Yes)
-            {
-                return;
-            }
-
-            try
-            {
-                var success = await _databaseService.DeclineLoginRequestAsync(requestId, _currentAdminUsername ?? "admin");
-
-                if (success)
-                {
-                    await RefreshLoginRequests();
-                    UpdateStatus($"Login request from {request.PcName} declined");
-
-                    MessageBox.Show(
-                        $"Login request declined for '{request.Username}' on '{request.PcName}'.",
-                        "Request Declined",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
-                }
-                else
-                {
-                    MessageBox.Show(
-                        "Failed to decline login request. It may have already been processed.",
-                        "Error",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Error);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(
-                    $"Error declining login request: {ex.Message}",
-                    "Error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-                UpdateStatus($"Error declining login request: {ex.Message}");
+                _systemLogsStartDate = SystemLogsStartDatePicker.SelectedDate;
+                _systemLogsEndDate = SystemLogsEndDatePicker.SelectedDate;
+                _ = RefreshSystemLogs();
             }
         }
 
@@ -958,7 +1082,7 @@ namespace LabServerAdmin
         {
             try
             {
-                var logs = await _databaseService.GetSystemLogsAsync(1000); // Export last 1000 logs
+                var logs = await _databaseService.GetSystemLogsAsync(_systemLogsStartDate, _systemLogsEndDate, 1000); // Export last 1000 logs with date filter
                 
                 if (Path.GetExtension(filePath).ToLower() == ".csv")
                 {
@@ -996,10 +1120,12 @@ namespace LabServerAdmin
                 {
                     await ExportToCsv(logs.Select(l => new
                     {
+                        l.StudNo,
                         l.StudentName,
                         l.PcName,
                         l.TimeIn,
                         l.TimeOut,
+                        l.Duration,
                         l.IsActive
                     }), filePath);
                 }
@@ -1014,38 +1140,269 @@ namespace LabServerAdmin
             }
         }
 
-        private async Task ExportToCsv<T>(IEnumerable<T> data, string filePath)
+        private async Task ExportClassList(string filePath)
         {
-            var csv = new StringBuilder();
-            var properties = typeof(T).GetProperties();
-            
-            // Header
-            csv.AppendLine(string.Join(",", properties.Select(p => p.Name)));
-            
-            // Data
-            foreach (var item in data)
+            try
             {
-                var values = properties.Select(p => 
+                var data = _classList.ToList();
+                if (data.Count == 0)
                 {
-                    var value = p.GetValue(item);
-                    return value?.ToString()?.Replace(",", ";") ?? "";
-                });
-                csv.AppendLine(string.Join(",", values));
+                    MessageBox.Show("No class list data to export.", "No Data", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                if (Path.GetExtension(filePath).ToLower() == ".csv")
+                {
+                    await ExportToCsv(data.Select(l => new
+                    {
+                        l.StudNo,
+                        l.LastName,
+                        l.FirstName,
+                        l.SectionName,
+                        l.LoginTime,
+                        l.LogoutTime,
+                        l.Status,
+                        l.ClientName
+                    }), filePath);
+                }
+                else
+                {
+                    await ExportToText(data, filePath);
+                }
+
+                MessageBox.Show($"Successfully exported {data.Count} record(s) to:\n{filePath}", "Export Successful", MessageBoxButton.OK, MessageBoxImage.Information);
             }
-            
-            await File.WriteAllTextAsync(filePath, csv.ToString());
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Export error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
-        private async Task ExportToText<T>(IEnumerable<T> data, string filePath)
+        private void ClassListTodayButton_Click(object sender, RoutedEventArgs e)
         {
-            var text = new StringBuilder();
-            
-            foreach (var item in data)
+            if (ClassListTab.Visibility != Visibility.Visible)
             {
-                text.AppendLine(item?.ToString() ?? "");
+                return;
             }
-            
-            await File.WriteAllTextAsync(filePath, text.ToString());
+            var today = DateTime.Today;
+            ClassListDatePicker.SelectedDate = today;
+            _classListDate = today;
+            _ = RefreshClassList();
+        }
+ 
+         private void ClassListAllButton_Click(object sender, RoutedEventArgs e)
+         {
+             if (ClassListTab.Visibility != Visibility.Visible)
+             {
+                 return;
+             }
+             ClassListDatePicker.SelectedDate = null;
+             _classListDate = null;
+             _ = RefreshClassList();
+         }
+ 
+         private void ClassListApplyButton_Click(object sender, RoutedEventArgs e)
+         {
+             if (ClassListTab.Visibility != Visibility.Visible)
+             {
+                 return;
+             }
+             _classListDate = ClassListDatePicker.SelectedDate;
+             _ = RefreshClassList();
+         }
+ 
+         private void ClassListDatePicker_SelectedDateChanged(object? sender, System.Windows.Controls.SelectionChangedEventArgs e)
+         {
+             if (ClassListTab.Visibility != Visibility.Visible)
+             {
+                 return;
+             }
+
+             if (ClassListDatePicker.SelectedDate != null)
+             {
+                 _classListDate = ClassListDatePicker.SelectedDate;
+                 _ = RefreshClassList();
+             }
+         }
+ 
+         private async Task ExportToCsv<T>(IEnumerable<T> data, string filePath)
+         {
+             var csv = new StringBuilder();
+             var properties = typeof(T).GetProperties();
+             
+             // Header
+             csv.AppendLine(string.Join(",", properties.Select(p => p.Name)));
+             
+             // Data
+             foreach (var item in data)
+             {
+                 var values = properties.Select(p => 
+                 {
+                     var value = p.GetValue(item);
+                     return value?.ToString()?.Replace(",", ";") ?? "";
+                 });
+                 csv.AppendLine(string.Join(",", values));
+             }
+             
+             await File.WriteAllTextAsync(filePath, csv.ToString());
+         }
+
+         private async Task ExportToText<T>(IEnumerable<T> data, string filePath)
+         {
+             var text = new StringBuilder();
+             
+             foreach (var item in data)
+             {
+                 text.AppendLine(item?.ToString() ?? "");
+             }
+             
+             await File.WriteAllTextAsync(filePath, text.ToString());
+         }
+
+        /// <summary>
+        /// Refresh the login requests button click handler
+        /// </summary>
+        private async void RefreshLoginRequestsButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RefreshLoginRequests();
+            UpdateStatus("Login requests refreshed");
+        }
+
+        /// <summary>
+        /// Approve a login request
+        /// </summary>
+        private async void ApproveLoginRequestButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button || button.Tag is not int requestId)
+            {
+                return;
+            }
+
+            var request = _loginRequests.FirstOrDefault(r => r.Id == requestId);
+            if (request == null)
+            {
+                MessageBox.Show("Login request not found.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            var result = MessageBox.Show(
+                $"Approve {request.RequestType?.ToLower() ?? "login"} request for student '{request.StudNo}' on PC '{request.PcName}'?",
+                "Confirm Approval",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            try
+            {
+                var success = await _databaseService.ApproveLoginRequestAsync(requestId, _currentAdminUsername ?? "admin");
+
+                if (success)
+                {
+                    // If it's a logout request and client is connected, send logout command
+                    if (request.RequestType?.Equals("Logout", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        if (_tcpServerService.IsClientConnected(request.PcName))
+                        {
+                            // Send logout command to client
+                            await _tcpServerService.SendCommandAsync(request.PcName, "force_logout");
+                            UpdateStatus($"Logout command sent to {request.PcName}");
+                        }
+                    }
+
+                    await RefreshLoginRequests();
+                    UpdateStatus($"{request.RequestType} request from {request.PcName} approved");
+
+                    MessageBox.Show(
+                        $"{request.RequestType} request approved for '{request.StudNo}' on '{request.PcName}'.",
+                        "Request Approved",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+                else
+                {
+                    MessageBox.Show(
+                        "Failed to approve request. It may have already been processed.",
+                        "Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Error approving request: {ex.Message}",
+                    "Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                UpdateStatus($"Error approving request: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Decline a login request
+        /// </summary>
+        private async void DeclineLoginRequestButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button || button.Tag is not int requestId)
+            {
+                return;
+            }
+
+            var request = _loginRequests.FirstOrDefault(r => r.Id == requestId);
+            if (request == null)
+            {
+                MessageBox.Show("Login request not found.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            var result = MessageBox.Show(
+                $"Decline login request for student '{request.StudNo}' on PC '{request.PcName}'?",
+                "Confirm Decline",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (result != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            try
+            {
+                var success = await _databaseService.DeclineLoginRequestAsync(requestId, _currentAdminUsername ?? "admin");
+
+                if (success)
+                {
+                    await RefreshLoginRequests();
+                    UpdateStatus($"Login request from {request.PcName} declined");
+
+                    MessageBox.Show(
+                        $"Login request declined for '{request.StudNo}' on '{request.PcName}'.",
+                        "Request Declined",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+                else
+                {
+                    MessageBox.Show(
+                        "Failed to decline login request. It may have already been processed.",
+                        "Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Error declining login request: {ex.Message}",
+                    "Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                UpdateStatus($"Error declining login request: {ex.Message}");
+            }
         }
 
         private void UpdateStatus(string message)
@@ -1450,6 +1807,7 @@ namespace LabServerAdmin
 
                 await LoadUsageLimitAsync();
                 await RefreshSystemLogs();
+                await RefreshComputers();
                 await RefreshAttendanceLogs();
                 await RefreshConnectedClients();
 
@@ -1499,6 +1857,7 @@ namespace LabServerAdmin
             _systemLogs.Clear();
             _attendanceLogs.Clear();
             _loginRequests.Clear();
+            _classList.Clear();
             UpdateConnectedClientsCount();
             UpdateStatus("Session cleared");
         }

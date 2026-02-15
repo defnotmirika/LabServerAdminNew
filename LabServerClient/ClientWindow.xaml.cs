@@ -219,7 +219,7 @@ namespace LabServerClient
             }
         }
 
-        private async void SaveButton_Click(object sender, RoutedEventArgs e)
+        private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
             SaveSettings();
             UpdateStatus("Configuration saved");

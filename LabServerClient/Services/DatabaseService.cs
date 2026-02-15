@@ -32,8 +32,7 @@ namespace LabServerClient.Services
                 using var connection = new NpgsqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                // Check for Student or Teacher role
-                var query = "SELECT password FROM users WHERE username = @username AND (role = 'Student' OR role = 'Teacher') AND is_active = TRUE";
+                var query = "SELECT password_hash FROM us_credentials WHERE (username = @username OR studNo = @username) AND role = 'STUDENT' LIMIT 1";
                 using var command = new NpgsqlCommand(query, connection);
                 command.Parameters.AddWithValue("@username", username);
 
@@ -45,7 +44,6 @@ namespace LabServerClient.Services
                     return false;
                 }
 
-                // Check if it's a valid bcrypt hash
                 if (IsValidBcryptHash(passwordHash))
                 {
                     try
@@ -58,12 +56,10 @@ namespace LabServerClient.Services
                     }
                 }
 
-                // Fallback: plain text comparison (for migration)
                 return passwordHash == password;
             }
             catch
             {
-                // If database is not available, fall back to hardcoded credentials
                 return (username == "student" && password == "student123") || 
                        (username == "client" && password == "client123");
             }
@@ -76,26 +72,21 @@ namespace LabServerClient.Services
                 using var connection = new NpgsqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                // Get user role and password
-                var query = "SELECT role, password FROM users WHERE username = @username AND is_active = TRUE LIMIT 1";
+                var query = "SELECT role, password_hash FROM us_credentials WHERE (username = @username OR studNo = @username) LIMIT 1";
                 using var command = new NpgsqlCommand(query, connection);
                 command.Parameters.AddWithValue("@username", username);
 
                 using var reader = await command.ExecuteReaderAsync();
                 if (await reader.ReadAsync())
                 {
-                    var roleOrdinal = reader.GetOrdinal("role");
-                    var passwordOrdinal = reader.GetOrdinal("password");
+                    var role = reader.IsDBNull(reader.GetOrdinal("role")) ? null : reader.GetString(reader.GetOrdinal("role"));
+                    var passwordHash = reader.IsDBNull(reader.GetOrdinal("password_hash")) ? null : reader.GetString(reader.GetOrdinal("password_hash"));
 
-                    var role = reader.IsDBNull(roleOrdinal) ? null : reader.GetString(roleOrdinal);
-                    var passwordHash = reader.IsDBNull(passwordOrdinal) ? null : reader.GetString(passwordOrdinal);
-
-                    if (string.IsNullOrWhiteSpace(role) || string.IsNullOrWhiteSpace(passwordHash))
+                    if (string.IsNullOrWhiteSpace(passwordHash))
                     {
                         return null;
                     }
 
-                    // Verify password
                     bool passwordValid = false;
                     if (IsValidBcryptHash(passwordHash))
                     {
@@ -113,17 +104,15 @@ namespace LabServerClient.Services
                         passwordValid = passwordHash == password;
                     }
 
-                    return passwordValid ? role : null;
+                    return passwordValid ? (role ?? "Student") : null;
                 }
 
                 return null;
             }
             catch
             {
-                // Fallback: check hardcoded credentials
-                if (username == "admin" && password == "admin123")
-                    return "Admin";
-                if (username == "student" && password == "student123" || username == "client" && password == "client123")
+                if ((username == "student" && password == "student123") || 
+                    (username == "client" && password == "client123"))
                     return "Student";
                 return null;
             }
@@ -136,7 +125,7 @@ namespace LabServerClient.Services
                 using var connection = new NpgsqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                var query = "SELECT id FROM clients WHERE username = @username LIMIT 1";
+                var query = "SELECT id FROM us_credentials WHERE (username = @username OR studNo = @username) LIMIT 1";
                 using var command = new NpgsqlCommand(query, connection);
                 command.Parameters.AddWithValue("@username", username);
 
@@ -156,26 +145,7 @@ namespace LabServerClient.Services
                 using var connection = new Npgsql.NpgsqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                var passwordHash = BCrypt.Net.BCrypt.HashPassword(password);
-
-                var sql = @"
-                    INSERT INTO clients (username, password_hash, created_at)
-                    VALUES (@username, @password_hash, NOW())
-                    ON CONFLICT (username) DO NOTHING
-                    RETURNING id;";
-
-                using var cmd = new Npgsql.NpgsqlCommand(sql, connection);
-                cmd.Parameters.AddWithValue("@username", username);
-                cmd.Parameters.AddWithValue("@password_hash", passwordHash);
-
-                var result = await cmd.ExecuteScalarAsync();
-                if (result != null && result != DBNull.Value)
-                {
-                    return Convert.ToInt32(result);
-                }
-
-                // If conflict (user exists), just return the existing ID
-                var getIdSql = "SELECT id FROM clients WHERE username = @username LIMIT 1";
+                var getIdSql = "SELECT id FROM us_credentials WHERE (username = @username OR studNo = @username) LIMIT 1";
                 using var getCmd = new Npgsql.NpgsqlCommand(getIdSql, connection);
                 getCmd.Parameters.AddWithValue("@username", username);
                 var existingId = await getCmd.ExecuteScalarAsync();
@@ -187,6 +157,226 @@ namespace LabServerClient.Services
             }
         }
 
+        /// <summary>
+        /// Validates login credentials against us_credentials table with PC Name check from us_geninfo.
+        /// </summary>
+        public async Task<LoginValidationResult?> ValidateLoginWithPcNameAsync(string username, string password, string currentPcName)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+                    SELECT uc.password_hash, uc.role, uc.studNo, c.client_name
+                    FROM us_credentials uc
+                    LEFT JOIN us_geninfo ug ON uc.studNo = ug.studNo
+                    LEFT JOIN computers c ON ug.default_computer_id = c.id
+                    WHERE (uc.username = @username OR uc.studNo = @username) 
+                    LIMIT 1";
+                
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@username", username);
+
+                using var reader = await command.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    var storedPasswordHash = reader.GetString(reader.GetOrdinal("password_hash"));
+                    var role = reader.IsDBNull(reader.GetOrdinal("role")) ? "STUDENT" : reader.GetString(reader.GetOrdinal("role"));
+                    var studNo = reader.IsDBNull(reader.GetOrdinal("studNo")) ? null : reader.GetString(reader.GetOrdinal("studNo"));
+                    var assignedPcName = reader.IsDBNull(reader.GetOrdinal("client_name")) ? null : reader.GetString(reader.GetOrdinal("client_name"));
+
+                    bool passwordValid = false;
+                    if (IsValidBcryptHash(storedPasswordHash))
+                    {
+                        try
+                        {
+                            passwordValid = BCrypt.Net.BCrypt.Verify(password, storedPasswordHash);
+                        }
+                        catch (BCrypt.Net.SaltParseException)
+                        {
+                            passwordValid = false;
+                        }
+                    }
+                    else
+                    {
+                        passwordValid = storedPasswordHash == password;
+                    }
+
+                    if (passwordValid)
+                    {
+                        // Require PC assignment - if no assigned PC, fail the login
+                        if (string.IsNullOrWhiteSpace(assignedPcName))
+                        {
+                            return new LoginValidationResult
+                            {
+                                IsValid = false,
+                                Username = username,
+                                UserRole = role,
+                                AssignedPcName = null,
+                                IsPcNameMatch = false
+                            };
+                        }
+
+                        var pcMatch = string.Equals(currentPcName, assignedPcName, StringComparison.OrdinalIgnoreCase);
+
+                        // If PC doesn't match, return PC mismatch (don't check schedule)
+                        if (!pcMatch)
+                        {
+                            return new LoginValidationResult
+                            {
+                                IsValid = true,
+                                Username = username,
+                                UserRole = role,
+                                AssignedPcName = assignedPcName,
+                                IsPcNameMatch = false
+                            };
+                        }
+
+                        // PC matches - now validate schedule (only for STUDENT role)
+                        if (role.Equals("STUDENT", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(studNo))
+                        {
+                            var scheduleResult = await ValidateScheduleAsync(connection, studNo, currentPcName);
+                            if (!scheduleResult.IsValid)
+                            {
+                                return new LoginValidationResult
+                                {
+                                    IsValid = false,
+                                    Username = username,
+                                    UserRole = role,
+                                    AssignedPcName = assignedPcName,
+                                    IsPcNameMatch = true,
+                                    ScheduleError = scheduleResult.ErrorMessage
+                                };
+                            }
+                        }
+
+                        // All checks passed
+                        return new LoginValidationResult
+                        {
+                            IsValid = true,
+                            Username = username,
+                            UserRole = role,
+                            AssignedPcName = assignedPcName,
+                            IsPcNameMatch = true
+                        };
+                    }
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Login validation error: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Validates if student can login based on schedule constraints
+        /// </summary>
+        private async Task<ScheduleValidationResult> ValidateScheduleAsync(NpgsqlConnection connection, string studNo, string clientName)
+        {
+            try
+            {
+                // Get student's section_id and PC's lab_id
+                var studentInfoQuery = @"
+                    SELECT ug.section_id, c.lab_id
+                    FROM us_geninfo ug
+                    CROSS JOIN computers c
+                    WHERE ug.studNo = @studNo AND c.client_name = @clientName
+                    LIMIT 1";
+
+                using var studentCmd = new NpgsqlCommand(studentInfoQuery, connection);
+                studentCmd.Parameters.AddWithValue("@studNo", studNo);
+                studentCmd.Parameters.AddWithValue("@clientName", clientName);
+
+                int? sectionId = null;
+                int? labId = null;
+
+                using (var reader = await studentCmd.ExecuteReaderAsync())
+                {
+                    if (await reader.ReadAsync())
+                    {
+                        sectionId = reader.IsDBNull(0) ? null : reader.GetInt32(0);
+                        labId = reader.IsDBNull(1) ? null : reader.GetInt32(1);
+                    }
+                }
+
+                if (!sectionId.HasValue || !labId.HasValue)
+                {
+                    return new ScheduleValidationResult
+                    {
+                        IsValid = false,
+                        ErrorMessage = "Student section or PC lab assignment not found."
+                    };
+                }
+
+                // Get current day and time
+                var now = DateTime.Now;
+                var currentDay = now.DayOfWeek.ToString();
+                var currentTime = now.TimeOfDay;
+
+                // Check if there's an active schedule
+                var scheduleQuery = @"
+                    SELECT schedule_id, time_in, time_out
+                    FROM course_schedules
+                    WHERE section_id = @sectionId
+                      AND lab_id = @labId
+                      AND day_of_week = @dayOfWeek
+                      AND @currentTime >= time_in
+                      AND @currentTime <= time_out
+                    LIMIT 1";
+
+                using var scheduleCmd = new NpgsqlCommand(scheduleQuery, connection);
+                scheduleCmd.Parameters.AddWithValue("@sectionId", sectionId.Value);
+                scheduleCmd.Parameters.AddWithValue("@labId", labId.Value);
+                scheduleCmd.Parameters.AddWithValue("@dayOfWeek", currentDay);
+                scheduleCmd.Parameters.AddWithValue("@currentTime", currentTime);
+
+                using var scheduleReader = await scheduleCmd.ExecuteReaderAsync();
+                if (await scheduleReader.ReadAsync())
+                {
+                    return new ScheduleValidationResult
+                    {
+                        IsValid = true,
+                        ErrorMessage = null
+                    };
+                }
+
+                return new ScheduleValidationResult
+                {
+                    IsValid = false,
+                    ErrorMessage = $"No active schedule found for your section in this lab at this time ({currentDay} {now:HH:mm})."
+                };
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Schedule validation error: {ex.Message}");
+                return new ScheduleValidationResult
+                {
+                    IsValid = false,
+                    ErrorMessage = $"Schedule validation failed: {ex.Message}"
+                };
+            }
+        }
+
+        private class ScheduleValidationResult
+        {
+            public bool IsValid { get; set; }
+            public string? ErrorMessage { get; set; }
+        }
+
+        public class LoginValidationResult
+        {
+            public bool IsValid { get; set; }
+            public string? Username { get; set; }
+            public string? UserRole { get; set; }
+            public string? AssignedPcName { get; set; }
+            public bool IsPcNameMatch { get; set; }
+            public string? ScheduleError { get; set; }
+        }
+
         private static bool IsValidBcryptHash(string? hash)
         {
             if (string.IsNullOrWhiteSpace(hash))
@@ -196,6 +386,390 @@ namespace LabServerClient.Services
 
             return Regex.IsMatch(hash, @"^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$");
         }
+
+        /// <summary>
+        /// Records student login attendance in attendance_logs table
+        /// </summary>
+        public async Task<int?> RecordStudentLoginAsync(string studNo, string clientName)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                // Get computer_id from client_name
+                var getComputerIdQuery = "SELECT id FROM computers WHERE client_name = @clientName LIMIT 1";
+                using var getComputerCmd = new NpgsqlCommand(getComputerIdQuery, connection);
+                getComputerCmd.Parameters.AddWithValue("@clientName", clientName);
+
+                var computerIdResult = await getComputerCmd.ExecuteScalarAsync();
+                if (computerIdResult == null || computerIdResult == DBNull.Value)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ATTENDANCE] Computer not found: {clientName}");
+                    return null;
+                }
+
+                var computerId = Convert.ToInt32(computerIdResult);
+
+                // Insert attendance log
+                var insertQuery = @"
+                    INSERT INTO attendance_logs (studNo, computer_id, login_time, status)
+                    VALUES (@studNo, @computerId, CURRENT_TIMESTAMP, 'Active')
+                    RETURNING id";
+
+                using var insertCmd = new NpgsqlCommand(insertQuery, connection);
+                insertCmd.Parameters.AddWithValue("@studNo", studNo);
+                insertCmd.Parameters.AddWithValue("@computerId", computerId);
+
+                var attendanceId = await insertCmd.ExecuteScalarAsync();
+                
+                System.Diagnostics.Debug.WriteLine($"[ATTENDANCE] Logged login for {studNo} on {clientName} (ID: {attendanceId})");
+                
+                return attendanceId != null ? Convert.ToInt32(attendanceId) : null;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ATTENDANCE] Error recording login: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Records student logout attendance in attendance_logs table
+        /// Updates the most recent active attendance record with logout time and duration
+        /// </summary>
+        public async Task<bool> RecordStudentLogoutAsync(string studNo, string clientName)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                // Get computer_id from client_name
+                var getComputerIdQuery = "SELECT id FROM computers WHERE client_name = @clientName LIMIT 1";
+                using var getComputerCmd = new NpgsqlCommand(getComputerIdQuery, connection);
+                getComputerCmd.Parameters.AddWithValue("@clientName", clientName);
+
+                var computerIdResult = await getComputerCmd.ExecuteScalarAsync();
+                if (computerIdResult == null || computerIdResult == DBNull.Value)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ATTENDANCE] Computer not found: {clientName}");
+                    return false;
+                }
+
+                var computerId = Convert.ToInt32(computerIdResult);
+
+                // Update the most recent active attendance log for this student/computer
+                var updateQuery = @"
+                    UPDATE attendance_logs
+                    SET logout_time = CURRENT_TIMESTAMP,
+                        session_duration = CURRENT_TIMESTAMP - login_time,
+                        status = 'Completed'
+                    WHERE studNo = @studNo
+                      AND computer_id = @computerId
+                      AND status = 'Active'
+                      AND logout_time IS NULL
+                      AND id = (
+                          SELECT id FROM attendance_logs
+                          WHERE studNo = @studNo
+                            AND computer_id = @computerId
+                            AND status = 'Active'
+                            AND logout_time IS NULL
+                          ORDER BY login_time DESC
+                          LIMIT 1
+                      )";
+
+                using var updateCmd = new NpgsqlCommand(updateQuery, connection);
+                updateCmd.Parameters.AddWithValue("@studNo", studNo);
+                updateCmd.Parameters.AddWithValue("@computerId", computerId);
+
+                var rowsAffected = await updateCmd.ExecuteNonQueryAsync();
+                
+                if (rowsAffected > 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ATTENDANCE] Logged logout for {studNo} on {clientName}");
+                    return true;
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ATTENDANCE] No active attendance record found for {studNo} on {clientName}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ATTENDANCE] Error recording logout: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Records student activity in activity_logs table
+        /// </summary>
+        public async Task<int?> LogStudentActivityAsync(string studNo, string clientName, string action, string? description = null)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                // Get computer_id from client_name
+                var getComputerIdQuery = "SELECT id FROM computers WHERE client_name = @clientName LIMIT 1";
+                using var getComputerCmd = new NpgsqlCommand(getComputerIdQuery, connection);
+                getComputerCmd.Parameters.AddWithValue("@clientName", clientName);
+
+                var computerIdResult = await getComputerCmd.ExecuteScalarAsync();
+                if (computerIdResult == null || computerIdResult == DBNull.Value)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ACTIVITY] Computer not found: {clientName}");
+                    return null;
+                }
+
+                var computerId = Convert.ToInt32(computerIdResult);
+
+                // Insert activity log
+                var insertQuery = @"
+                    INSERT INTO activity_logs (studNo, computer_id, action, description, timestamp)
+                    VALUES (@studNo, @computerId, @action, @description, CURRENT_TIMESTAMP)
+                    RETURNING id";
+
+                using var insertCmd = new NpgsqlCommand(insertQuery, connection);
+                insertCmd.Parameters.AddWithValue("@studNo", studNo);
+                insertCmd.Parameters.AddWithValue("@computerId", computerId);
+                insertCmd.Parameters.AddWithValue("@action", action);
+                insertCmd.Parameters.AddWithValue("@description", description ?? (object)DBNull.Value);
+
+                var activityId = await insertCmd.ExecuteScalarAsync();
+                
+                System.Diagnostics.Debug.WriteLine($"[ACTIVITY] Logged '{action}' for {studNo} on {clientName} (ID: {activityId})");
+                
+                return activityId != null ? Convert.ToInt32(activityId) : null;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ACTIVITY] Error logging activity: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Creates a login request when student tries to login from non-assigned PC
+        /// </summary>
+        public async Task<int?> CreateLoginRequestAsync(string studNo, string clientName, string? ipAddress = null, string? requestMessage = null)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                // Get computer_id from client_name
+                var getComputerIdQuery = "SELECT id FROM computers WHERE client_name = @clientName LIMIT 1";
+                using var getComputerCmd = new NpgsqlCommand(getComputerIdQuery, connection);
+                getComputerCmd.Parameters.AddWithValue("@clientName", clientName);
+
+                var computerIdResult = await getComputerCmd.ExecuteScalarAsync();
+                if (computerIdResult == null || computerIdResult == DBNull.Value)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[LOGIN_REQUEST] Computer not found: {clientName}");
+                    return null;
+                }
+
+                var computerId = Convert.ToInt32(computerIdResult);
+
+                // Insert login request
+                var insertQuery = @"
+                    INSERT INTO login_requests (studNo, computer_id, ip_address, request_message, request_timestamp, status)
+                    VALUES (@studNo, @computerId, @ipAddress, @requestMessage, CURRENT_TIMESTAMP, 'Pending')
+                    RETURNING id";
+
+                using var insertCmd = new NpgsqlCommand(insertQuery, connection);
+                insertCmd.Parameters.AddWithValue("@studNo", studNo);
+                insertCmd.Parameters.AddWithValue("@computerId", computerId);
+                insertCmd.Parameters.AddWithValue("@ipAddress", ipAddress ?? (object)DBNull.Value);
+                insertCmd.Parameters.AddWithValue("@requestMessage", requestMessage ?? (object)DBNull.Value);
+
+                var requestId = await insertCmd.ExecuteScalarAsync();
+                
+                System.Diagnostics.Debug.WriteLine($"[LOGIN_REQUEST] Created request for {studNo} on {clientName} (ID: {requestId})");
+                
+                return requestId != null ? Convert.ToInt32(requestId) : null;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[LOGIN_REQUEST] Error creating login request: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Creates a logout request when student tries to logout during active schedule
+        /// Uses the same login_requests table with request_type = 'Logout'
+        /// </summary>
+        public async Task<int?> CreateLogoutRequestAsync(string studNo, string clientName, string? requestMessage = null)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                // Get computer_id from client_name
+                var getComputerIdQuery = "SELECT id FROM computers WHERE client_name = @clientName LIMIT 1";
+                using var getComputerCmd = new NpgsqlCommand(getComputerIdQuery, connection);
+                getComputerCmd.Parameters.AddWithValue("@clientName", clientName);
+
+                var computerIdResult = await getComputerCmd.ExecuteScalarAsync();
+                if (computerIdResult == null || computerIdResult == DBNull.Value)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[LOGOUT_REQUEST] Computer not found: {clientName}");
+                    return null;
+                }
+
+                var computerId = Convert.ToInt32(computerIdResult);
+
+                // Insert logout request into login_requests table with request_type = 'Logout'
+                var insertQuery = @"
+                    INSERT INTO login_requests (studNo, computer_id, ip_address, request_type, request_message, request_timestamp, status)
+                    VALUES (@studNo, @computerId, NULL, 'Logout', @requestMessage, CURRENT_TIMESTAMP, 'Pending')
+                    RETURNING id";
+
+                using var insertCmd = new NpgsqlCommand(insertQuery, connection);
+                insertCmd.Parameters.AddWithValue("@studNo", studNo);
+                insertCmd.Parameters.AddWithValue("@computerId", computerId);
+                insertCmd.Parameters.AddWithValue("@requestMessage", requestMessage ?? (object)DBNull.Value);
+
+                var requestId = await insertCmd.ExecuteScalarAsync();
+                
+                System.Diagnostics.Debug.WriteLine($"[LOGOUT_REQUEST] Created logout request for {studNo} on {clientName} (ID: {requestId})");
+                
+                return requestId != null ? Convert.ToInt32(requestId) : null;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[LOGOUT_REQUEST] Error creating logout request: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Checks if student is currently in an active schedule
+        /// </summary>
+        public async Task<bool> IsStudentInActiveScheduleAsync(string studNo, string clientName)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                // Get student's section_id and PC's lab_id
+                var studentInfoQuery = @"
+                    SELECT ug.section_id, c.lab_id
+                    FROM us_geninfo ug
+                    CROSS JOIN computers c
+                    WHERE ug.studNo = @studNo AND c.client_name = @clientName
+                    LIMIT 1";
+
+                using var studentCmd = new NpgsqlCommand(studentInfoQuery, connection);
+                studentCmd.Parameters.AddWithValue("@studNo", studNo);
+                studentCmd.Parameters.AddWithValue("@clientName", clientName);
+
+                int? sectionId = null;
+                int? labId = null;
+
+                using (var reader = await studentCmd.ExecuteReaderAsync())
+                {
+                    if (await reader.ReadAsync())
+                    {
+                        sectionId = reader.IsDBNull(0) ? null : reader.GetInt32(0);
+                        labId = reader.IsDBNull(1) ? null : reader.GetInt32(1);
+                    }
+                }
+
+                if (!sectionId.HasValue || !labId.HasValue)
+                {
+                    return false;
+                }
+
+                // Get current day and time
+                var now = DateTime.Now;
+                var currentDay = now.DayOfWeek.ToString();
+                var currentTime = now.TimeOfDay;
+
+                // Check if there's an active schedule
+                var scheduleQuery = @"
+                    SELECT COUNT(*)
+                    FROM course_schedules
+                    WHERE section_id = @sectionId
+                      AND lab_id = @labId
+                      AND day_of_week = @dayOfWeek
+                      AND @currentTime >= time_in
+                      AND @currentTime <= time_out";
+
+                using var scheduleCmd = new NpgsqlCommand(scheduleQuery, connection);
+                scheduleCmd.Parameters.AddWithValue("@sectionId", sectionId.Value);
+                scheduleCmd.Parameters.AddWithValue("@labId", labId.Value);
+                scheduleCmd.Parameters.AddWithValue("@dayOfWeek", currentDay);
+                scheduleCmd.Parameters.AddWithValue("@currentTime", currentTime);
+
+                var count = await scheduleCmd.ExecuteScalarAsync();
+                return count != null && Convert.ToInt32(count) > 0;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[SCHEDULE_CHECK] Error: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Checks if a logout request for this student has been approved
+        /// </summary>
+        public async Task<bool> CheckLogoutRequestApprovalAsync(string studNo, string clientName)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                // Get computer_id from client_name
+                var getComputerIdQuery = "SELECT id FROM computers WHERE client_name = @clientName LIMIT 1";
+                using var getComputerCmd = new NpgsqlCommand(getComputerIdQuery, connection);
+                getComputerCmd.Parameters.AddWithValue("@clientName", clientName);
+
+                var computerIdResult = await getComputerCmd.ExecuteScalarAsync();
+                if (computerIdResult == null || computerIdResult == DBNull.Value)
+                {
+                    return false;
+                }
+
+                var computerId = Convert.ToInt32(computerIdResult);
+
+                // Check for approved logout request
+                var checkQuery = @"
+                    SELECT COUNT(*)
+                    FROM login_requests
+                    WHERE studNo = @studNo
+                      AND computer_id = @computerId
+                      AND request_type = 'Logout'
+                      AND status = 'Approved'
+                      AND request_timestamp >= NOW() - INTERVAL '1 hour'
+                    LIMIT 1";
+
+                using var checkCmd = new NpgsqlCommand(checkQuery, connection);
+                checkCmd.Parameters.AddWithValue("@studNo", studNo);
+                checkCmd.Parameters.AddWithValue("@computerId", computerId);
+
+                var count = await checkCmd.ExecuteScalarAsync();
+                return count != null && Convert.ToInt32(count) > 0;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[LOGOUT_CHECK] Error: {ex.Message}");
+                return false;
+            }
+        }
     }
 }
+
+
+
 

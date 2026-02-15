@@ -18,22 +18,8 @@ namespace LabServerAdmin
             // Prevent application from shutting down automatically
             this.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             
-            // Disable all animations globally
-            DisableAnimations();
-            
             // Run async initialization
             _ = InitializeAsync();
-        }
-
-        /// <summary>
-        /// Disables all WPF animations to prevent disruptions
-        /// </summary>
-        private void DisableAnimations()
-        {
-            // Set animation timeline speeds to 0
-            System.Windows.Media.Animation.Timeline.DesiredFrameRateProperty.OverrideMetadata(
-                typeof(System.Windows.Media.Animation.Timeline),
-                new FrameworkPropertyMetadata { DefaultValue = 0 });
         }
 
         private async Task InitializeAsync()
@@ -54,7 +40,6 @@ namespace LabServerAdmin
                 await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     loginWindow = new LoginWindow(_databaseService);
-                    // Prevent animation effects during login window show
                     loginWindow.ShowDialog();
                     dialogResult = loginWindow.DialogResult;
                 });
@@ -63,11 +48,12 @@ namespace LabServerAdmin
                 if (loginWindow != null && loginWindow.IsAuthenticated && dialogResult == true)
                 {
                     var username = loginWindow.AuthenticatedUsername;
+                    var role = loginWindow.UserRole;
                     await Application.Current.Dispatcher.InvokeAsync(() =>
                     {
                         try
                         {
-                            var mainWindow = new MainWindow(username);
+                            var mainWindow = new MainWindow(username, role);
                             mainWindow.Show();
                             mainWindow.Activate();
                             mainWindow.Focus();
