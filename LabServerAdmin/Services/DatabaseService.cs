@@ -426,6 +426,12 @@ namespace LabServerAdmin.Services
                     al.logout_time, 
                     al.session_duration, 
                     al.status,
+                    al.schedule_start_time,
+                    al.expected_login_time,
+                    al.is_late,
+                    al.minutes_late,
+                    al.timeliness_status,
+                    al.server_start_time,
                     COALESCE(us.full_name, al.studNo, '') as student_name,
                     COALESCE(c.client_name, '') as pc_name
                 FROM attendance_logs al
@@ -474,6 +480,12 @@ namespace LabServerAdmin.Services
                     LogoutTime = reader.IsDBNull("logout_time") ? null : reader.GetDateTime("logout_time"),
                     SessionDuration = reader.IsDBNull("session_duration") ? null : reader.GetTimeSpan(reader.GetOrdinal("session_duration")),
                     Status = reader.IsDBNull("status") ? "Active" : reader.GetString("status"),
+                    ScheduleStartTime = reader.IsDBNull("schedule_start_time") ? null : reader.GetDateTime("schedule_start_time"),
+                    ExpectedLoginTime = reader.IsDBNull("expected_login_time") ? null : reader.GetDateTime("expected_login_time"),
+                    IsLate = reader.IsDBNull("is_late") ? false : reader.GetBoolean("is_late"),
+                    MinutesLate = reader.IsDBNull("minutes_late") ? 0 : reader.GetInt32("minutes_late"),
+                    TimelinessStatus = reader.IsDBNull("timeliness_status") ? "On Time" : reader.GetString("timeliness_status"),
+                    ServerStartTime = reader.IsDBNull("server_start_time") ? null : reader.GetDateTime("server_start_time"),
                     StudentName = reader.IsDBNull("student_name") ? "" : reader.GetString("student_name"),
                     PcName = reader.IsDBNull("pc_name") ? "" : reader.GetString("pc_name")
                 };
@@ -1210,5 +1222,89 @@ namespace LabServerAdmin.Services
         }
 
         #endregion
+
+        /// <summary>
+        /// Records when the instructor starts the server for tracking late arrivals
+        /// </summary>
+        public async Task<int?> RecordServerStartAsync(string instructorId, int? labId = null)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+                    INSERT INTO server_sessions (instructor_id, server_start_time, session_date, lab_id, is_active)
+                    VALUES (@instructorId, CURRENT_TIMESTAMP, CURRENT_DATE, @labId, TRUE)
+                    RETURNING id";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@instructorId", instructorId);
+                command.Parameters.AddWithValue("@labId", labId ?? (object)DBNull.Value);
+
+                var result = await command.ExecuteScalarAsync();
+                return result != null ? Convert.ToInt32(result) : null;
+            }
+            catch (Exception ex)
+            {
+                await LogSystemActionAsync("Server Start Error", "Server", "Error", $"Failed to record server start: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Gets the server start time for today's session
+        /// </summary>
+        public async Task<DateTime?> GetTodayServerStartTimeAsync()
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+                    SELECT server_start_time
+                    FROM server_sessions
+                    WHERE session_date = CURRENT_DATE
+                      AND is_active = TRUE
+                    ORDER BY server_start_time DESC
+                    LIMIT 1";
+
+                using var command = new NpgsqlCommand(query, connection);
+                var result = await command.ExecuteScalarAsync();
+                
+                return result != null && result != DBNull.Value ? Convert.ToDateTime(result) : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Records server stop time
+        /// </summary>
+        public async Task RecordServerStopAsync()
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+                    UPDATE server_sessions
+                    SET server_stop_time = CURRENT_TIMESTAMP,
+                        is_active = FALSE
+                    WHERE session_date = CURRENT_DATE
+                      AND is_active = TRUE";
+
+                using var command = new NpgsqlCommand(query, connection);
+                await command.ExecuteNonQueryAsync();
+            }
+            catch (Exception ex)
+            {
+                await LogSystemActionAsync("Server Stop Error", "Server", "Error", $"Failed to record server stop: {ex.Message}");
+            }
+        }
     }
 }

@@ -450,11 +450,10 @@
                     <DataGrid x:Name="ComputersDataGrid" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" 
                               GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="50"/>
-                            <DataGridTextColumn Header="Client Name" Binding="{Binding ClientName}" Width="150"/>
-                            <DataGridTextColumn Header="IP Address" Binding="{Binding IpAddress}" Width="120"/>
-                            <DataGridTextColumn Header="Lab ID" Binding="{Binding LabId}" Width="80"/>
-                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100">
+                            <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="80"/>
+                            <DataGridTextColumn Header="Client Name" Binding="{Binding ClientName}" Width="250"/>
+                            <DataGridTextColumn Header="Lab ID" Binding="{Binding LabId}" Width="120"/>
+                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="150">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Style.Triggers>
@@ -472,9 +471,9 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridCheckBoxColumn Header="Online" Binding="{Binding IsOnline}" Width="60"/>
-                            <DataGridCheckBoxColumn Header="Locked" Binding="{Binding IsLocked}" Width="60"/>
-                            <DataGridTextColumn Header="Last Seen" Binding="{Binding LastSeen, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150"/>
+                            <DataGridCheckBoxColumn Header="Online" Binding="{Binding IsOnline}" Width="100"/>
+                            <DataGridCheckBoxColumn Header="Locked" Binding="{Binding IsLocked}" Width="100"/>
+                            <DataGridTextColumn Header="Last Seen" Binding="{Binding LastSeen, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="*"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>
@@ -523,7 +522,46 @@
                             <DataGridTextColumn Header="Time In" Binding="{Binding TimeIn, StringFormat=HH:mm:ss}" Width="100" SortMemberPath="TimeIn"/>
                             <DataGridTextColumn Header="Time Out" Binding="{Binding TimeOut, StringFormat=HH:mm:ss}" Width="100" SortMemberPath="TimeOut"/>
                             <DataGridTextColumn Header="Duration" Binding="{Binding Duration}" Width="100"/>
-                            <DataGridCheckBoxColumn Header="Active" Binding="{Binding IsActive}" Width="80" SortMemberPath="IsActive"/>
+                            <DataGridTextColumn Header="Timeliness" Binding="{Binding TimelinessDisplay}" Width="140" SortMemberPath="TimelinessStatus">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding TimelinessStatus}" Value="On Time">
+                                                <Setter Property="Foreground" Value="Green"/>
+                                                <Setter Property="FontWeight" Value="Bold"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding TimelinessStatus}" Value="Late">
+                                                <Setter Property="Foreground" Value="Red"/>
+                                                <Setter Property="FontWeight" Value="Bold"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding TimelinessStatus}" Value="Excused">
+                                                <Setter Property="Foreground" Value="Orange"/>
+                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100" SortMemberPath="Status">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Status}" Value="Active">
+                                                <Setter Property="Foreground" Value="Green"/>
+                                                <Setter Property="FontWeight" Value="Bold"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Status}" Value="Completed">
+                                                <Setter Property="Foreground" Value="Blue"/>
+                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Status}" Value="Forced_Logout">
+                                                <Setter Property="Foreground" Value="Red"/>
+                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>
@@ -620,36 +658,6 @@
                             <DataGridTextColumn Header="Details" Binding="{Binding Details}" Width="*"/>
                         </DataGrid.Columns>
                     </DataGrid>
-                </Grid>
-            </TabItem>
-
-            <!-- Settings Tab -->
-            <TabItem Header="⚙️ Settings">
-                <Grid Margin="10">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <GroupBox Header="Client Usage Limit" Margin="0,0,0,10" BorderBrush="#050d60" BorderThickness="2">
-                        <GroupBox.HeaderTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding}" FontWeight="Bold" FontSize="14" Foreground="#050d60"/>
-                            </DataTemplate>
-                        </GroupBox.HeaderTemplate>
-                        <StackPanel Orientation="Horizontal" Margin="10" VerticalAlignment="Center">
-                            <TextBlock Text="Usage limit (hours):" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="SemiBold"/>
-                            <TextBox x:Name="UsageLimitHoursTextBox" PreviewTextInput="UsageLimitHoursTextBox_PreviewTextInput"
-                                   PreviewKeyDown="UsageLimitHoursTextBox_PreviewKeyDown"
-                                   DataObject.Pasting="UsageLimitHoursTextBox_Pasting" Width="80" Height="32" Margin="0,0,10,0" Padding="8,6"/>
-                            <Button Content="Apply to All" Style="{StaticResource SuccessButton}" 
-                                    Click="ApplyUsageLimitButton_Click"/>
-                            <Button Content="Clear Limit" Style="{StaticResource DangerButton}" 
-                                    Click="ClearUsageLimitButton_Click"/>
-                        </StackPanel>
-                    </GroupBox>
-
-                    <TextBlock x:Name="UsageLimitStatusText" Grid.Row="1" Text="No usage limit set." FontStyle="Italic" Foreground="Gray" Margin="10,0,0,0"/>
                 </Grid>
             </TabItem>
         </TabControl>

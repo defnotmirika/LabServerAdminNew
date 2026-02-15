@@ -388,6 +388,81 @@ namespace LabServerClient.Services
         }
 
         /// <summary>
+        /// Gets schedule information for a student
+        /// </summary>
+        public async Task<(DateTime? scheduleStart, DateTime? scheduleEnd, DateTime? serverStart)?> GetStudentScheduleAsync(string studNo, string clientName)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                // Get computer's lab_id
+                var getLabIdQuery = "SELECT lab_id FROM computers WHERE client_name = @clientName LIMIT 1";
+                using var getLabCmd = new NpgsqlCommand(getLabIdQuery, connection);
+                getLabCmd.Parameters.AddWithValue("@clientName", clientName);
+                var labIdResult = await getLabCmd.ExecuteScalarAsync();
+                
+                if (labIdResult == null || labIdResult == DBNull.Value)
+                {
+                    return null;
+                }
+                
+                int labId = Convert.ToInt32(labIdResult);
+
+                // Get student's schedule for today
+                var getScheduleQuery = @"
+                    SELECT cs.time_in, cs.time_out, ss.server_start_time
+                    FROM us_geninfo ug
+                    LEFT JOIN course_schedules cs ON ug.section_id = cs.section_id
+                        AND cs.lab_id = @labId
+                        AND TRIM(cs.day_of_week) = TRIM(TO_CHAR(CURRENT_DATE, 'Day'))
+                    LEFT JOIN server_sessions ss ON ss.session_date = CURRENT_DATE
+                        AND ss.is_active = TRUE
+                    WHERE ug.studNo = @studNo
+                    LIMIT 1";
+                
+                using var scheduleCmd = new NpgsqlCommand(getScheduleQuery, connection);
+                scheduleCmd.Parameters.AddWithValue("@studNo", studNo);
+                scheduleCmd.Parameters.AddWithValue("@labId", labId);
+                
+                using var reader = await scheduleCmd.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    DateTime? scheduleStart = null;
+                    DateTime? scheduleEnd = null;
+                    DateTime? serverStart = null;
+                    
+                    if (!reader.IsDBNull(0))
+                    {
+                        var timeIn = reader.GetTimeSpan(0);
+                        scheduleStart = DateTime.Today.Add(timeIn);
+                    }
+                    
+                    if (!reader.IsDBNull(1))
+                    {
+                        var timeOut = reader.GetTimeSpan(1);
+                        scheduleEnd = DateTime.Today.Add(timeOut);
+                    }
+                    
+                    if (!reader.IsDBNull(2))
+                    {
+                        serverStart = reader.GetDateTime(2);
+                    }
+                    
+                    return (scheduleStart, scheduleEnd, serverStart);
+                }
+                
+                return null;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[SCHEDULE] Error getting schedule: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Records student login attendance in attendance_logs table
         /// </summary>
         public async Task<int?> RecordStudentLoginAsync(string studNo, string clientName)
@@ -398,28 +473,77 @@ namespace LabServerClient.Services
                 await connection.OpenAsync();
 
                 // Get computer_id from client_name
-                var getComputerIdQuery = "SELECT id FROM computers WHERE client_name = @clientName LIMIT 1";
+                var getComputerIdQuery = "SELECT id, lab_id FROM computers WHERE client_name = @clientName LIMIT 1";
                 using var getComputerCmd = new NpgsqlCommand(getComputerIdQuery, connection);
                 getComputerCmd.Parameters.AddWithValue("@clientName", clientName);
 
-                var computerIdResult = await getComputerCmd.ExecuteScalarAsync();
-                if (computerIdResult == null || computerIdResult == DBNull.Value)
+                int? computerId = null;
+                int? labId = null;
+                
+                using (var reader = await getComputerCmd.ExecuteReaderAsync())
+                {
+                    if (await reader.ReadAsync())
+                    {
+                        computerId = reader.GetInt32(0);
+                        labId = reader.IsDBNull(1) ? null : (int?)reader.GetInt32(1);
+                    }
+                }
+
+                if (!computerId.HasValue)
                 {
                     System.Diagnostics.Debug.WriteLine($"[ATTENDANCE] Computer not found: {clientName}");
                     return null;
                 }
 
-                var computerId = Convert.ToInt32(computerIdResult);
+                // Get student's section and today's schedule
+                DateTime? scheduleStartTime = null;
+                DateTime? serverStartTime = null;
+                
+                var getScheduleQuery = @"
+                    SELECT cs.time_in, ss.server_start_time
+                    FROM us_geninfo ug
+                    LEFT JOIN course_schedules cs ON ug.section_id = cs.section_id
+                        AND cs.lab_id = @labId
+                        AND TRIM(cs.day_of_week) = TRIM(TO_CHAR(CURRENT_DATE, 'Day'))
+                    LEFT JOIN server_sessions ss ON ss.session_date = CURRENT_DATE
+                        AND ss.is_active = TRUE
+                    WHERE ug.studNo = @studNo
+                    LIMIT 1";
+                
+                using var scheduleCmd = new NpgsqlCommand(getScheduleQuery, connection);
+                scheduleCmd.Parameters.AddWithValue("@studNo", studNo);
+                scheduleCmd.Parameters.AddWithValue("@labId", labId ?? (object)DBNull.Value);
+                
+                using (var reader = await scheduleCmd.ExecuteReaderAsync())
+                {
+                    if (await reader.ReadAsync())
+                    {
+                        if (!reader.IsDBNull(0))
+                        {
+                            var timeIn = reader.GetTimeSpan(0);
+                            var today = DateTime.Today;
+                            scheduleStartTime = today.Add(timeIn);
+                        }
+                        
+                        if (!reader.IsDBNull(1))
+                        {
+                            serverStartTime = reader.GetDateTime(1);
+                        }
+                    }
+                }
 
-                // Insert attendance log
+                // Insert attendance log with schedule information
                 var insertQuery = @"
-                    INSERT INTO attendance_logs (studNo, computer_id, login_time, status)
-                    VALUES (@studNo, @computerId, CURRENT_TIMESTAMP, 'Active')
+                    INSERT INTO attendance_logs 
+                    (studNo, computer_id, login_time, status, schedule_start_time, server_start_time)
+                    VALUES (@studNo, @computerId, CURRENT_TIMESTAMP, 'Active', @scheduleStartTime, @serverStartTime)
                     RETURNING id";
 
                 using var insertCmd = new NpgsqlCommand(insertQuery, connection);
                 insertCmd.Parameters.AddWithValue("@studNo", studNo);
-                insertCmd.Parameters.AddWithValue("@computerId", computerId);
+                insertCmd.Parameters.AddWithValue("@computerId", computerId.Value);
+                insertCmd.Parameters.AddWithValue("@scheduleStartTime", scheduleStartTime ?? (object)DBNull.Value);
+                insertCmd.Parameters.AddWithValue("@serverStartTime", serverStartTime ?? (object)DBNull.Value);
 
                 var attendanceId = await insertCmd.ExecuteScalarAsync();
                 
@@ -769,6 +893,15 @@ namespace LabServerClient.Services
         }
     }
 }
+
+
+
+
+
+
+
+
+
 
 
 

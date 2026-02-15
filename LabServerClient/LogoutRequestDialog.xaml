@@ -63,7 +63,7 @@
                     CornerRadius="5">
                 <TextBlock TextWrapping="Wrap"
                           FontSize="13">
-                    <Run Text="?? You are currently in an active lab session."/>
+                    <Run Text="You are currently in an active lab session."/>
                     <LineBreak/>
                     <LineBreak/>
                     <Run Text="To log out early, you must request approval from your instructor. Your request will be reviewed and you will be notified when approved."/>

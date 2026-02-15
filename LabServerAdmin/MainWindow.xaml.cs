@@ -41,15 +41,7 @@ namespace LabServerAdmin
         private bool _isServerRunning = false;
         private readonly DispatcherTimer _clientsRefreshTimer;
         private bool _isVoiceEnabled = false;
-        private double? _currentUsageLimitHours = null;
         private readonly Dictionary<string, RemoteControlWindow> _remoteWindows = new();
-
-        private const string UsageLimitHoursKey = "client_usage_hours";
-        private const string UsageLimitExpiryKey = "client_usage_expiry_utc";
-        private const string UsageLimitSessionStartKey = "client_usage_session_start_utc";
-
-        private DateTime? _usageLimitSessionStartUtc = null;
-        private DateTime? _currentUsageLimitExpiryUtc = null;
         private readonly string? _currentAdminUsername;
         private readonly string? _currentAdminRole;
 
@@ -118,7 +110,6 @@ namespace LabServerAdmin
             try
             {
                 await _databaseService.InitializeDatabaseAsync();
-                await LoadUsageLimitAsync();
                 // Load system logs when application starts
                 await RefreshSystemLogs();
                 // Load computers when application starts
@@ -191,13 +182,17 @@ namespace LabServerAdmin
                     ServerStatusText.Text = "Server: Running on Port 9000";
                     UpdateStatus("Server started successfully");
                     
+                    // Record server start time for attendance tracking
+                    if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                    {
+                        await _databaseService.RecordServerStartAsync(_currentAdminUsername);
+                    }
+                    
                     // Log admin action
                     if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
                     {
                         await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Start Server", "Server started on port 9000");
                     }
-                    
-                    await HandleUsageLimitOnServerStartAsync();
                     
                     // Refresh system logs and attendance logs when server starts
                     await RefreshSystemLogs();
@@ -205,12 +200,8 @@ namespace LabServerAdmin
                 }
                 else
                 {
-                    if (IsUsageLimitSessionActive)
-                    {
-                        await _tcpServerService.SendCommandToAllAsync("set_usage_limit", null);
-                    }
-
-                    await ClearUsageLimitSessionAsync();
+                    // Record server stop time
+                    await _databaseService.RecordServerStopAsync();
 
                     await _tcpServerService.StopServerAsync();
                     _isServerRunning = false;
@@ -648,22 +639,6 @@ namespace LabServerAdmin
                 _connectedClients.Add(clientInfo);
                 UpdateConnectedClientsCount();
                 UpdateStatus($"Client {e.ClientName} connected from {e.IpAddress}");
-
-                if (IsUsageLimitSessionActive)
-                {
-                    _ = Task.Run(async () =>
-                    {
-                        try
-                        {
-                            await Task.Delay(500);
-                            await SendUsageLimitToClientAsync(e.ClientName);
-                        }
-                        catch
-                        {
-                            // Ignored; logging is handled within TcpServerService
-                        }
-                    });
-                }
                 
                 // Refresh system logs when client connects
                 _ = RefreshSystemLogs();
@@ -1416,361 +1391,6 @@ namespace LabServerAdmin
             ConnectedClientsText.Text = $"Connected Clients: {connectedCount}";
         }
 
-        private async Task LoadUsageLimitAsync()
-        {
-            try
-            {
-                var storedHours = await _databaseService.GetSettingAsync(UsageLimitHoursKey);
-                var storedSessionStart = await _databaseService.GetSettingAsync(UsageLimitSessionStartKey);
-                var storedExpiry = await _databaseService.GetSettingAsync(UsageLimitExpiryKey);
-
-                if (!string.IsNullOrWhiteSpace(storedHours) &&
-                    double.TryParse(storedHours, NumberStyles.Float, CultureInfo.InvariantCulture, out var hours) &&
-                    hours > 0)
-                {
-                    _currentUsageLimitHours = hours;
-                }
-                else
-                {
-                    _currentUsageLimitHours = null;
-                }
-
-                _usageLimitSessionStartUtc = TryParseUtcDateTime(storedSessionStart);
-                _currentUsageLimitExpiryUtc = TryParseUtcDateTime(storedExpiry);
-
-                if (_currentUsageLimitExpiryUtc.HasValue && _currentUsageLimitExpiryUtc.Value <= DateTime.UtcNow)
-                {
-                    _currentUsageLimitExpiryUtc = null;
-                    _usageLimitSessionStartUtc = null;
-                }
-
-                    Dispatcher.Invoke(() =>
-                    {
-                    UsageLimitHoursTextBox.Text = _currentUsageLimitHours?.ToString("0.##", CultureInfo.CurrentCulture) ?? string.Empty;
-                        UpdateUsageLimitStatus();
-                    });
-            }
-            catch (Exception ex)
-            {
-                UpdateStatus($"Error loading settings: {ex.Message}");
-            }
-        }
-
-        private void UpdateUsageLimitStatus()
-        {
-            if (_currentUsageLimitHours.HasValue && _currentUsageLimitHours.Value > 0)
-            {
-                if (IsUsageLimitSessionActive)
-                {
-                    var remaining = _currentUsageLimitExpiryUtc!.Value - DateTime.UtcNow;
-                    if (remaining < TimeSpan.Zero)
-                    {
-                        remaining = TimeSpan.Zero;
-                    }
-
-                    UsageLimitStatusText.Text =
-                        $"Usage limit active ({_currentUsageLimitHours.Value.ToString("0.##", CultureInfo.CurrentCulture)}h). Remaining: {remaining:hh\\:mm\\:ss}.";
-                UsageLimitStatusText.FontStyle = FontStyles.Normal;
-                UsageLimitStatusText.Foreground = Brushes.DarkGreen;
-                }
-                else
-                {
-                    UsageLimitStatusText.Text = "Usage limit configured. Session will begin when the server starts.";
-                    UsageLimitStatusText.FontStyle = FontStyles.Italic;
-                    UsageLimitStatusText.Foreground = Brushes.SteelBlue;
-                }
-            }
-            else
-            {
-                UsageLimitStatusText.Text = "No usage limit set.";
-                UsageLimitStatusText.FontStyle = FontStyles.Italic;
-                UsageLimitStatusText.Foreground = Brushes.Gray;
-            }
-        }
-
-        private bool IsUsageLimitSessionActive =>
-            _currentUsageLimitHours.HasValue &&
-            _currentUsageLimitHours.Value > 0 &&
-            _usageLimitSessionStartUtc.HasValue &&
-            _currentUsageLimitExpiryUtc.HasValue &&
-            _currentUsageLimitExpiryUtc.Value > DateTime.UtcNow;
-
-        private static DateTime? TryParseUtcDateTime(string? value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return null;
-            }
-
-            if (DateTime.TryParse(
-                    value,
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal,
-                    out var parsed))
-            {
-                return DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
-            }
-
-            return null;
-        }
-
-        private async Task HandleUsageLimitOnServerStartAsync()
-        {
-            if (!_currentUsageLimitHours.HasValue || _currentUsageLimitHours.Value <= 0)
-            {
-                await ClearUsageLimitSessionAsync();
-                return;
-            }
-
-            await ActivateUsageLimitSessionAsync(forceRestart: true);
-        }
-
-        private async Task ActivateUsageLimitSessionAsync(bool forceRestart)
-        {
-            if (!_currentUsageLimitHours.HasValue || _currentUsageLimitHours.Value <= 0)
-            {
-                return;
-            }
-
-            if (IsUsageLimitSessionActive && !forceRestart)
-            {
-                return;
-            }
-
-            _usageLimitSessionStartUtc = DateTime.UtcNow;
-            _currentUsageLimitExpiryUtc = _usageLimitSessionStartUtc.Value.AddHours(_currentUsageLimitHours.Value);
-
-            await _databaseService.SetSettingAsync(UsageLimitSessionStartKey, _usageLimitSessionStartUtc.Value.ToString("o", CultureInfo.InvariantCulture));
-            await _databaseService.SetSettingAsync(UsageLimitExpiryKey, _currentUsageLimitExpiryUtc.Value.ToString("o", CultureInfo.InvariantCulture));
-
-            Dispatcher.Invoke(UpdateUsageLimitStatus);
-
-            await BroadcastUsageLimitAsync();
-        }
-
-        private async Task BroadcastUsageLimitAsync()
-        {
-            if (!IsUsageLimitSessionActive)
-            {
-                return;
-            }
-
-            var payloadJson = JsonSerializer.Serialize(CreateUsageLimitPayload());
-            await _tcpServerService.SendCommandToAllAsync("set_usage_limit", payloadJson);
-        }
-
-        private async Task SendUsageLimitToClientAsync(string clientName)
-        {
-            if (!IsUsageLimitSessionActive)
-            {
-                return;
-            }
-
-            var payloadJson = JsonSerializer.Serialize(CreateUsageLimitPayload());
-            await _tcpServerService.SendCommandAsync(clientName, "set_usage_limit", payloadJson);
-        }
-
-        private UsageLimitPayload CreateUsageLimitPayload()
-        {
-            return new UsageLimitPayload
-            {
-                Hours = _currentUsageLimitHours ?? 0,
-                SessionStartUtc = (_usageLimitSessionStartUtc ?? DateTime.UtcNow),
-                ExpiresUtc = (_currentUsageLimitExpiryUtc ?? DateTime.UtcNow)
-            };
-        }
-
-        private async Task ClearUsageLimitSessionAsync()
-        {
-            _usageLimitSessionStartUtc = null;
-            _currentUsageLimitExpiryUtc = null;
-            await _databaseService.DeleteSettingAsync(UsageLimitSessionStartKey);
-            await _databaseService.DeleteSettingAsync(UsageLimitExpiryKey);
-            Dispatcher.Invoke(UpdateUsageLimitStatus);
-        }
-
-        private class UsageLimitPayload
-        {
-            public double Hours { get; set; }
-            public DateTime SessionStartUtc { get; set; }
-            public DateTime ExpiresUtc { get; set; }
-        }
-
-        private void UsageLimitHoursTextBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
-        {
-            var textBox = sender as TextBox;
-            if (textBox == null) return;
-
-            // Allow decimal point and digits
-            foreach (char c in e.Text)
-            {
-                if (!char.IsDigit(c) && c != '.' && c != ',')
-                {
-                    e.Handled = true;
-                    return;
-                }
-            }
-
-            // Prevent multiple decimal points
-            var currentText = textBox.Text;
-            var selectionStart = textBox.SelectionStart;
-            var newText = currentText.Insert(selectionStart, e.Text);
-            
-            if ((newText.Count(c => c == '.') > 1 && newText.Count(c => c == ',') > 1) ||
-                (newText.Count(c => c == '.') > 1) ||
-                (newText.Count(c => c == ',') > 1))
-            {
-                e.Handled = true;
-            }
-        }
-
-        private void UsageLimitHoursTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
-        {
-            // Allow navigation, editing, and control keys
-            if (e.Key == Key.Back || e.Key == Key.Delete || 
-                e.Key == Key.Tab || e.Key == Key.Enter ||
-                e.Key == Key.Left || e.Key == Key.Right ||
-                e.Key == Key.Up || e.Key == Key.Down || 
-                e.Key == Key.Home || e.Key == Key.End ||
-                e.Key == Key.Escape)
-            {
-                return;
-            }
-
-            // Allow Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+Z
-            if (Keyboard.Modifiers == ModifierKeys.Control &&
-                (e.Key == Key.A || e.Key == Key.C || e.Key == Key.V || 
-                 e.Key == Key.X || e.Key == Key.Z))
-            {
-                return;
-            }
-
-            // Allow Shift for selection
-            if (Keyboard.Modifiers == ModifierKeys.Shift &&
-                (e.Key == Key.Left || e.Key == Key.Right || 
-                 e.Key == Key.Up || e.Key == Key.Down ||
-                 e.Key == Key.Home || e.Key == Key.End))
-            {
-                return;
-            }
-
-            // Allow digits and decimal separators - actual validation in PreviewTextInput
-            if ((e.Key >= Key.D0 && e.Key <= Key.D9) ||
-                (e.Key >= Key.NumPad0 && e.Key <= Key.NumPad9) ||
-                e.Key == Key.OemPeriod || e.Key == Key.OemComma || 
-                e.Key == Key.Decimal)
-            {
-                return;
-            }
-
-            // Block other keys
-            e.Handled = true;
-        }
-
-        private void UsageLimitHoursTextBox_Pasting(object sender, DataObjectPastingEventArgs e)
-        {
-            if (e.DataObject.GetDataPresent(typeof(string)))
-            {
-                var text = (string)e.DataObject.GetData(typeof(string));
-                
-                // Validate pasted text is numeric
-                if (!double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out _) &&
-                    !double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out _))
-                {
-                    e.CancelCommand();
-                }
-            }
-            else
-            {
-                e.CancelCommand();
-            }
-        }
-
-        private async void ApplyUsageLimitButton_Click(object sender, RoutedEventArgs e)
-        {
-            var input = UsageLimitHoursTextBox.Text.Trim();
-            if (!double.TryParse(input, NumberStyles.Float, CultureInfo.CurrentCulture, out var hours) &&
-                !double.TryParse(input, NumberStyles.Float, CultureInfo.InvariantCulture, out hours))
-            {
-                MessageBox.Show("Please enter a valid number of hours.", "Invalid Input", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            if (hours <= 0)
-            {
-                MessageBox.Show("Usage limit must be greater than zero. Use 'Clear Limit' to remove the restriction.", "Invalid Input", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            try
-            {
-                _currentUsageLimitHours = hours;
-                await _databaseService.SetSettingAsync(UsageLimitHoursKey, hours.ToString(CultureInfo.InvariantCulture));
-
-                if (_isServerRunning)
-                {
-                    await ActivateUsageLimitSessionAsync(forceRestart: true);
-                UpdateStatus($"Usage limit of {hours:0.##} hours applied to all clients");
-                
-                // Log admin action
-                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
-                {
-                    await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Set Usage Limit", $"Usage limit of {hours:0.##} hours applied to all clients");
-                }
-                
-                // Refresh system logs after action
-                await RefreshSystemLogs();
-                
-                MessageBox.Show($"Usage limit of {hours:0.##} hours applied to all connected clients.", "Usage Limit Applied", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-                else
-                {
-                    await ClearUsageLimitSessionAsync();
-                    UpdateStatus($"Usage limit of {hours:0.##} hours saved. Session will start when the server runs.");
-                    MessageBox.Show("Usage limit saved. It will activate automatically when the server starts.", "Usage Limit Saved", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Failed to apply usage limit: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                UpdateStatus($"Usage limit error: {ex.Message}");
-            }
-        }
-
-        private async void ClearUsageLimitButton_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                _currentUsageLimitHours = null;
-                UsageLimitHoursTextBox.Text = string.Empty;
-                await _databaseService.DeleteSettingAsync(UsageLimitHoursKey);
-                await ClearUsageLimitSessionAsync();
-
-                if (_isServerRunning)
-                {
-                    await _tcpServerService.SendCommandToAllAsync("set_usage_limit", null);
-                }
-
-                UpdateStatus("Usage limit cleared");
-                
-                // Log admin action
-                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
-                {
-                    await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Clear Usage Limit", "Usage limit cleared for all clients");
-                }
-                
-                // Refresh system logs after action
-                await RefreshSystemLogs();
-                
-                MessageBox.Show("Usage limit cleared for all clients.", "Usage Limit Cleared", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Failed to clear usage limit: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                UpdateStatus($"Usage limit clear error: {ex.Message}");
-            }
-        }
-
         #endregion
 
         #region Session Management
@@ -1805,7 +1425,6 @@ namespace LabServerAdmin
                 Activate();
                 MainTabControl.SelectedIndex = 0;
 
-                await LoadUsageLimitAsync();
                 await RefreshSystemLogs();
                 await RefreshComputers();
                 await RefreshAttendanceLogs();

@@ -32,20 +32,23 @@
                            Margin="10"
                            Stretch="Uniform"/>
                 </StackPanel>
-                <TextBlock Text="Computer Locked" 
+                <TextBlock x:Name="TitleTextBlock"
+                          Text="Computer Locked" 
                           FontSize="36" 
                           FontWeight="Bold" 
                           HorizontalAlignment="Center"
                           Foreground="#2C3E50"
                           Margin="0,0,0,15"/>
-                <TextBlock Text="This computer is currently locked by the administrator." 
+                <TextBlock x:Name="MessageTextBlock"
+                          Text="This computer is currently locked by the administrator." 
                           FontSize="18" 
                           HorizontalAlignment="Center"
                           Foreground="#7F8C8D"
                           TextWrapping="Wrap"
                           TextAlignment="Center"
                           Margin="0,0,0,10"/>
-                <TextBlock Text="Please wait for unlock..." 
+                <TextBlock x:Name="SubMessageTextBlock"
+                          Text="Please wait for unlock..." 
                           FontSize="16" 
                           HorizontalAlignment="Center"
                           Foreground="#95A5A6"

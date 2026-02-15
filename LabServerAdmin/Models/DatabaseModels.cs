@@ -132,6 +132,20 @@ namespace LabServerAdmin.Models
         [MaxLength(20)]
         public string Status { get; set; } = "Active"; // Active, Completed, Forced_Logout
         
+        // Timeliness tracking fields
+        public DateTime? ScheduleStartTime { get; set; }
+        
+        public DateTime? ExpectedLoginTime { get; set; }
+        
+        public bool IsLate { get; set; } = false;
+        
+        public int MinutesLate { get; set; } = 0;
+        
+        [MaxLength(20)]
+        public string TimelinessStatus { get; set; } = "On Time"; // On Time, Late, Excused
+        
+        public DateTime? ServerStartTime { get; set; }
+        
         // Computed properties for display compatibility
         public string StudentName { get; set; } = string.Empty; // Populated from join
         
@@ -167,6 +181,22 @@ namespace LabServerAdmin.Models
                     return $"{duration.Hours:D2}:{duration.Minutes:D2}:{duration.Seconds:D2}";
                 }
                 return "Active";
+            }
+        }
+        
+        // Computed property for timeliness display
+        [NotMapped]
+        public string TimelinessDisplay
+        {
+            get
+            {
+                return TimelinessStatus switch
+                {
+                    "Late" => $"?? Late ({MinutesLate} min)",
+                    "Excused" => "?? Excused",
+                    "On Time" => "?? On Time",
+                    _ => "?? On Time"
+                };
             }
         }
     }

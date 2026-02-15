@@ -31,7 +31,7 @@ namespace LabServerClient
 
         private HwndSource? _source;
 
-        public LockpcWindow()
+        public LockpcWindow(string? customMessage = null)
         {
             InitializeComponent();
             Loaded += LockpcWindow_Loaded;
@@ -41,6 +41,32 @@ namespace LabServerClient
             // Ensure window is visible
             Visibility = Visibility.Visible;
             ShowActivated = true;
+
+            // Set custom message if provided
+            if (!string.IsNullOrWhiteSpace(customMessage))
+            {
+                SetCustomMessage(customMessage);
+            }
+        }
+
+        /// <summary>
+        /// Sets a custom message to display on the lock screen
+        /// </summary>
+        private void SetCustomMessage(string message)
+        {
+            // Parse message for title and body (split by first newline)
+            var lines = message.Split(new[] { '\n' }, 2);
+            
+            if (lines.Length >= 1)
+            {
+                TitleTextBlock.Text = lines[0].Trim();
+            }
+            
+            if (lines.Length >= 2)
+            {
+                MessageTextBlock.Text = lines[1].Trim();
+                SubMessageTextBlock.Visibility = Visibility.Collapsed; // Hide default sub-message
+            }
         }
 
         private void LockpcWindow_Loaded(object sender, RoutedEventArgs e)

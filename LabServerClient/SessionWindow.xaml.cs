@@ -41,6 +41,8 @@ namespace LabServerClient
         private string? _username;
         private readonly DispatcherTimer _logoutRequestCheckTimer;
         private bool _hasPendingLogoutRequest = false;
+        private readonly DispatcherTimer _serverStartCheckTimer;
+        private bool _isWaitingForServerStart = false;
 
         public event EventHandler<string>? CurrentCommandChanged;
 
@@ -101,11 +103,188 @@ namespace LabServerClient
             };
             _logoutRequestCheckTimer.Tick += LogoutRequestCheckTimer_Tick;
 
+            // Timer to check for server start (when locked waiting for instructor)
+            _serverStartCheckTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(3) // Check every 3 seconds
+            };
+            _serverStartCheckTimer.Tick += ServerStartCheckTimer_Tick;
+
             // Usage limit now managed independently; default to no limit
             _usageLimitExpiryUtc = null;
 
             UpdateDisplay();
             Closing += SessionWindow_Closing;
+            
+            // Set automatic timer based on schedule
+            _ = Task.Run(async () => await InitializeScheduleBasedTimerAsync());
+        }
+
+        /// <summary>
+        /// Initializes the automatic timer based on the student's class schedule
+        /// </summary>
+        private async Task InitializeScheduleBasedTimerAsync()
+        {
+            try
+            {
+                if (_databaseService == null || string.IsNullOrWhiteSpace(_username))
+                {
+                    LogMessage("[TIMER] No database service or username - skipping schedule-based timer");
+                    return;
+                }
+
+                var pcName = _clientWindow?.GetClientName() ?? Environment.MachineName;
+                var schedule = await _databaseService.GetStudentScheduleAsync(_username, pcName);
+
+                if (schedule == null || !schedule.Value.scheduleEnd.HasValue)
+                {
+                    LogMessage("[TIMER] No schedule found for today - no automatic timer set");
+                    return;
+                }
+
+                var now = DateTime.Now;
+                var scheduleEnd = schedule.Value.scheduleEnd.Value;
+                var serverStartTime = schedule.Value.serverStart;
+
+                // Check if server has started
+                if (serverStartTime == null)
+                {
+                    LogMessage("[TIMER] Server has not started yet - locking screen and waiting");
+                    
+                    // Lock the screen but keep timer running
+                    await Dispatcher.InvokeAsync(async () =>
+                    {
+                        await LockSystemWithMessage("? Waiting for Instructor\n\nThe lab server has not been started yet.\nPlease wait for your instructor to start the session.\n\nTimer will begin when server starts.");
+                        _isWaitingForServerStart = true;
+                        _serverStartCheckTimer.Start();
+                    });
+                }
+
+                if (scheduleEnd <= now)
+                {
+                    LogMessage($"[TIMER] Schedule already ended at {scheduleEnd:HH:mm:ss} - locking system");
+                    await Dispatcher.InvokeAsync(async () =>
+                    {
+                        await LockSystem();
+                    });
+                    return;
+                }
+
+                // Calculate time remaining until schedule ends
+                var timeRemaining = scheduleEnd - now;
+                var hoursRemaining = timeRemaining.TotalHours;
+
+                LogMessage($"[TIMER] Schedule ends at {scheduleEnd:HH:mm:ss} - setting automatic timer for {hoursRemaining:F2} hours");
+
+                // Set usage limit based on schedule
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    ResetUsageLimitState(true);
+                    _usageLimitExpiryUtc = scheduleEnd.ToUniversalTime();
+                    _usageLimitCts = new CancellationTokenSource();
+                    _usageLimitUiTimer.Start();
+                    UpdateDisplay();
+                });
+
+                // Start monitoring
+                _ = Task.Run(() => MonitorUsageLimitAsync(_usageLimitExpiryUtc.Value, _usageLimitCts.Token));
+
+                LogMessage($"[TIMER] Automatic schedule-based timer activated - expires at {scheduleEnd:HH:mm:ss}");
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"[TIMER] Error initializing schedule-based timer: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Checks periodically if the server has started (used when locked waiting for instructor)
+        /// </summary>
+        private async void ServerStartCheckTimer_Tick(object? sender, EventArgs e)
+        {
+            if (!_isWaitingForServerStart || _databaseService == null || string.IsNullOrWhiteSpace(_username))
+            {
+                return;
+            }
+
+            try
+            {
+                var serverStartTime = await _databaseService.GetTodayServerStartTimeAsync();
+
+                if (serverStartTime.HasValue)
+                {
+                    // Server has started! Unlock the screen
+                    LogMessage($"[SERVER] Server started at {serverStartTime.Value:HH:mm:ss} - unlocking screen");
+                    
+                    _serverStartCheckTimer.Stop();
+                    _isWaitingForServerStart = false;
+
+                    await Dispatcher.InvokeAsync(async () =>
+                    {
+                        // Unlock the system
+                        if (_kioskModeWindow != null)
+                        {
+                            try
+                            {
+                                _kioskModeWindow.Close();
+                            }
+                            catch { }
+                            _kioskModeWindow = null;
+                        }
+
+                        // Show notification
+                        MessageBox.Show(
+                            "The instructor has started the lab server.\n\nYou may now begin your work.",
+                            "Server Started",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Information);
+
+                        // Re-initialize timer now that server has started
+                        await InitializeScheduleBasedTimerAsync();
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"[SERVER] Error checking server start: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Locks the system with a custom message displayed on the lock screen
+        /// </summary>
+        private async Task LockSystemWithMessage(string message)
+        {
+            try
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    // Close existing kiosk window if any
+                    if (_kioskModeWindow != null)
+                    {
+                        try
+                        {
+                            _kioskModeWindow.Close();
+                        }
+                        catch { }
+                        _kioskModeWindow = null;
+                    }
+
+                    // Show kiosk mode window with custom message
+                    _kioskModeWindow = new LockpcWindow(message);
+                    _kioskModeWindow.WindowState = WindowState.Maximized;
+                    _kioskModeWindow.Show();
+                    _kioskModeWindow.Activate();
+                    _kioskModeWindow.Focus();
+                    _kioskModeWindow.BringIntoView();
+                });
+
+                LogMessage($"System locked - Waiting for server to start");
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Lock with message error: {ex.Message}");
+            }
         }
 
         public void SetUsername(string username)
@@ -1290,6 +1469,7 @@ namespace LabServerClient
                 _heartbeatTimer?.Stop();
                 _usageLimitUiTimer?.Stop();
                 _logoutRequestCheckTimer?.Stop();
+                _serverStartCheckTimer?.Stop();
 
                 ResetUsageLimitState(true);
                 ResetScreenShareState();
