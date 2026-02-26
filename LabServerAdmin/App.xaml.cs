@@ -49,11 +49,12 @@ namespace LabServerAdmin
                 {
                     var username = loginWindow.AuthenticatedUsername;
                     var role = loginWindow.UserRole;
+                    var password = loginWindow.AuthenticatedPassword; // Get password for lock screen
                     await Application.Current.Dispatcher.InvokeAsync(() =>
                     {
                         try
                         {
-                            var mainWindow = new MainWindow(username, role);
+                            var mainWindow = new MainWindow(username, role, password); // Pass password
                             mainWindow.Show();
                             mainWindow.Activate();
                             mainWindow.Focus();

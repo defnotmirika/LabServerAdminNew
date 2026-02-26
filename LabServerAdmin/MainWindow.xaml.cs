@@ -40,13 +40,24 @@ namespace LabServerAdmin
 
         private bool _isServerRunning = false;
         private readonly DispatcherTimer _clientsRefreshTimer;
+        private readonly DispatcherTimer _uptimeTimer;
+        private readonly DispatcherTimer _scheduleEndTimer;
+        private readonly DispatcherTimer _inactivityTimer;
+        private DateTime _lastActivityTime;
+        private int _sessionTimeoutMinutes = 15;
+        private int _warningBeforeMinutes = 1;
+        private bool _timeoutWarningShown = false;
+        private DateTime? _serverStartTime = null;
+        private TimeSpan? _scheduleEndTime = null;
         private bool _isVoiceEnabled = false;
         private readonly Dictionary<string, RemoteControlWindow> _remoteWindows = new();
         private readonly string? _currentAdminUsername;
         private readonly string? _currentAdminRole;
+        private readonly string? _adminPassword; // Store password for lock screen
 
         private DateTime? _attendanceStartDate = null;
         private DateTime? _attendanceEndDate = null;
+        private bool _showAbsentStudents = false;
 
         private DateTime? _activityStartDate = null;
         private DateTime? _activityEndDate = null;
@@ -56,10 +67,11 @@ namespace LabServerAdmin
 
         private DateTime? _classListDate = null;
 
-        public MainWindow(string? adminUsername = null, string? adminRole = null)
+        public MainWindow(string? adminUsername = null, string? adminRole = null, string? password = null)
         {
             _currentAdminUsername = adminUsername;
             _currentAdminRole = adminRole;
+            _adminPassword = password; // Store password for lock screen authentication
             InitializeComponent();
             
             // Setup dependency injection
@@ -89,18 +101,49 @@ namespace LabServerAdmin
                 if (_isServerRunning)
                 {
                     _ = RefreshConnectedClients();
+                    _ = RefreshComputers(); // Also refresh computers to update online/offline status
                 }
             };
+            
+            // Setup uptime timer
+            _uptimeTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+            _uptimeTimer.Tick += UptimeTimer_Tick;
+            
+            // Setup schedule end timer (checks every minute)
+            _scheduleEndTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMinutes(1)
+            };
+            _scheduleEndTimer.Tick += ScheduleEndTimer_Tick;
+            
+            // Setup inactivity/session timeout timer
+            _inactivityTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(30) // Check every 30 seconds
+            };
+            _inactivityTimer.Tick += InactivityTimer_Tick;
+            _lastActivityTime = DateTime.Now;
+            
+            // Load timeout configuration from appsettings.json
+            LoadSecuritySettings();
+            
+            // Capture all user activity to reset inactivity timer
+            this.PreviewMouseMove += (s, e) => ResetInactivityTimer();
+            this.PreviewKeyDown += (s, e) => ResetInactivityTimer();
+            this.PreviewMouseDown += (s, e) => ResetInactivityTimer();
+            this.PreviewMouseWheel += (s, e) => ResetInactivityTimer();
+            
+            // Start inactivity monitoring
+            _inactivityTimer.Start();
+            
             Loaded += MainWindow_Loaded;
             Closing += MainWindow_Closing;
             
             // Set window to fullscreen on startup (but still resizable)
             WindowState = WindowState.Maximized;
-            
-            // Hide class list tab unless role is instructor
-            var isInstructor = string.Equals(_currentAdminRole, "INSTRUCTOR", StringComparison.OrdinalIgnoreCase) ||
-                               string.Equals(_currentAdminRole, "Instructor", StringComparison.OrdinalIgnoreCase);
-            ClassListTab.Visibility = isInstructor ? Visibility.Visible : Visibility.Collapsed;
 
             UpdateStatus("Ready - Click 'Start Server' to begin");
         }
@@ -120,11 +163,8 @@ namespace LabServerAdmin
                 await RefreshActivityLogs();
                 // Load login requests when application starts
                 await RefreshLoginRequests();
-                // Load class list when application starts (only for instructors)
-                if (ClassListTab.Visibility == Visibility.Visible)
-                {
-                    await RefreshClassList();
-                }
+                // Load class list when application starts
+                await RefreshClassList();
             }
             catch (Exception ex)
             {
@@ -176,11 +216,46 @@ namespace LabServerAdmin
                 {
                     await _tcpServerService.StartServerAsync();
                     _isServerRunning = true;
+                    _serverStartTime = DateTime.Now;
                     _clientsRefreshTimer.Start();
+                    _uptimeTimer.Start();
                     ServerToggleButton.Content = "⏹️ Stop Server";
                     ServerToggleButton.Style = (Style)FindResource("DangerButton");
-                    ServerStatusText.Text = "Server: Running on Port 9000";
+                    ServerStatusIndicator.Fill = Brushes.Green;
+                    ServerStatusTooltip.Content = "Server: Running on Port 9000";
                     UpdateStatus("Server started successfully");
+                    
+                    // Get schedule end time
+                    if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                    {
+                        _scheduleEndTime = await _databaseService.GetTodayScheduleEndTimeAsync(_currentAdminUsername);
+                        if (_scheduleEndTime.HasValue)
+                        {
+                            _scheduleEndTimer.Start();
+                            var endTimeStr = _scheduleEndTime.Value.ToString(@"hh\:mm");
+                            MessageBox.Show(
+                                $"Server started successfully!\n\nPort: 9000\nStatus: Running\n\nSchedule End Time: {endTimeStr}\nServer will auto-stop at schedule end time.",
+                                "Server Started",
+                                MessageBoxButton.OK,
+                                MessageBoxImage.Information);
+                        }
+                        else
+                        {
+                            MessageBox.Show(
+                                "Server started successfully!\n\nPort: 9000\nStatus: Running\n\nNote: No schedule found for today. Server will not auto-stop.",
+                                "Server Started",
+                                MessageBoxButton.OK,
+                                MessageBoxImage.Information);
+                        }
+                    }
+                    else
+                    {
+                        MessageBox.Show(
+                            "Server started successfully!\n\nPort: 9000\nStatus: Running",
+                            "Server Started",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Information);
+                    }
                     
                     // Record server start time for attendance tracking
                     if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
@@ -200,27 +275,14 @@ namespace LabServerAdmin
                 }
                 else
                 {
-                    // Record server stop time
-                    await _databaseService.RecordServerStopAsync();
-
-                    await _tcpServerService.StopServerAsync();
-                    _isServerRunning = false;
-                    _clientsRefreshTimer.Stop();
-                    ServerToggleButton.Content = "▶️ Start Server";
-                    ServerToggleButton.Style = (Style)FindResource("SuccessButton");
-                    ServerStatusText.Text = "Server: Stopped";
-                    UpdateStatus("Server stopped");
+                    // Stop server manually
+                    await StopServerAsync(isAutoStop: false);
                     
-                    // Log admin action
-                    if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
-                    {
-                        await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Stop Server", "Server stopped");
-                    }
-                    
-                    CloseAllRemoteWindows();
-                    
-                    // Refresh system logs when server stops
-                    await RefreshSystemLogs();
+                    MessageBox.Show(
+                        "Server stopped successfully!\n\nStatus: Stopped",
+                        "Server Stopped",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
                 }
             }
             catch (Exception ex)
@@ -258,6 +320,50 @@ namespace LabServerAdmin
             }
         }
 
+        private void SettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var settingsDialog = new SessionSettingsDialog(_sessionTimeoutMinutes, _warningBeforeMinutes)
+            {
+                Owner = this
+            };
+
+            var result = settingsDialog.ShowDialog();
+
+            if (result == true && settingsDialog.WasSaved)
+            {
+                // Update timeout settings
+                var previousTimeout = _sessionTimeoutMinutes;
+                var previousWarning = _warningBeforeMinutes;
+
+                _sessionTimeoutMinutes = settingsDialog.TimeoutMinutes;
+                _warningBeforeMinutes = settingsDialog.WarningMinutes;
+
+                // Save to appsettings.json
+                SaveTimeoutSettings();
+
+                // Log the change
+                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                {
+                    _ = _databaseService.LogAdminActionAsync(
+                        _currentAdminUsername,
+                        "Session Settings Changed",
+                        $"Timeout changed from {previousTimeout} to {_sessionTimeoutMinutes} minutes, " +
+                        $"warning changed from {previousWarning} to {_warningBeforeMinutes} minutes");
+                }
+
+                UpdateStatus($"Session timeout updated: {_sessionTimeoutMinutes} min (warning at {_sessionTimeoutMinutes - _warningBeforeMinutes} min)");
+
+                MessageBox.Show(
+                    $"Session settings updated successfully!\n\n" +
+                    $"Timeout: {_sessionTimeoutMinutes} minutes\n" +
+                    $"Warning: {_warningBeforeMinutes} minute(s) before logout\n\n" +
+                    $"These settings are now active.",
+                    "Settings Updated",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+        }
+
         private async void LogoutButton_Click(object sender, RoutedEventArgs e)
         {
             var confirm = MessageBox.Show(
@@ -280,6 +386,12 @@ namespace LabServerAdmin
 
         private async void LockAllButton_Click(object sender, RoutedEventArgs e)
         {
+            var result = MessageBox.Show("Are you sure you want to lock all connected PCs?\n\nThis will prevent students from using their computers.", 
+                "Confirm Lock All", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            
+            if (result != MessageBoxResult.Yes)
+                return;
+
             await _tcpServerService.SendCommandToAllAsync("lock");
             UpdateStatus("Lock command sent to all clients");
             
@@ -295,6 +407,12 @@ namespace LabServerAdmin
 
         private async void UnlockAllButton_Click(object sender, RoutedEventArgs e)
         {
+            var result = MessageBox.Show("Are you sure you want to unlock all connected PCs?", 
+                "Confirm Unlock All", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            
+            if (result != MessageBoxResult.Yes)
+                return;
+
             await _tcpServerService.SendCommandToAllAsync("unlock");
             UpdateStatus("Unlock command sent to all clients");
             
@@ -352,6 +470,12 @@ namespace LabServerAdmin
 
         private async void SleepAllButton_Click(object sender, RoutedEventArgs e)
         {
+            var result = MessageBox.Show("Are you sure you want to put all connected PCs to sleep?", 
+                "Confirm Sleep All", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            
+            if (result != MessageBoxResult.Yes)
+                return;
+
             await _tcpServerService.SendCommandToAllAsync("sleep");
             UpdateStatus("Sleep command sent to all clients");
             
@@ -549,6 +673,12 @@ namespace LabServerAdmin
 
         private async void RefreshLogsButton_Click(object sender, RoutedEventArgs e)
         {
+            // Clear date filters
+            SystemLogsStartDatePicker.SelectedDate = null;
+            SystemLogsEndDatePicker.SelectedDate = null;
+            _systemLogsStartDate = null;
+            _systemLogsEndDate = null;
+            
             await RefreshSystemLogs();
             UpdateStatus("System logs refreshed");
         }
@@ -575,8 +705,176 @@ namespace LabServerAdmin
             UpdateStatus("Computers list refreshed");
         }
 
+        private async void EditComputerButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button || button.Tag is not Computer computer)
+            {
+                return;
+            }
+
+            var dialog = new EditComputerDialog(computer, _databaseService, _tcpServerService)
+            {
+                Owner = this
+            };
+
+            var result = dialog.ShowDialog();
+
+            if (result == true && dialog.WasSaved)
+            {
+                // Refresh computers list
+                await RefreshComputers();
+                UpdateStatus($"Computer '{computer.ClientName}' updated successfully");
+
+                // Log admin action
+                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                {
+                    await _databaseService.LogAdminActionAsync(
+                        _currentAdminUsername,
+                        "Edit Computer",
+                        $"Updated computer configuration for '{computer.ClientName}'",
+                        computer.ClientName);
+                }
+            }
+        }
+
+        private async void MaintenanceModeButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button || button.Tag is not Computer computer)
+            {
+                return;
+            }
+
+            // Check if computer is currently in maintenance status
+            bool isCurrentlyInMaintenance = computer.Status == "Maintenance";
+
+            if (isCurrentlyInMaintenance)
+            {
+                // Disable maintenance mode
+                var confirm = MessageBox.Show(
+                    $"Disable maintenance mode for '{computer.ClientName}'?\n\nThe computer will be unlocked and available for use.",
+                    "Disable Maintenance Mode",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (confirm != MessageBoxResult.Yes)
+                {
+                    return;
+                }
+
+                try
+                {
+                    // Update database status to Online
+                    await _databaseService.UpdateComputerStatusAsync(computer.Id, "Online");
+
+                    // If client is connected, send unlock command
+                    if (_tcpServerService.IsClientConnected(computer.ClientName))
+                    {
+                        await _tcpServerService.SendCommandAsync(computer.ClientName, "unlock");
+                        UpdateStatus($"Maintenance mode disabled for {computer.ClientName} - Unlock command sent");
+                    }
+                    else
+                    {
+                        UpdateStatus($"Maintenance mode disabled for {computer.ClientName}");
+                    }
+
+                    // Log admin action
+                    if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                    {
+                        await _databaseService.LogAdminActionAsync(
+                            _currentAdminUsername,
+                            "Disable Maintenance Mode",
+                            $"Maintenance mode disabled for '{computer.ClientName}'",
+                            computer.ClientName);
+                    }
+
+                    // Refresh computers list
+                    await RefreshComputers();
+
+                    MessageBox.Show(
+                        $"Maintenance mode disabled for '{computer.ClientName}'.",
+                        "Success",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(
+                        $"Error disabling maintenance mode: {ex.Message}",
+                        "Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                    UpdateStatus($"Error: {ex.Message}");
+                }
+            }
+            else
+            {
+                // Enable maintenance mode
+                var maintenanceDialog = new MaintenanceModeDialog()
+                {
+                    Owner = this
+                };
+
+                var result = maintenanceDialog.ShowDialog();
+
+                if (result == true && !string.IsNullOrWhiteSpace(maintenanceDialog.MaintenanceMessage))
+                {
+                    try
+                    {
+                        // Update database status to Maintenance
+                        await _databaseService.UpdateComputerStatusAsync(computer.Id, "Maintenance");
+
+                        // If client is connected, send maintenance lock command
+                        if (_tcpServerService.IsClientConnected(computer.ClientName))
+                        {
+                            var parameters = JsonSerializer.Serialize(new { message = maintenanceDialog.MaintenanceMessage });
+                            await _tcpServerService.SendCommandAsync(computer.ClientName, "maintenance_lock", parameters);
+                            UpdateStatus($"Maintenance mode enabled for {computer.ClientName} - Lock command sent");
+                        }
+                        else
+                        {
+                            UpdateStatus($"Maintenance mode enabled for {computer.ClientName} (will apply when client connects)");
+                        }
+
+                        // Log admin action
+                        if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                        {
+                            await _databaseService.LogAdminActionAsync(
+                                _currentAdminUsername,
+                                "Enable Maintenance Mode",
+                                $"Maintenance mode enabled for '{computer.ClientName}': {maintenanceDialog.MaintenanceMessage}",
+                                computer.ClientName);
+                        }
+
+                        // Refresh computers list
+                        await RefreshComputers();
+
+                        MessageBox.Show(
+                            $"Maintenance mode enabled for '{computer.ClientName}'.\n\nMessage: {maintenanceDialog.MaintenanceMessage}",
+                            "Success",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Information);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(
+                            $"Error enabling maintenance mode: {ex.Message}",
+                            "Error",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Error);
+                        UpdateStatus($"Error: {ex.Message}");
+                    }
+                }
+            }
+        }
+
         private async void RefreshAttendanceButton_Click(object sender, RoutedEventArgs e)
         {
+            // Clear date filters
+            StartDatePicker.SelectedDate = null;
+            EndDatePicker.SelectedDate = null;
+            _attendanceStartDate = null;
+            _attendanceEndDate = null;
+            
             await RefreshAttendanceLogs();
             UpdateStatus("Attendance logs refreshed");
         }
@@ -599,6 +897,10 @@ namespace LabServerAdmin
 
         private async void RefreshClassListButton_Click(object sender, RoutedEventArgs e)
         {
+            // Clear date filter
+            ClassListDatePicker.SelectedDate = null;
+            _classListDate = null;
+            
             await RefreshClassList();
             UpdateStatus("Class list refreshed");
         }
@@ -640,6 +942,9 @@ namespace LabServerAdmin
                 UpdateConnectedClientsCount();
                 UpdateStatus($"Client {e.ClientName} connected from {e.IpAddress}");
                 
+                // Refresh computers tab to update online status
+                _ = RefreshComputers();
+                
                 // Refresh system logs when client connects
                 _ = RefreshSystemLogs();
             });
@@ -657,6 +962,9 @@ namespace LabServerAdmin
                 }
                 UpdateConnectedClientsCount();
                 UpdateStatus($"Client {e.ClientName} disconnected");
+                
+                // Refresh computers tab to update offline status
+                _ = RefreshComputers();
                 
                 // Refresh system logs when client disconnects
                 _ = RefreshSystemLogs();
@@ -741,6 +1049,23 @@ namespace LabServerAdmin
                 
                 foreach (var computer in computers)
                 {
+                    // Update online/offline status based on actual TCP connection
+                    if (_isServerRunning && _tcpServerService.IsClientConnected(computer.ClientName))
+                    {
+                        computer.IsOnline = true;
+                        computer.Status = "Online";
+                    }
+                    else
+                    {
+                        computer.IsOnline = false;
+                        // Keep database status (Maintenance, etc.) if server is not running
+                        // or set to Offline if not in maintenance mode
+                        if (computer.Status != "Maintenance")
+                        {
+                            computer.Status = "Offline";
+                        }
+                    }
+                    
                     _computers.Add(computer);
                 }
                 
@@ -750,7 +1075,8 @@ namespace LabServerAdmin
                 }
                 else
                 {
-                    UpdateStatus($"Loaded {computers.Count} computer(s)");
+                    var onlineCount = computers.Count(c => c.IsOnline);
+                    UpdateStatus($"Loaded {computers.Count} computer(s) - {onlineCount} online");
                 }
             }
             catch (Exception ex)
@@ -768,15 +1094,34 @@ namespace LabServerAdmin
         {
             try
             {
-                var logs = await _databaseService.GetAttendanceLogsAsync(_attendanceStartDate, _attendanceEndDate);
-                _attendanceLogs.Clear();
-                
-                foreach (var log in logs)
+                if (_showAbsentStudents)
                 {
-                    _attendanceLogs.Add(log);
+                    // Get combined list of present and absent students
+                    var allLogs = await _databaseService.GetAttendanceWithAbsentStudentsAsync(_attendanceStartDate, _attendanceEndDate);
+                    _attendanceLogs.Clear();
+                    
+                    foreach (var log in allLogs)
+                    {
+                        _attendanceLogs.Add(log);
+                    }
+                    
+                    var presentCount = allLogs.Count(l => l.Status != "Absent");
+                    var absentCount = allLogs.Count(l => l.Status == "Absent");
+                    UpdateStatus($"Loaded {presentCount} present, {absentCount} absent - Total: {allLogs.Count} record(s)");
                 }
-                
-                UpdateStatus($"Loaded {logs.Count} attendance record(s)");
+                else
+                {
+                    // Get only present students (logged in)
+                    var logs = await _databaseService.GetAttendanceLogsAsync(_attendanceStartDate, _attendanceEndDate);
+                    _attendanceLogs.Clear();
+                    
+                    foreach (var log in logs)
+                    {
+                        _attendanceLogs.Add(log);
+                    }
+                    
+                    UpdateStatus($"Loaded {logs.Count} attendance record(s)");
+                }
             }
             catch (Exception ex)
             {
@@ -829,11 +1174,6 @@ namespace LabServerAdmin
         {
             try
             {
-                if (ClassListTab.Visibility != Visibility.Visible)
-                {
-                    return;
-                }
-
                 if (string.IsNullOrWhiteSpace(_currentAdminUsername))
                 {
                     UpdateStatus("No instructor ID available for class list");
@@ -880,6 +1220,24 @@ namespace LabServerAdmin
             _ = RefreshAttendanceLogs();
         }
 
+        private void ShowAbsentButton_Click(object sender, RoutedEventArgs e)
+        {
+            _showAbsentStudents = !_showAbsentStudents;
+            
+            if (_showAbsentStudents)
+            {
+                ShowAbsentButton.Content = "✅ Hide Absent Students";
+                ShowAbsentButton.Style = (Style)FindResource("SuccessButton");
+            }
+            else
+            {
+                ShowAbsentButton.Content = "❌ Show Absent Students";
+                ShowAbsentButton.Style = (Style)FindResource("DangerButton");
+            }
+            
+            _ = RefreshAttendanceLogs();
+        }
+
         private void ApplyDateFilterButton_Click(object sender, RoutedEventArgs e)
         {
             _attendanceStartDate = StartDatePicker.SelectedDate;
@@ -914,6 +1272,12 @@ namespace LabServerAdmin
         /// </summary>
         private async void RefreshActivityLogsButton_Click(object sender, RoutedEventArgs e)
         {
+            // Clear date filters
+            ActivityStartDatePicker.SelectedDate = null;
+            ActivityEndDatePicker.SelectedDate = null;
+            _activityStartDate = null;
+            _activityEndDate = null;
+            
             await RefreshActivityLogs();
             UpdateStatus("Activity logs refreshed");
         }
@@ -1155,10 +1519,6 @@ namespace LabServerAdmin
 
         private void ClassListTodayButton_Click(object sender, RoutedEventArgs e)
         {
-            if (ClassListTab.Visibility != Visibility.Visible)
-            {
-                return;
-            }
             var today = DateTime.Today;
             ClassListDatePicker.SelectedDate = today;
             _classListDate = today;
@@ -1167,10 +1527,6 @@ namespace LabServerAdmin
  
          private void ClassListAllButton_Click(object sender, RoutedEventArgs e)
          {
-             if (ClassListTab.Visibility != Visibility.Visible)
-             {
-                 return;
-             }
              ClassListDatePicker.SelectedDate = null;
              _classListDate = null;
              _ = RefreshClassList();
@@ -1178,21 +1534,12 @@ namespace LabServerAdmin
  
          private void ClassListApplyButton_Click(object sender, RoutedEventArgs e)
          {
-             if (ClassListTab.Visibility != Visibility.Visible)
-             {
-                 return;
-             }
              _classListDate = ClassListDatePicker.SelectedDate;
              _ = RefreshClassList();
          }
  
          private void ClassListDatePicker_SelectedDateChanged(object? sender, System.Windows.Controls.SelectionChangedEventArgs e)
          {
-             if (ClassListTab.Visibility != Visibility.Visible)
-             {
-                 return;
-             }
-
              if (ClassListDatePicker.SelectedDate != null)
              {
                  _classListDate = ClassListDatePicker.SelectedDate;
@@ -1425,6 +1772,10 @@ namespace LabServerAdmin
                 Activate();
                 MainTabControl.SelectedIndex = 0;
 
+                // Reset session timeout after successful re-login
+                ResetInactivityTimer();
+                _inactivityTimer.Start();
+
                 await RefreshSystemLogs();
                 await RefreshComputers();
                 await RefreshAttendanceLogs();
@@ -1440,6 +1791,12 @@ namespace LabServerAdmin
 
         private async Task CleanupSessionStateAsync()
         {
+            // Stop all timers
+            _inactivityTimer?.Stop();
+            _clientsRefreshTimer?.Stop();
+            _uptimeTimer?.Stop();
+            _scheduleEndTimer?.Stop();
+            
             try
             {
                 if (_isServerRunning)
@@ -1448,7 +1805,8 @@ namespace LabServerAdmin
                     _isServerRunning = false;
                     ServerToggleButton.Content = "▶️ Start Server";
                     ServerToggleButton.Style = (Style)FindResource("SuccessButton");
-                    ServerStatusText.Text = "Server: Stopped";
+                    ServerStatusIndicator.Fill = Brushes.Red;
+                    ServerStatusTooltip.Content = "Server: Stopped";
                 }
             }
             catch (Exception ex)
@@ -1483,6 +1841,7 @@ namespace LabServerAdmin
 
         #endregion
 
+
         protected override void OnClosed(EventArgs e)
         {
             if (_isServerRunning)
@@ -1500,5 +1859,441 @@ namespace LabServerAdmin
             
             base.OnClosed(e);
         }
+
+        #region Uptime Timer
+
+        private void UptimeTimer_Tick(object? sender, EventArgs e)
+        {
+            if (_serverStartTime.HasValue)
+            {
+                var uptime = DateTime.Now - _serverStartTime.Value;
+                ServerUptimeText.Text = $"Uptime: {uptime.Hours:D2}:{uptime.Minutes:D2}:{uptime.Seconds:D2}";
+            }
+        }
+
+        #endregion
+
+        #region Schedule End Timer
+
+        private async void ScheduleEndTimer_Tick(object? sender, EventArgs e)
+        {
+            if (!_isServerRunning || !_scheduleEndTime.HasValue)
+            {
+                return;
+            }
+
+            var currentTime = DateTime.Now.TimeOfDay;
+            
+            // Check if current time has reached or passed the schedule end time
+            if (currentTime >= _scheduleEndTime.Value)
+            {
+                _scheduleEndTimer.Stop();
+                
+                // Show notification
+                MessageBox.Show(
+                    $"Schedule end time reached ({_scheduleEndTime.Value:hh\\:mm})!\n\nThe server will now stop automatically.",
+                    "Schedule Ended",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                
+                // Stop the server
+                await StopServerAsync(isAutoStop: true);
+            }
+        }
+
+        private async Task StopServerAsync(bool isAutoStop = false)
+        {
+            try
+            {
+                // Record server stop time
+                await _databaseService.RecordServerStopAsync();
+
+                await _tcpServerService.StopServerAsync();
+                _isServerRunning = false;
+                _serverStartTime = null;
+                _scheduleEndTime = null;
+                _clientsRefreshTimer.Stop();
+                _uptimeTimer.Stop();
+                _scheduleEndTimer.Stop();
+                ServerUptimeText.Text = "Uptime: --:--:--";
+                ServerToggleButton.Content = "▶️ Start Server";
+                ServerToggleButton.Style = (Style)FindResource("SuccessButton");
+                ServerStatusIndicator.Fill = Brushes.Red;
+                ServerStatusTooltip.Content = "Server: Stopped";
+                
+                var statusMessage = isAutoStop 
+                    ? "Server stopped automatically (schedule ended)" 
+                    : "Server stopped";
+                UpdateStatus(statusMessage);
+
+                // Log admin action
+                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                {
+                    var logMessage = isAutoStop 
+                        ? "Server stopped automatically (schedule end time reached)" 
+                        : "Server stopped";
+                    await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Stop Server", logMessage);
+                }
+
+                CloseAllRemoteWindows();
+
+                // Refresh system logs when server stops
+                await RefreshSystemLogs();
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Error stopping server: {ex.Message}");
+            }
+        }
+
+        #endregion
+
+        #region Session Timeout
+
+        private void LoadSecuritySettings()
+        {
+            try
+            {
+                var config = _host.Services.GetRequiredService<IConfiguration>();
+                _sessionTimeoutMinutes = config.GetValue<int>("Security:SessionTimeoutMinutes", 15);
+                _warningBeforeMinutes = config.GetValue<int>("Security:ShowWarningBeforeMinutes", 1);
+                
+                UpdateStatus($"Session timeout: {_sessionTimeoutMinutes} minutes (warning at {_sessionTimeoutMinutes - _warningBeforeMinutes} min)");
+            }
+            catch
+            {
+                // Use defaults if config fails
+                _sessionTimeoutMinutes = 15;
+                _warningBeforeMinutes = 1;
+            }
+        }
+
+        private void SaveTimeoutSettings()
+        {
+            try
+            {
+                var configPath = "appsettings.json";
+                if (!System.IO.File.Exists(configPath))
+                {
+                    UpdateStatus($"Warning: appsettings.json not found at {configPath}");
+                    return;
+                }
+
+                var json = System.IO.File.ReadAllText(configPath);
+                var jsonDoc = System.Text.Json.JsonDocument.Parse(json);
+                var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+
+                using var stream = System.IO.File.Create(configPath);
+                using var writer = new System.Text.Json.Utf8JsonWriter(stream, new System.Text.Json.JsonWriterOptions { Indented = true });
+
+                // Parse and update
+                var doc = System.Text.Json.JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                writer.WriteStartObject();
+
+                foreach (var property in root.EnumerateObject())
+                {
+                    if (property.Name == "Security")
+                    {
+                        writer.WriteStartObject("Security");
+                        writer.WriteNumber("SessionTimeoutMinutes", _sessionTimeoutMinutes);
+                        writer.WriteNumber("ShowWarningBeforeMinutes", _warningBeforeMinutes);
+                        writer.WriteEndObject();
+                    }
+                    else
+                    {
+                        property.Value.WriteTo(writer);
+                    }
+                }
+
+                writer.WriteEndObject();
+                writer.Flush();
+
+                UpdateStatus($"Session settings saved: {_sessionTimeoutMinutes} min timeout, {_warningBeforeMinutes} min warning");
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Error saving settings: {ex.Message}");
+                MessageBox.Show(
+                    $"Could not save settings to appsettings.json:\n{ex.Message}",
+                    "Save Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+
+        private void ResetInactivityTimer()
+        {
+            _lastActivityTime = DateTime.Now;
+            _timeoutWarningShown = false;
+        }
+
+        private async void InactivityTimer_Tick(object? sender, EventArgs e)
+        {
+            var inactiveMinutes = (DateTime.Now - _lastActivityTime).TotalMinutes;
+            
+            // Show warning before lock
+            if (inactiveMinutes >= (_sessionTimeoutMinutes - _warningBeforeMinutes) && !_timeoutWarningShown)
+            {
+                _timeoutWarningShown = true;
+                var secondsRemaining = (int)((_sessionTimeoutMinutes - inactiveMinutes) * 60);
+                
+                var result = MessageBox.Show(
+                    $"Your screen will be locked in {secondsRemaining} seconds due to inactivity.\n\nClick OK to continue working, or Cancel to lock now.",
+                    "⚠️ Session Lock Warning",
+                    MessageBoxButton.OKCancel,
+                    MessageBoxImage.Warning);
+                
+                if (result == MessageBoxResult.OK)
+                {
+                    // User clicked OK - reset timer
+                    ResetInactivityTimer();
+                    UpdateStatus("Session lock timer reset - activity detected");
+                }
+                else
+                {
+                    // User clicked Cancel or closed dialog - lock immediately
+                    _inactivityTimer.Stop();
+                    ShowLockScreen();
+                }
+            }
+            // Auto-lock if timeout reached
+            else if (inactiveMinutes >= _sessionTimeoutMinutes)
+            {
+                _inactivityTimer.Stop();
+                ShowLockScreen();
+            }
+        }
+
+        private void ShowLockScreen()
+        {
+            try
+            {
+                // Ensure we have the necessary credentials
+                if (string.IsNullOrWhiteSpace(_currentAdminUsername) || string.IsNullOrWhiteSpace(_adminPassword))
+                {
+                    MessageBox.Show(
+                        "Session credentials not available. You will be logged out.",
+                        "Security Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+
+                    _ = HandleLogoutAsync();
+                    return;
+                }
+
+                // Show lock screen
+                var lockScreen = new LockScreenDialog(_currentAdminUsername, _adminPassword);
+                lockScreen.ShowDialog();
+
+                if (lockScreen.WasUnlocked)
+                {
+                    // Success - resume session
+                    ResetInactivityTimer();
+                    _inactivityTimer?.Start();
+
+                    // Log unlock event
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _databaseService.LogSystemActionAsync(
+                                "Screen Unlocked",
+                                _currentAdminUsername ?? "Unknown",
+                                "Success",
+                                $"Admin {_currentAdminUsername} successfully unlocked screen after inactivity"
+                            );
+                        }
+                        catch
+                        {
+                            // Ignore logging errors
+                        }
+                    });
+
+                    UpdateStatus("Screen unlocked - session resumed");
+                }
+                else if (lockScreen.WasLogoutRequested)
+                {
+                    // User chose to logout from lock screen
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _databaseService.LogSystemActionAsync(
+                                "Logout from Lock Screen",
+                                _currentAdminUsername ?? "Unknown",
+                                "Success",
+                                $"Admin {_currentAdminUsername} logged out from lock screen"
+                            );
+                        }
+                        catch
+                        {
+                            // Ignore logging errors
+                        }
+                    });
+
+                    _ = HandleLogoutAsync();
+                }
+                else
+                {
+                    // Lock screen was closed unexpectedly - restart timer
+                    _inactivityTimer?.Start();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Error showing lock screen: {ex.Message}\n\nYou will be logged out for security.",
+                    "Lock Screen Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+
+                // Failsafe: logout on error
+                _ = HandleLogoutAsync();
+            }
+        }
+
+        private async Task HandleSessionTimeoutAsync(string reason)
+        {
+            // Log the timeout event
+            if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+            {
+                await _databaseService.LogAdminActionAsync(
+                    _currentAdminUsername, 
+                    "Session Timeout", 
+                    $"Auto-logout: {reason}");
+            }
+            
+            MessageBox.Show(
+                $"Your session has ended due to inactivity.\n\nReason: {reason}\n\nYou will be logged out for security.",
+                "Session Timeout",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            
+            // Perform logout
+            await HandleLogoutAsync();
+        }
+
+        #endregion
+
+        #region Search Functionality
+
+        private void ClassListSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (ClassListSearchBox.Text == "Search..." || ClassListSearchBox.Foreground == Brushes.Gray)
+            {
+                var view = System.Windows.Data.CollectionViewSource.GetDefaultView(ClassListDataGrid.ItemsSource);
+                view.Filter = null;
+                return;
+            }
+
+            var searchText = ClassListSearchBox.Text.ToLower();
+            var view2 = System.Windows.Data.CollectionViewSource.GetDefaultView(ClassListDataGrid.ItemsSource);
+            
+            if (string.IsNullOrWhiteSpace(searchText))
+            {
+                view2.Filter = null;
+            }
+            else
+            {
+                view2.Filter = item =>
+                {
+                    if (item is InstructorClassListItem classItem)
+                    {
+                        return classItem.StudNo?.ToLower().Contains(searchText) == true ||
+                               classItem.FirstName?.ToLower().Contains(searchText) == true ||
+                               classItem.LastName?.ToLower().Contains(searchText) == true ||
+                               classItem.SectionName?.ToLower().Contains(searchText) == true;
+                    }
+                    return false;
+                };
+            }
+        }
+
+        private void ComputersSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (ComputersSearchBox.Text == "Search..." || ComputersSearchBox.Foreground == Brushes.Gray)
+            {
+                var view = System.Windows.Data.CollectionViewSource.GetDefaultView(ComputersDataGrid.ItemsSource);
+                view.Filter = null;
+                return;
+            }
+
+            var searchText = ComputersSearchBox.Text.ToLower();
+            var view2 = System.Windows.Data.CollectionViewSource.GetDefaultView(ComputersDataGrid.ItemsSource);
+            
+            if (string.IsNullOrWhiteSpace(searchText))
+            {
+                view2.Filter = null;
+            }
+            else
+            {
+                view2.Filter = item =>
+                {
+                    if (item is Computer computer)
+                    {
+                        return computer.ClientName?.ToLower().Contains(searchText) == true ||
+                               computer.IpAddress?.ToLower().Contains(searchText) == true;
+                    }
+                    return false;
+                };
+            }
+        }
+
+        private void AttendanceSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (AttendanceSearchBox.Text == "Search..." || AttendanceSearchBox.Foreground == Brushes.Gray)
+            {
+                var view = System.Windows.Data.CollectionViewSource.GetDefaultView(AttendanceLogsDataGrid.ItemsSource);
+                view.Filter = null;
+                return;
+            }
+
+            var searchText = AttendanceSearchBox.Text.ToLower();
+            var view2 = System.Windows.Data.CollectionViewSource.GetDefaultView(AttendanceLogsDataGrid.ItemsSource);
+            
+            if (string.IsNullOrWhiteSpace(searchText))
+            {
+                view2.Filter = null;
+            }
+            else
+            {
+                view2.Filter = item =>
+                {
+                    if (item is AttendanceLog log)
+                    {
+                        return log.StudNo?.ToLower().Contains(searchText) == true ||
+                               log.StudentName?.ToLower().Contains(searchText) == true ||
+                               log.PcName?.ToLower().Contains(searchText) == true;
+                    }
+                    return false;
+                };
+            }
+        }
+
+        #endregion
+
+        #region Search Box Placeholder Handlers
+
+        private void SearchBox_GotFocus(object sender, RoutedEventArgs e)
+        {
+            if (sender is TextBox textBox && textBox.Text == "Search..." && textBox.Foreground == Brushes.Gray)
+            {
+                textBox.Text = "";
+                textBox.Foreground = Brushes.Black;
+            }
+        }
+
+        private void SearchBox_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (sender is TextBox textBox && string.IsNullOrWhiteSpace(textBox.Text))
+            {
+                textBox.Text = "Search...";
+                textBox.Foreground = Brushes.Gray;
+            }
+        }
+
+        #endregion
     }
 }

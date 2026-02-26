@@ -62,23 +62,22 @@ CREATE TABLE IF NOT EXISTS attendance_logs (
     status VARCHAR(20) DEFAULT 'Active' -- Active, Completed, Forced_Logout
 );
 
--- Lab sessions table
-CREATE TABLE IF NOT EXISTS lab_sessions (
+-- Server sessions table
+CREATE TABLE IF NOT EXISTS server_sessions (
     id SERIAL PRIMARY KEY,
-    session_name VARCHAR(100) NOT NULL,
-    lab_room VARCHAR(50),
-    start_time TIMESTAMP,
-    end_time TIMESTAMP,
-    instructor_id INTEGER REFERENCES users(id),
+    instructor_id VARCHAR(20),
+    server_start_time TIMESTAMP,
+    server_stop_time TIMESTAMP,
+    session_date DATE,
+    lab_id INTEGER,
     is_active BOOLEAN DEFAULT FALSE,
-    max_students INTEGER DEFAULT 30,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Session participants
 CREATE TABLE IF NOT EXISTS session_participants (
     id SERIAL PRIMARY KEY,
-    session_id INTEGER REFERENCES lab_sessions(id),
+    session_id INTEGER REFERENCES server_sessions(id),
     user_id INTEGER REFERENCES users(id),
     computer_id INTEGER REFERENCES computers(id),
     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

@@ -966,6 +966,8 @@ namespace LabServerClient
                     return await LockSystem();
                 case "unlock":
                     return await UnlockSystem();
+                case "maintenance_lock":
+                    return await MaintenanceLockSystem(parameters);
                 case "shutdown":
                     return await ShutdownSystem();
                 case "restart":
@@ -984,6 +986,8 @@ namespace LabServerClient
                     return await HandleRemoteInput(parameters);
                 case "force_logout":
                     return await ForceLogout();
+                case "update_config":
+                    return await UpdateConfiguration(parameters);
                 default:
                     return $"Unknown command: {command}";
             }
@@ -1021,6 +1025,119 @@ namespace LabServerClient
             }
         }
 
+        private async Task<string> UpdateConfiguration(string? parameters)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(parameters))
+                {
+                    LogMessage("Update config command received but no parameters provided");
+                    return "No configuration parameters provided";
+                }
+
+                LogMessage($"Update config command received: {parameters}");
+
+                // Parse JSON configuration
+                var config = JsonSerializer.Deserialize<ConfigurationUpdate>(parameters);
+                if (config == null)
+                {
+                    return "Invalid configuration format";
+                }
+
+                // Update PC name in Windows Registry if provided
+                if (!string.IsNullOrWhiteSpace(config.pc_name))
+                {
+                    try
+                    {
+                        var regKey = Registry.CurrentUser.OpenSubKey(@"Software\LabServerClient", true)
+                            ?? Registry.CurrentUser.CreateSubKey(@"Software\LabServerClient");
+                        
+                        regKey.SetValue("ClientName", config.pc_name);
+                        regKey.Close();
+
+                        LogMessage($"PC name updated in registry: {config.pc_name}");
+
+                        // Update ClientWindow's PC name if available
+                        if (_clientWindow != null)
+                        {
+                            _clientWindow.UpdateClientName(config.pc_name);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LogMessage($"Failed to update PC name in registry: {ex.Message}");
+                    }
+                }
+
+                // Update Server IP in Windows Registry if provided
+                if (!string.IsNullOrWhiteSpace(config.server_ip))
+                {
+                    try
+                    {
+                        var regKey = Registry.CurrentUser.OpenSubKey(@"Software\LabServerClient", true)
+                            ?? Registry.CurrentUser.CreateSubKey(@"Software\LabServerClient");
+                        
+                        regKey.SetValue("ServerIP", config.server_ip);
+                        regKey.Close();
+
+                        LogMessage($"Server IP updated in registry: {config.server_ip}");
+                    }
+                    catch (Exception ex)
+                    {
+                        LogMessage($"Failed to update server IP in registry: {ex.Message}");
+                    }
+                }
+
+                // Show notification to user
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    var message = "Configuration updated by administrator:\n\n";
+                    if (!string.IsNullOrWhiteSpace(config.pc_name))
+                    {
+                        message += $"• PC Name: {config.pc_name}\n";
+                    }
+                    if (!string.IsNullOrWhiteSpace(config.server_ip))
+                    {
+                        message += $"• Server IP: {config.server_ip}\n";
+                    }
+                    message += "\nThe application will restart to apply changes.";
+
+                    MessageBox.Show(
+                        message,
+                        "Configuration Updated",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                });
+
+                // Schedule application restart
+                LogMessage("Scheduling application restart to apply configuration changes");
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(2000); // Wait 2 seconds
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        // Restart the application
+                        System.Diagnostics.Process.Start(System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ?? "LabServerClient.exe");
+                        Application.Current.Shutdown();
+                    });
+                });
+
+                return $"Configuration updated successfully. Application will restart.";
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Update configuration error: {ex.Message}");
+                return $"Configuration update failed: {ex.Message}";
+            }
+        }
+
+        private class ConfigurationUpdate
+        {
+            public string? pc_name { get; set; }
+            public string? server_ip { get; set; }
+        }
+
+
 
         private async Task<string> LockSystem()
         {
@@ -1056,6 +1173,67 @@ namespace LabServerClient
                 LogMessage($"Lock error: {ex.Message}");
                 return $"Lock failed: {ex.Message}";
             }
+        }
+
+        private async Task<string> MaintenanceLockSystem(string? parameters)
+        {
+            try
+            {
+                string maintenanceMessage = "?? Maintenance Mode\n\nThis computer is currently undergoing maintenance.\nPlease use another computer.\n\nThank you for your patience.";
+
+                // Parse maintenance message from parameters if provided
+                if (!string.IsNullOrWhiteSpace(parameters))
+                {
+                    try
+                    {
+                        var payload = JsonSerializer.Deserialize<MaintenanceLockPayload>(parameters);
+                        if (payload != null && !string.IsNullOrWhiteSpace(payload.message))
+                        {
+                            maintenanceMessage = payload.message;
+                        }
+                    }
+                    catch
+                    {
+                        // If JSON parsing fails, use parameters as plain text message
+                        maintenanceMessage = parameters;
+                    }
+                }
+
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    // Close existing kiosk window if any
+                    if (_kioskModeWindow != null)
+                    {
+                        try
+                        {
+                            _kioskModeWindow.Close();
+                        }
+                        catch { }
+                        _kioskModeWindow = null;
+                    }
+
+                    // Show kiosk mode window with maintenance message
+                    _kioskModeWindow = new LockpcWindow(maintenanceMessage);
+                    _kioskModeWindow.WindowState = WindowState.Maximized;
+                    _kioskModeWindow.Show();
+                    _kioskModeWindow.Activate();
+                    _kioskModeWindow.Focus();
+                    _kioskModeWindow.BringIntoView();
+                });
+
+                LogMessage($"System locked - Maintenance mode activated with message: {maintenanceMessage}");
+                return "Maintenance lock activated successfully";
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Maintenance lock error: {ex.Message}");
+                return $"Maintenance lock failed: {ex.Message}";
+            }
+        }
+
+        private class MaintenanceLockPayload
+        {
+            public string? message { get; set; }
         }
 
         private Task<string> UnlockSystem()

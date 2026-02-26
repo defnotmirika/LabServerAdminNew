@@ -50,7 +50,7 @@ namespace LabServerClient
                 var sql = @"
                     CREATE TABLE IF NOT EXISTS client_files (
                         id SERIAL PRIMARY KEY,
-                        owner_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+                        owner_id INTEGER NOT NULL REFERENCES us_credentials(id) ON DELETE CASCADE,
                         filename TEXT NOT NULL,
                         filetype TEXT,
                         filesize BIGINT,

@@ -165,7 +165,7 @@ namespace LabServerAdmin.Services
                     _connectedClients.Remove(clientName);
                     _clientInfo.Remove(clientName);
                     ClientDisconnected?.Invoke(this, new ClientDisconnectedEventArgs(clientName));
-                    await _databaseService.UpdateClientStatusAsync(clientName, "", false, "Disconnected");
+                    await _databaseService.UpdateClientStatusAsync(clientName, "", false, "Offline");
                 }
                 client.Close();
             }
@@ -423,9 +423,16 @@ namespace LabServerAdmin.Services
 
     public class ServerMessage
     {
+        [JsonPropertyName("type")]
         public string Type { get; set; } = string.Empty;
+        
+        [JsonPropertyName("command")]
         public string Command { get; set; } = string.Empty;
+        
+        [JsonPropertyName("parameters")]
         public string? Parameters { get; set; }
+        
+        [JsonPropertyName("timestamp")]
         public DateTime Timestamp { get; set; }
     }
 

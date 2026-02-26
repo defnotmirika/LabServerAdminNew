@@ -46,6 +46,7 @@ namespace LabServerAdmin
         public bool IsAuthenticated { get; private set; } = false;
         public string? AuthenticatedUsername { get; private set; } = null;
         public string? UserRole { get; private set; } = null;
+        public string? AuthenticatedPassword { get; private set; } = null; // Store for lock screen
 
         public LoginWindow(DatabaseService? databaseService = null, bool requireAuthenticationToClose = true)
         {
@@ -60,6 +61,10 @@ namespace LabServerAdmin
 
         private void LoginWindow_Loaded(object sender, RoutedEventArgs e)
         {
+            // TEMPORARILY DISABLED: Alt+Tab blocking for testing
+            // Uncomment when ready to re-enable
+            
+            /*
             // Prevent alt-tab and make window stay on top
             var hwnd = new WindowInteropHelper(this).Handle;
             SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_TOPMOST);
@@ -77,6 +82,7 @@ namespace LabServerAdmin
             
             // Disable window animations and transitions
             DisableWindowAnimations(hwnd);
+            */
         }
 
         /// <summary>
@@ -93,6 +99,10 @@ namespace LabServerAdmin
 
         private void LoginWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
+            // TEMPORARILY DISABLED: Authentication requirement for testing
+            // Uncomment when ready to re-enable
+            
+            /*
             // Prevent closing unless authenticated
             if (_requireAuthenticationToClose && !IsAuthenticated)
             {
@@ -100,6 +110,7 @@ namespace LabServerAdmin
                 MessageBox.Show("You must login to exit the application.", "Login Required", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
+            */
             
             // Unregister hotkeys only if closing is allowed
             var hwnd = new WindowInteropHelper(this).Handle;
@@ -143,6 +154,10 @@ namespace LabServerAdmin
 
         private void LoginWindow_KeyDown(object sender, KeyEventArgs e)
         {
+            // TEMPORARILY DISABLED: Key blocking for testing
+            // Uncomment when ready to re-enable
+            
+            /*
             // Block Alt+Tab, Ctrl+Alt+Del, etc.
             if (e.Key == Key.System && (Keyboard.Modifiers & ModifierKeys.Alt) == ModifierKeys.Alt)
             {
@@ -157,6 +172,7 @@ namespace LabServerAdmin
             {
                 e.Handled = true;
             }
+            */
         }
 
 
@@ -241,6 +257,7 @@ namespace LabServerAdmin
                     IsAuthenticated = true;
                     AuthenticatedUsername = username;
                     UserRole = string.IsNullOrWhiteSpace(role) ? "ADMIN" : role;
+                    AuthenticatedPassword = password; // Store password for lock screen
                     ErrorTextBlock.Visibility = Visibility.Collapsed;
                     
                     // Log successful login attempt (fire and forget to not delay window close)

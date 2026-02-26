@@ -12,114 +12,193 @@
         SnapsToDevicePixels="True"
         UseLayoutRounding="True">
 
-
-
     <Window.Resources>
         <Style TargetType="Button">
             <Setter Property="Padding" Value="15,8"/>
             <Setter Property="Margin" Value="5"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style TargetType="TextBox">
-            <Setter Property="Padding" Value="10"/>
+            <Setter Property="Padding" Value="10,8"/>
             <Setter Property="FontSize" Value="14"/>
-            <Setter Property="Margin" Value="0,5,0,15"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#CCC"/>
+            <Setter Property="BorderThickness" Value="1"/>
         </Style>
 
         <Style TargetType="PasswordBox">
-            <Setter Property="Padding" Value="10"/>
+            <Setter Property="Padding" Value="10,8"/>
             <Setter Property="FontSize" Value="14"/>
-            <Setter Property="Margin" Value="0,5,0,15"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#CCC"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <Style x:Key="RoundedTextBox" TargetType="Border">
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#CCC"/>
+            <Setter Property="BorderThickness" Value="1"/>
         </Style>
     </Window.Resources>
 
-    <Grid Background="#F5F5F5">
+    <!-- Split Screen Layout -->
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
 
-        <!-- Centered Login Card -->
-        <Border Width="400"
-            Padding="30"
-            CornerRadius="10"
-            Background="White"
-            BorderBrush="#DDD"
-            BorderThickness="1"
-            VerticalAlignment="Center"
-            HorizontalAlignment="Center">
+        <!-- Left Side - Blue Background -->
+        <Grid Grid.Column="0" Background="#033a80">
+            <StackPanel VerticalAlignment="Center" 
+                       HorizontalAlignment="Center">
+                <!-- Two Images -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,0,0,30">
+                    <Grid Width="90" Height="90" Margin="0,0,15,0">
+                        <Border Background="White" 
+                               CornerRadius="45"
+                               Opacity="0.15"/>
+                        <Image Source="/trinity2.png" Width="60" Height="60" IsEnabled="False"/>
+                    </Grid>
+                    <Grid Width="90" Height="90" Margin="0,0,15,0">
+                        <Border Background="White" 
+                               CornerRadius="45"
+                               Opacity="0.15"/>
+                        <Image Source="/Images/learniq.png" Width="60" Height="60"/>
+                    </Grid>
+                </StackPanel>
 
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
+                <!-- Welcome Text -->
+                <TextBlock Text="Welcome TPCIANS !" 
+                          FontSize="42" 
+                          FontWeight="Bold" 
+                          Foreground="White"
+                          HorizontalAlignment="Left"
+                          Margin="0,0,0,15"
+                          TextAlignment="Left"/>
 
-                <!-- Header -->
-                <StackPanel Grid.Row="0" Margin="0,0,0,20">
+                <!-- Description Text -->
+                <TextBlock Text="Designed to help student learning and make efficient classroom management." 
+                          FontSize="16" 
+                          Foreground="#b3c9e6"
+                          HorizontalAlignment="Left"
+                          TextAlignment="Left"
+                          Margin="0,0,0,0"
+                          TextWrapping="Wrap"
+                          MaxWidth="400"/>
+            </StackPanel>
+        </Grid>
 
-                    <!-- Two Images -->
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
-                        <Image Source="/Images/trinity.png" Width="50" Height="50" Margin="5"/>
-                        <Image Source="/Images/learniq.png" Width="50" Height="50" Margin="5"/>
+        <!-- Right Side - White Background -->
+        <Grid Grid.Column="1" Background="White">
+            <!-- Centered Login Card -->
+            <Border Width="400"
+                Padding="30"
+                CornerRadius="10"
+                Background="White"
+                BorderBrush="#DDD"
+                BorderThickness="1"
+                VerticalAlignment="Center"
+                HorizontalAlignment="Center">
+
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Header -->
+                    <StackPanel Grid.Row="0" Margin="0,0,0,20">
+
+                        <TextBlock Text="Login" 
+                                FontSize="28" 
+                                FontWeight="Bold" 
+                                HorizontalAlignment="Left"
+                                Foreground="#2C3E50"/>
+
+                        <TextBlock Text="Welcome back! Please enter your details." 
+                                FontSize="14" 
+                                HorizontalAlignment="Left"
+                                Foreground="#7F8C8D"
+                                Margin="0,5,0,0"/>
                     </StackPanel>
 
-                    <TextBlock Text="Log In" 
-                            FontSize="28" 
-                            FontWeight="Bold" 
-                            HorizontalAlignment="Center"
-                            Foreground="#2C3E50"/>
 
-                    <TextBlock Text="Please login to continue" 
-                            FontSize="14" 
-                            HorizontalAlignment="Center"
-                            Foreground="#7F8C8D"
-                            Margin="0,5,0,0"/>
-                </StackPanel>
+                    <!-- Login Form -->
+                    <StackPanel Grid.Row="1">
 
+                        <!-- Username -->
+                        <TextBlock Text="Username" 
+                               FontWeight="SemiBold" 
+                               FontSize="14"
+                               Foreground="#34495E"
+                               Margin="0,0,0,5"/>
 
-                <!-- Login Form -->
-                <StackPanel Grid.Row="1">
+                        <Border Style="{StaticResource RoundedTextBox}" Margin="0,0,0,15">
+                            <TextBox x:Name="UsernameTextBox"
+                                 Height="40"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 Padding="10,8"
+                                 VerticalContentAlignment="Center"
+                                 KeyDown="UsernameTextBox_KeyDown"/>
+                        </Border>
 
-                    <!-- Username -->
-                    <TextBlock Text="Username" 
-                           FontWeight="SemiBold" 
-                           FontSize="14"
-                           Foreground="#34495E"/>
+                        <!-- Password -->
+                        <TextBlock Text="Password" 
+                               FontWeight="SemiBold" 
+                               FontSize="14"
+                               Foreground="#34495E"
+                               Margin="0,0,0,5"/>
 
-                    <TextBox x:Name="UsernameTextBox"
-                         Height="40"
-                         KeyDown="UsernameTextBox_KeyDown"/>
+                        <Border Style="{StaticResource RoundedTextBox}" Margin="0,0,0,15">
+                            <PasswordBox x:Name="PasswordBox" 
+                                     Height="40"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     Padding="10,8"
+                                     VerticalContentAlignment="Center"
+                                     KeyDown="PasswordBox_KeyDown"/>
+                        </Border>
 
-                    <!-- Password -->
-                    <TextBlock Text="Password" 
-                           FontWeight="SemiBold" 
-                           FontSize="14"
-                           Foreground="#34495E"/>
+                        <!-- Error Message -->
+                        <TextBlock x:Name="ErrorTextBlock" 
+                               Text="" 
+                               Foreground="Red" 
+                               FontSize="12"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,10"
+                               Visibility="Collapsed"/>
 
-                    <PasswordBox x:Name="PasswordBox" 
-                             Height="40"
-                             KeyDown="PasswordBox_KeyDown"/>
-
-                    <!-- Error Message -->
-                    <TextBlock x:Name="ErrorTextBlock" 
-                           Text="" 
-                           Foreground="Red" 
-                           FontSize="12"
-                           TextWrapping="Wrap"
-                           Margin="0,0,0,10"
-                           Visibility="Collapsed"/>
-
-                    <!-- Login Button -->
-                    <Button x:Name="LoginButton" 
-                        Content="Login" 
-                        Click="LoginButton_Click"
-                        Background="#050d60"
-                        Foreground="White"
-                        FontWeight="Bold"
-                        Height="40"
-                        Margin="0,10,0,0"/>
-                </StackPanel>
-            </Grid>
-        </Border>
+                        <!-- Login Button -->
+                        <Button x:Name="LoginButton" 
+                            Content="Login" 
+                            Click="LoginButton_Click"
+                            Background="#050d60"
+                            Foreground="White"
+                            FontWeight="Bold"
+                            Height="40"
+                            Margin="0,10,0,0"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </Window>
-

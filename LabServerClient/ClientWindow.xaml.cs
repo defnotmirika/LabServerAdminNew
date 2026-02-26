@@ -43,18 +43,16 @@ namespace LabServerClient
             // Setup startup
             SetupStartup();
 
-            // Auto-connect for client accounts
-            if (!_isAdmin)
-            {
-                Loaded += ClientWindow_Loaded;
-            }
+            // Auto-connect for ALL users (both admin and students)
+            Loaded += ClientWindow_Loaded;
 
             UpdateStatus("Configuration mode");
         }
 
         private async void ClientWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            if (!_isAdmin && !_isConnected)
+            // Auto-connect if not already connected
+            if (!_isConnected)
             {
                 await ConnectToServer();
             }

@@ -1,0 +1,124 @@
+<Window x:Class="LabServerAdmin.EditComputerDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Edit Computer" Height="300" Width="500"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+    <Window.Resources>
+        <Style x:Key="ModernButton" TargetType="Button">
+            <Setter Property="Background" Value="#050d60"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="15,8"/>
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="3">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#0a1580"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#030a40"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DangerButton" TargetType="Button">
+            <Setter Property="Background" Value="#dc3545"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="15,8"/>
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="3">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#c82333"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#bd2130"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Form Fields -->
+        <Grid Grid.Row="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- PC Name -->
+            <StackPanel Grid.Row="0" Margin="0,0,0,15">
+                <TextBlock Text="PC Name *" FontWeight="SemiBold" Foreground="#050d60" Margin="0,0,0,5"/>
+                <TextBox x:Name="PcNameTextBox" 
+                         Height="35" 
+                         FontSize="14" 
+                         Padding="10,5"
+                         BorderBrush="#050d60"
+                         BorderThickness="2"/>
+            </StackPanel>
+
+            <!-- Send to Client Checkbox -->
+            <CheckBox Grid.Row="1" x:Name="SendToClientCheckBox" 
+                      Content="Send configuration update to connected client" 
+                      IsChecked="True"
+                      FontSize="13"
+                      Margin="0,10,0,15"
+                      Foreground="#050d60"/>
+
+            <!-- Info Text -->
+            <TextBlock Grid.Row="2" 
+                       TextWrapping="Wrap" 
+                       FontSize="12" 
+                       Foreground="#666"
+                       Margin="0,0,0,10">
+                <Run Text="* Required fields"/>
+                <LineBreak/>
+                <Run Text="Note: If the client is connected, it will receive the updated configuration and restart automatically."/>
+            </TextBlock>
+        </Grid>
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button x:Name="SaveButton" Content="Save" Style="{StaticResource ModernButton}" Click="SaveButton_Click" Width="120"/>
+            <Button x:Name="CancelButton" Content="Cancel" Style="{StaticResource DangerButton}" Click="CancelButton_Click" Width="120"/>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -42,9 +42,6 @@ namespace LabServerAdmin.Models
         [MaxLength(100)]
         public string ClientName { get; set; } = string.Empty;
         
-        [MaxLength(45)]
-        public string IpAddress { get; set; } = string.Empty;
-        
         public int? LabId { get; set; }
         
         [MaxLength(20)]
@@ -61,6 +58,9 @@ namespace LabServerAdmin.Models
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
         
         // Computed properties for backward compatibility
+        [NotMapped]
+        public string? IpAddress { get; set; } // For runtime use only (from TcpServerService)
+        
         [NotMapped]
         public string? MacAddress { get; set; }
         
@@ -278,12 +278,6 @@ namespace LabServerAdmin.Models
         /// </summary>
         [MaxLength(100)]
         public string PcName { get; set; } = string.Empty;
-        
-        /// <summary>
-        /// IP address of the client making the request
-        /// </summary>
-        [MaxLength(45)]
-        public string? IpAddress { get; set; }
         
         /// <summary>
         /// Type of request: Login or Logout

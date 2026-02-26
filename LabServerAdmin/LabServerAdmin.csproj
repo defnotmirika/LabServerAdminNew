@@ -18,6 +18,7 @@
     <None Remove="appsettings.json" />
     <None Remove="Images\learniq.png" />
     <None Remove="Images\trinity.png" />
+    <None Remove="trinity2.png" />
   </ItemGroup>
 
   <ItemGroup>
@@ -44,6 +45,7 @@
     <Resource Include="Images\trinity.png">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </Resource>
+    <Resource Include="Images\trinity2.png" />
   </ItemGroup>
 
 </Project>

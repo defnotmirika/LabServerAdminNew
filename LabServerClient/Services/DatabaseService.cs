@@ -547,7 +547,22 @@ namespace LabServerClient.Services
 
                 var attendanceId = await insertCmd.ExecuteScalarAsync();
                 
-                System.Diagnostics.Debug.WriteLine($"[ATTENDANCE] Logged login for {studNo} on {clientName} (ID: {attendanceId})");
+                if (attendanceId != null)
+                {
+                    // Update computer status to Online and set is_online to true
+                    var updateComputerQuery = @"
+                        UPDATE computers
+                        SET status = 'Online',
+                            is_online = TRUE,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = @computerId";
+
+                    using var computerCmd = new NpgsqlCommand(updateComputerQuery, connection);
+                    computerCmd.Parameters.AddWithValue("@computerId", computerId.Value);
+                    await computerCmd.ExecuteNonQueryAsync();
+
+                    System.Diagnostics.Debug.WriteLine($"[ATTENDANCE] Logged login for {studNo} on {clientName} (ID: {attendanceId}) - Computer set to Online");
+                }
                 
                 return attendanceId != null ? Convert.ToInt32(attendanceId) : null;
             }
@@ -611,7 +626,19 @@ namespace LabServerClient.Services
                 
                 if (rowsAffected > 0)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[ATTENDANCE] Logged logout for {studNo} on {clientName}");
+                    // Update computer status to Offline and set is_online to false
+                    var updateComputerQuery = @"
+                        UPDATE computers
+                        SET status = 'Offline',
+                            is_online = FALSE,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = @computerId";
+
+                    using var computerCmd = new NpgsqlCommand(updateComputerQuery, connection);
+                    computerCmd.Parameters.AddWithValue("@computerId", computerId);
+                    await computerCmd.ExecuteNonQueryAsync();
+
+                    System.Diagnostics.Debug.WriteLine($"[ATTENDANCE] Logged logout for {studNo} on {clientName} - Computer set to Offline");
                     return true;
                 }
                 else
@@ -702,14 +729,13 @@ namespace LabServerClient.Services
 
                 // Insert login request
                 var insertQuery = @"
-                    INSERT INTO login_requests (studNo, computer_id, ip_address, request_message, request_timestamp, status)
-                    VALUES (@studNo, @computerId, @ipAddress, @requestMessage, CURRENT_TIMESTAMP, 'Pending')
+                    INSERT INTO login_requests (studNo, computer_id, request_type, request_message, request_timestamp, status)
+                    VALUES (@studNo, @computerId, 'Login', @requestMessage, CURRENT_TIMESTAMP, 'Pending')
                     RETURNING id";
 
                 using var insertCmd = new NpgsqlCommand(insertQuery, connection);
                 insertCmd.Parameters.AddWithValue("@studNo", studNo);
                 insertCmd.Parameters.AddWithValue("@computerId", computerId);
-                insertCmd.Parameters.AddWithValue("@ipAddress", ipAddress ?? (object)DBNull.Value);
                 insertCmd.Parameters.AddWithValue("@requestMessage", requestMessage ?? (object)DBNull.Value);
 
                 var requestId = await insertCmd.ExecuteScalarAsync();
@@ -752,8 +778,8 @@ namespace LabServerClient.Services
 
                 // Insert logout request into login_requests table with request_type = 'Logout'
                 var insertQuery = @"
-                    INSERT INTO login_requests (studNo, computer_id, ip_address, request_type, request_message, request_timestamp, status)
-                    VALUES (@studNo, @computerId, NULL, 'Logout', @requestMessage, CURRENT_TIMESTAMP, 'Pending')
+                    INSERT INTO login_requests (studNo, computer_id, request_type, request_message, request_timestamp, status)
+                    VALUES (@studNo, @computerId, 'Logout', @requestMessage, CURRENT_TIMESTAMP, 'Pending')
                     RETURNING id";
 
                 using var insertCmd = new NpgsqlCommand(insertQuery, connection);
