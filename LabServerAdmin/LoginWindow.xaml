@@ -75,7 +75,7 @@
                         <Border Background="White" 
                                CornerRadius="45"
                                Opacity="0.15"/>
-                        <Image Source="/trinity2.png" Width="60" Height="60" IsEnabled="False"/>
+                        <Image Source="/Images/trinity2.png" Width="60" Height="60" IsEnabled="False"/>
                     </Grid>
                     <Grid Width="90" Height="90" Margin="0,0,15,0">
                         <Border Background="White" 

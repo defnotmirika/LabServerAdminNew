@@ -2181,6 +2181,12 @@ namespace LabServerAdmin
 
         private void ClassListSearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
+            // Guard against initialization - DataGrid may not exist yet
+            if (ClassListDataGrid == null || ClassListDataGrid.ItemsSource == null)
+            {
+                return;
+            }
+
             if (ClassListSearchBox.Text == "Search..." || ClassListSearchBox.Foreground == Brushes.Gray)
             {
                 var view = System.Windows.Data.CollectionViewSource.GetDefaultView(ClassListDataGrid.ItemsSource);
@@ -2213,6 +2219,12 @@ namespace LabServerAdmin
 
         private void ComputersSearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
+            // Guard against initialization - DataGrid may not exist yet
+            if (ComputersDataGrid == null || ComputersDataGrid.ItemsSource == null)
+            {
+                return;
+            }
+
             if (ComputersSearchBox.Text == "Search..." || ComputersSearchBox.Foreground == Brushes.Gray)
             {
                 var view = System.Windows.Data.CollectionViewSource.GetDefaultView(ComputersDataGrid.ItemsSource);
@@ -2243,6 +2255,12 @@ namespace LabServerAdmin
 
         private void AttendanceSearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
+            // Guard against initialization - DataGrid may not exist yet
+            if (AttendanceLogsDataGrid == null || AttendanceLogsDataGrid.ItemsSource == null)
+            {
+                return;
+            }
+
             if (AttendanceSearchBox.Text == "Search..." || AttendanceSearchBox.Foreground == Brushes.Gray)
             {
                 var view = System.Windows.Data.CollectionViewSource.GetDefaultView(AttendanceLogsDataGrid.ItemsSource);
