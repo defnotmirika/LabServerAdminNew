@@ -300,6 +300,16 @@ namespace LabServerClient
             return PcNameTextBox.Text;
         }
 
+        public void UpdateClientName(string newName)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                PcNameTextBox.Text = newName;
+                SaveSettings();
+            });
+            LogMessage($"PC name updated to: {newName}");
+        }
+
         private void ResetScreenShareState()
         {
             if (_sessionWindow != null)

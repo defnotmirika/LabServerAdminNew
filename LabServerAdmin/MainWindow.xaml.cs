@@ -67,6 +67,24 @@ namespace LabServerAdmin
 
         private DateTime? _classListDate = null;
 
+        // Pagination for System Logs
+        private int _systemLogsCurrentPage = 1;
+        private int _systemLogsPageSize = 10;
+        private int _systemLogsTotalPages = 1;
+        private List<SystemLog> _allSystemLogs = new();
+
+        // Pagination for Clients
+        private int _clientsCurrentPage = 1;
+        private int _clientsPageSize = 10;
+        private int _clientsTotalPages = 1;
+        private List<ClientInfo> _allClients = new();
+
+        // Pagination for Computers
+        private int _computersCurrentPage = 1;
+        private int _computersPageSize = 10;
+        private int _computersTotalPages = 1;
+        private List<Computer> _allComputers = new();
+
         public MainWindow(string? adminUsername = null, string? adminRole = null, string? password = null)
         {
             _currentAdminUsername = adminUsername;
@@ -1004,13 +1022,31 @@ namespace LabServerAdmin
             try
             {
                 var clients = _tcpServerService.GetConnectedClients();
-                _connectedClients.Clear();
+                _allClients = clients.Values.ToList();
                 
-                foreach (var client in clients.Values)
+                // Calculate total pages
+                _clientsTotalPages = (int)Math.Ceiling((double)_allClients.Count / _clientsPageSize);
+                if (_clientsTotalPages == 0) _clientsTotalPages = 1;
+                
+                // Ensure current page is within bounds
+                if (_clientsCurrentPage > _clientsTotalPages)
+                {
+                    _clientsCurrentPage = _clientsTotalPages;
+                }
+                
+                // Get clients for current page
+                var pagedClients = _allClients
+                    .Skip((_clientsCurrentPage - 1) * _clientsPageSize)
+                    .Take(_clientsPageSize)
+                    .ToList();
+                
+                _connectedClients.Clear();
+                foreach (var client in pagedClients)
                 {
                     _connectedClients.Add(client);
                 }
                 
+                UpdateClientsPagination();
                 UpdateConnectedClientsCount();
             }
             catch (Exception ex)
@@ -1024,19 +1060,242 @@ namespace LabServerAdmin
         {
             try
             {
+                // Fetch all logs matching the filter
                 var logs = await _databaseService.GetSystemLogsAsync(_systemLogsStartDate, _systemLogsEndDate);
-                _systemLogs.Clear();
+                _allSystemLogs = logs;
                 
-                foreach (var log in logs)
+                // Calculate total pages
+                _systemLogsTotalPages = (int)Math.Ceiling((double)logs.Count / _systemLogsPageSize);
+                if (_systemLogsTotalPages == 0) _systemLogsTotalPages = 1;
+                
+                // Ensure current page is within bounds
+                if (_systemLogsCurrentPage > _systemLogsTotalPages)
+                {
+                    _systemLogsCurrentPage = _systemLogsTotalPages;
+                }
+                
+                // Get logs for current page
+                var pagedLogs = logs
+                    .Skip((_systemLogsCurrentPage - 1) * _systemLogsPageSize)
+                    .Take(_systemLogsPageSize)
+                    .ToList();
+                
+                _systemLogs.Clear();
+                foreach (var log in pagedLogs)
                 {
                     _systemLogs.Add(log);
                 }
                 
-                UpdateStatus($"Loaded {logs.Count} system log(s)");
+                UpdateSystemLogsPagination();
+                UpdateStatus($"Loaded {pagedLogs.Count} of {logs.Count} system log(s) - Page {_systemLogsCurrentPage} of {_systemLogsTotalPages}");
             }
             catch (Exception ex)
             {
                 UpdateStatus($"Error refreshing system logs: {ex.Message}");
+            }
+        }
+
+        private void UpdateSystemLogsPagination()
+        {
+            if (SystemLogsPaginationPanel == null) return;
+            
+            Dispatcher.Invoke(() =>
+            {
+                SystemLogsPageInfoText.Text = $"Page {_systemLogsCurrentPage} of {_systemLogsTotalPages} ({_allSystemLogs.Count} total records)";
+                SystemLogsPrevButton.IsEnabled = _systemLogsCurrentPage > 1;
+                SystemLogsNextButton.IsEnabled = _systemLogsCurrentPage < _systemLogsTotalPages;
+                SystemLogsFirstButton.IsEnabled = _systemLogsCurrentPage > 1;
+                SystemLogsLastButton.IsEnabled = _systemLogsCurrentPage < _systemLogsTotalPages;
+            });
+        }
+
+        private async void SystemLogsFirstButton_Click(object sender, RoutedEventArgs e)
+        {
+            _systemLogsCurrentPage = 1;
+            await RefreshSystemLogsPage();
+        }
+
+        private async void SystemLogsPrevButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_systemLogsCurrentPage > 1)
+            {
+                _systemLogsCurrentPage--;
+                await RefreshSystemLogsPage();
+            }
+        }
+
+        private async void SystemLogsNextButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_systemLogsCurrentPage < _systemLogsTotalPages)
+            {
+                _systemLogsCurrentPage++;
+                await RefreshSystemLogsPage();
+            }
+        }
+
+        private async void SystemLogsLastButton_Click(object sender, RoutedEventArgs e)
+        {
+            _systemLogsCurrentPage = _systemLogsTotalPages;
+            await RefreshSystemLogsPage();
+        }
+
+        private async Task RefreshSystemLogsPage()
+        {
+            try
+            {
+                var pagedLogs = _allSystemLogs
+                    .Skip((_systemLogsCurrentPage - 1) * _systemLogsPageSize)
+                    .Take(_systemLogsPageSize)
+                    .ToList();
+                
+                _systemLogs.Clear();
+                foreach (var log in pagedLogs)
+                {
+                    _systemLogs.Add(log);
+                }
+                
+                UpdateSystemLogsPagination();
+                UpdateStatus($"Page {_systemLogsCurrentPage} of {_systemLogsTotalPages}");
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Error loading page: {ex.Message}");
+            }
+        }
+
+        // Clients Pagination Methods
+        private void UpdateClientsPagination()
+        {
+            if (ClientsPaginationPanel == null) return;
+            
+            Dispatcher.Invoke(() =>
+            {
+                ClientsPageInfoText.Text = $"Page {_clientsCurrentPage} of {_clientsTotalPages} ({_allClients.Count} clients)";
+                ClientsPrevButton.IsEnabled = _clientsCurrentPage > 1;
+                ClientsNextButton.IsEnabled = _clientsCurrentPage < _clientsTotalPages;
+                ClientsFirstButton.IsEnabled = _clientsCurrentPage > 1;
+                ClientsLastButton.IsEnabled = _clientsCurrentPage < _clientsTotalPages;
+            });
+        }
+
+        private async void ClientsFirstButton_Click(object sender, RoutedEventArgs e)
+        {
+            _clientsCurrentPage = 1;
+            await RefreshClientsPage();
+        }
+
+        private async void ClientsPrevButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_clientsCurrentPage > 1)
+            {
+                _clientsCurrentPage--;
+                await RefreshClientsPage();
+            }
+        }
+
+        private async void ClientsNextButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_clientsCurrentPage < _clientsTotalPages)
+            {
+                _clientsCurrentPage++;
+                await RefreshClientsPage();
+            }
+        }
+
+        private async void ClientsLastButton_Click(object sender, RoutedEventArgs e)
+        {
+            _clientsCurrentPage = _clientsTotalPages;
+            await RefreshClientsPage();
+        }
+
+        private async Task RefreshClientsPage()
+        {
+            try
+            {
+                var pagedClients = _allClients
+                    .Skip((_clientsCurrentPage - 1) * _clientsPageSize)
+                    .Take(_clientsPageSize)
+                    .ToList();
+                
+                _connectedClients.Clear();
+                foreach (var client in pagedClients)
+                {
+                    _connectedClients.Add(client);
+                }
+                
+                UpdateClientsPagination();
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Error loading clients page: {ex.Message}");
+            }
+        }
+
+        // Computers Pagination Methods
+        private void UpdateComputersPagination()
+        {
+            if (ComputersPaginationPanel == null) return;
+            
+            Dispatcher.Invoke(() =>
+            {
+                ComputersPageInfoText.Text = $"Page {_computersCurrentPage} of {_computersTotalPages} ({_allComputers.Count} computers)";
+                ComputersPrevButton.IsEnabled = _computersCurrentPage > 1;
+                ComputersNextButton.IsEnabled = _computersCurrentPage < _computersTotalPages;
+                ComputersFirstButton.IsEnabled = _computersCurrentPage > 1;
+                ComputersLastButton.IsEnabled = _computersCurrentPage < _computersTotalPages;
+            });
+        }
+
+        private async void ComputersFirstButton_Click(object sender, RoutedEventArgs e)
+        {
+            _computersCurrentPage = 1;
+            await RefreshComputersPage();
+        }
+
+        private async void ComputersPrevButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_computersCurrentPage > 1)
+            {
+                _computersCurrentPage--;
+                await RefreshComputersPage();
+            }
+        }
+
+        private async void ComputersNextButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_computersCurrentPage < _computersTotalPages)
+            {
+                _computersCurrentPage++;
+                await RefreshComputersPage();
+            }
+        }
+
+        private async void ComputersLastButton_Click(object sender, RoutedEventArgs e)
+        {
+            _computersCurrentPage = _computersTotalPages;
+            await RefreshComputersPage();
+        }
+
+        private async Task RefreshComputersPage()
+        {
+            try
+            {
+                var pagedComputers = _allComputers
+                    .Skip((_computersCurrentPage - 1) * _computersPageSize)
+                    .Take(_computersPageSize)
+                    .ToList();
+                
+                _computers.Clear();
+                foreach (var computer in pagedComputers)
+                {
+                    _computers.Add(computer);
+                }
+                
+                UpdateComputersPagination();
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Error loading computers page: {ex.Message}");
             }
         }
 
@@ -1045,7 +1304,7 @@ namespace LabServerAdmin
             try
             {
                 var computers = await _databaseService.GetComputersAsync();
-                _computers.Clear();
+                _allComputers.Clear();
                 
                 foreach (var computer in computers)
                 {
@@ -1066,17 +1325,41 @@ namespace LabServerAdmin
                         }
                     }
                     
+                    _allComputers.Add(computer);
+                }
+                
+                // Calculate total pages
+                _computersTotalPages = (int)Math.Ceiling((double)_allComputers.Count / _computersPageSize);
+                if (_computersTotalPages == 0) _computersTotalPages = 1;
+                
+                // Ensure current page is within bounds
+                if (_computersCurrentPage > _computersTotalPages)
+                {
+                    _computersCurrentPage = _computersTotalPages;
+                }
+                
+                // Get computers for current page
+                var pagedComputers = _allComputers
+                    .Skip((_computersCurrentPage - 1) * _computersPageSize)
+                    .Take(_computersPageSize)
+                    .ToList();
+                
+                _computers.Clear();
+                foreach (var computer in pagedComputers)
+                {
                     _computers.Add(computer);
                 }
                 
-                if (computers.Count == 0)
+                UpdateComputersPagination();
+                
+                if (_allComputers.Count == 0)
                 {
                     UpdateStatus("No computers found in database. Please run database_setup.sql to add sample data.");
                 }
                 else
                 {
-                    var onlineCount = computers.Count(c => c.IsOnline);
-                    UpdateStatus($"Loaded {computers.Count} computer(s) - {onlineCount} online");
+                    var onlineCount = _allComputers.Count(c => c.IsOnline);
+                    UpdateStatus($"Loaded {pagedComputers.Count} of {_allComputers.Count} computer(s) - {onlineCount} online - Page {_computersCurrentPage} of {_computersTotalPages}");
                 }
             }
             catch (Exception ex)
@@ -1379,6 +1662,7 @@ namespace LabServerAdmin
             SystemLogsEndDatePicker.SelectedDate = today;
             _systemLogsStartDate = today;
             _systemLogsEndDate = today;
+            _systemLogsCurrentPage = 1; // Reset to first page
             _ = RefreshSystemLogs();
         }
 
@@ -1391,6 +1675,7 @@ namespace LabServerAdmin
             SystemLogsEndDatePicker.SelectedDate = null;
             _systemLogsStartDate = null;
             _systemLogsEndDate = null;
+            _systemLogsCurrentPage = 1; // Reset to first page
             _ = RefreshSystemLogs();
         }
 
@@ -1401,6 +1686,7 @@ namespace LabServerAdmin
         {
             _systemLogsStartDate = SystemLogsStartDatePicker.SelectedDate;
             _systemLogsEndDate = SystemLogsEndDatePicker.SelectedDate;
+            _systemLogsCurrentPage = 1; // Reset to first page
             _ = RefreshSystemLogs();
         }
 
@@ -1413,6 +1699,7 @@ namespace LabServerAdmin
             {
                 _systemLogsStartDate = SystemLogsStartDatePicker.SelectedDate;
                 _systemLogsEndDate = SystemLogsEndDatePicker.SelectedDate;
+                _systemLogsCurrentPage = 1; // Reset to first page
                 _ = RefreshSystemLogs();
             }
         }
@@ -2309,6 +2596,29 @@ namespace LabServerAdmin
             {
                 textBox.Text = "Search...";
                 textBox.Foreground = Brushes.Gray;
+            }
+        }
+
+        /// <summary>
+        /// Clear search boxes when switching between tabs
+        /// </summary>
+        private void MainTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // Clear all search boxes when navigating away from tabs
+            ClearSearchBox(ClassListSearchBox);
+            ClearSearchBox(ComputersSearchBox);
+            ClearSearchBox(AttendanceSearchBox);
+        }
+
+        /// <summary>
+        /// Helper method to reset a search box to its placeholder state
+        /// </summary>
+        private void ClearSearchBox(TextBox searchBox)
+        {
+            if (searchBox != null && searchBox.Text != "Search...")
+            {
+                searchBox.Text = "Search...";
+                searchBox.Foreground = Brushes.Gray;
             }
         }
 

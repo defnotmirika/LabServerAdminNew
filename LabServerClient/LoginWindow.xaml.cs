@@ -242,7 +242,7 @@ namespace LabServerClient
             System.Diagnostics.Debug.WriteLine($"[LOGIN] Username from UI: '{UsernameTextBox.Text}'");
             System.Diagnostics.Debug.WriteLine($"[LOGIN] Password length: {PasswordBox.Password?.Length ?? 0}");
             
-            _viewModel.Password = PasswordBox.Password;
+            _viewModel.Password = PasswordBox.Password ?? string.Empty;
             System.Diagnostics.Debug.WriteLine($"[LOGIN] ViewModel.Password set to: '{_viewModel.Password}'");
             System.Diagnostics.Debug.WriteLine($"[LOGIN] ViewModel.Username: '{_viewModel.Username}'");
             

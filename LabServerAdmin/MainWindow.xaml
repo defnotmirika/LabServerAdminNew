@@ -12,6 +12,58 @@
         <!-- Converters -->
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
 
+        <!-- Placeholder TextBox Style -->
+        <Style x:Key="PlaceholderTextBox" TargetType="TextBox">
+            <Setter Property="BorderBrush" Value="#050d60"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="CaretBrush" Value="Black"/>
+            <Setter Property="Foreground" Value="Black"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="border" 
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3">
+                            <Grid>
+                                <!-- Placeholder Text -->
+                                <TextBlock x:Name="placeholder" 
+                                           Text="Search..." 
+                                           Foreground="Gray" 
+                                           Padding="8,4"
+                                           VerticalAlignment="Center"
+                                           IsHitTestVisible="False"/>
+                                <!-- Text Input -->
+                                <ScrollViewer x:Name="PART_ContentHost" 
+                                              Padding="{TemplateBinding Padding}"
+                                              VerticalAlignment="Center"
+                                              Background="Transparent"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <!-- Hide placeholder when focused -->
+                            <Trigger Property="IsFocused" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="#0a1580"/>
+                                <Setter TargetName="placeholder" Property="Visibility" Value="Collapsed"/>
+                            </Trigger>
+                            <!-- Show placeholder when text is empty -->
+                            <Trigger Property="Text" Value="">
+                                <Setter TargetName="placeholder" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <!-- Hide placeholder when text is not empty -->
+                            <DataTrigger Binding="{Binding Text, RelativeSource={RelativeSource Self}}" Value="">
+                                <Setter TargetName="placeholder" Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Flat Button Styles -->
         <Style x:Key="ModernButton" TargetType="Button">
             <Setter Property="Background" Value="#050d60"/>
@@ -215,7 +267,8 @@
                     <Button x:Name="SettingsButton" Content="⚙️ Settings" Style="{StaticResource ModernButton}" 
                             Click="SettingsButton_Click" ToolTip="Configure screen lock settings"/>
                     <Button x:Name="VoiceToggleButton" Content="🎤 Voice Commands: OFF" Style="{StaticResource ModernButton}" 
-                            BorderBrush="Black" BorderThickness="2" Click="VoiceToggleButton_Click" Margin="10,0,0,0"/>
+                            BorderBrush="Black" BorderThickness="2" Click="VoiceToggleButton_Click" Margin="10,0,0,0"
+                            Width="210"/>
                     <Button x:Name="ServerToggleButton" Content="▶️ Start Server" Style="{StaticResource SuccessButton}" Click="ServerToggleButton_Click" Margin="10,0,0,0"/>
                     <Button x:Name="LogoutButton" Content="🚪 Logout" Style="{StaticResource GoldButton}" Click="LogoutButton_Click" Margin="10,0,0,0"/>
                 </StackPanel>
@@ -223,13 +276,14 @@
         </Border>
 
         <!-- Main Content -->
-        <TabControl x:Name="MainTabControl" Grid.Row="1" Margin="10">
+        <TabControl x:Name="MainTabControl" Grid.Row="1" Margin="10" SelectionChanged="MainTabControl_SelectionChanged">
             <!-- Dashboard Tab -->
             <TabItem Header="📊 Dashboard" Height="22" Margin="-2,0,-2,0" VerticalAlignment="Bottom">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <!-- Client Controls -->
@@ -265,8 +319,22 @@
                                 </Style>
                             </DataGrid.RowStyle>
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="PC Name" Binding="{Binding Name}" Width="150"/>
-                                <DataGridTextColumn Header="IP Address" Binding="{Binding IpAddress}" Width="120"/>
+                                <DataGridTextColumn Header="PC Name" Binding="{Binding Name}" Width="150">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="VerticalAlignment" Value="Center"/>
+                                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="IP Address" Binding="{Binding IpAddress}" Width="120">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="VerticalAlignment" Value="Center"/>
+                                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
                                 <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock">
@@ -284,7 +352,14 @@
                                         </Style>
                                     </DataGridTextColumn.ElementStyle>
                                 </DataGridTextColumn>
-                                <DataGridTextColumn Header="Last Response" Binding="{Binding LastResponse, StringFormat=HH:mm:ss}" Width="120"/>
+                                <DataGridTextColumn Header="Last Response" Binding="{Binding LastResponse, StringFormat=HH:mm:ss}" Width="120">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="VerticalAlignment" Value="Center"/>
+                                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
                                 <DataGridTemplateColumn Header="Actions" Width="350" IsReadOnly="False">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
@@ -310,6 +385,35 @@
                             </DataGrid.Columns>
                         </DataGrid>
                     </GroupBox>
+
+                    <!-- Pagination Controls -->
+                    <Border Grid.Row="2" BorderBrush="#050d60" BorderThickness="0,2,0,0" Padding="8" Background="#F5F5F5" Margin="0,8,0,0">
+                        <StackPanel x:Name="ClientsPaginationPanel" Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Button x:Name="ClientsFirstButton" Content="First" 
+                                    Style="{StaticResource ModernButton}" 
+                                    Click="ClientsFirstButton_Click" 
+                                    Width="75" Height="28" Padding="5,3" Margin="2"/>
+                            <Button x:Name="ClientsPrevButton" Content="◀️ Prev" 
+                                    Style="{StaticResource ModernButton}" 
+                                    Click="ClientsPrevButton_Click" 
+                                    Width="75" Height="28" Padding="5,3" Margin="2"/>
+                            <TextBlock x:Name="ClientsPageInfoText" 
+                                       Text="Page 1 of 1 (0 clients)" 
+                                       FontSize="13" 
+                                       FontWeight="SemiBold" 
+                                       Foreground="#050d60" 
+                                       VerticalAlignment="Center" 
+                                       Margin="12,0"/>
+                            <Button x:Name="ClientsNextButton" Content="Next ▶️" 
+                                    Style="{StaticResource ModernButton}" 
+                                    Click="ClientsNextButton_Click" 
+                                    Width="75" Height="28" Padding="5,3" Margin="2"/>
+                            <Button x:Name="ClientsLastButton" Content="Last" 
+                                    Style="{StaticResource ModernButton}" 
+                                    Click="ClientsLastButton_Click" 
+                                    Width="75" Height="28" Padding="5,3" Margin="2"/>
+                        </StackPanel>
+                    </Border>
                 </Grid>
             </TabItem>
 
@@ -341,16 +445,44 @@
                         </DataGrid.RowStyle>
                         <DataGrid.Columns>
                             <!-- Request Type -->
-                            <DataGridTextColumn Header="Type" Binding="{Binding RequestType}" Width="80"/>
+                            <DataGridTextColumn Header="Type" Binding="{Binding RequestType}" Width="80">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
 
                             <!-- Student No -->
-                            <DataGridTextColumn Header="Student No" Binding="{Binding StudNo}" Width="150"/>
+                            <DataGridTextColumn Header="Student No" Binding="{Binding StudNo}" Width="150">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
 
                             <!-- PC Name -->
-                            <DataGridTextColumn Header="PC Name" Binding="{Binding PcName}" Width="180"/>
+                            <DataGridTextColumn Header="PC Name" Binding="{Binding PcName}" Width="180">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
 
                             <!-- Request Time -->
-                            <DataGridTextColumn Header="Request Time" Binding="{Binding RequestTimeFormatted}" Width="170"/>
+                            <DataGridTextColumn Header="Request Time" Binding="{Binding RequestTimeFormatted}" Width="170">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
 
                             <!-- Status -->
                             <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="110">
@@ -405,6 +537,150 @@
                 </Grid>
             </TabItem>
 
+            <!-- Computers Tab -->
+            <TabItem Header="💻 Computers">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBox x:Name="ComputersSearchBox" Width="250" Height="35"
+                                 Style="{StaticResource PlaceholderTextBox}"
+                                 TextChanged="ComputersSearchBox_TextChanged"
+                                 ToolTip="Search by Client Name or IP Address"
+                                 Margin="0,0,10,0"/>
+                        <Button x:Name="RefreshComputersButton" Content="🔄" ToolTip="Refresh Computers" Style="{StaticResource GoldButton}" 
+                                Click="RefreshComputersButton_Click" Width="40" Height="35" Padding="0"/>
+                    </StackPanel>
+
+                    <DataGrid x:Name="ComputersDataGrid" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" 
+                              GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True" RowHeight="35">
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                            </Style>
+                        </DataGrid.RowStyle>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Client Name" Binding="{Binding ClientName}" Width="200">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="IP Address" Binding="{Binding IpAddress}" Width="130">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Status}" Value="Online">
+                                                <Setter Property="Foreground" Value="Green"/>
+                                                <Setter Property="FontWeight" Value="Bold"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Status}" Value="Offline">
+                                                <Setter Property="Foreground" Value="Red"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Status}" Value="Maintenance">
+                                                <Setter Property="Foreground" Value="Orange"/>
+                                                <Setter Property="FontWeight" Value="Bold"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridCheckBoxColumn Header="Online" Binding="{Binding IsOnline}" Width="70" IsReadOnly="True">
+                                <DataGridCheckBoxColumn.ElementStyle>
+                                    <Style TargetType="CheckBox">
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="IsEnabled" Value="False"/>
+                                        <Setter Property="Focusable" Value="False"/>
+                                    </Style>
+                                </DataGridCheckBoxColumn.ElementStyle>
+                            </DataGridCheckBoxColumn>
+                            <DataGridCheckBoxColumn Header="Locked" Binding="{Binding IsLocked}" Width="70" IsReadOnly="True">
+                                <DataGridCheckBoxColumn.ElementStyle>
+                                    <Style TargetType="CheckBox">
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="IsEnabled" Value="False"/>
+                                        <Setter Property="Focusable" Value="False"/>
+                                    </Style>
+                                </DataGridCheckBoxColumn.ElementStyle>
+                            </DataGridCheckBoxColumn>
+                            <DataGridTextColumn Header="Last Seen" Binding="{Binding LastSeen, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="170">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTemplateColumn Header="Actions" Width="*" IsReadOnly="False">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button Content="🔧" ToolTip="Maintenance Mode" 
+                                                    Style="{StaticResource ModernButton}" 
+                                                    Click="MaintenanceModeButton_Click" 
+                                                    Tag="{Binding}" 
+                                                    Width="40" Height="30" Padding="5,4" Margin="2,0"/>
+                                            <Button Content="✏️" ToolTip="Edit Computer" 
+                                                    Style="{StaticResource GoldButton}" 
+                                                    Click="EditComputerButton_Click" 
+                                                    Tag="{Binding}" 
+                                                    Width="40" Height="30" Padding="5,4" Margin="2,0"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <!-- Pagination Controls -->
+                    <Border Grid.Row="2" BorderBrush="#050d60" BorderThickness="0,2,0,0" Padding="8" Background="#F5F5F5" Margin="0,8,0,0">
+                        <StackPanel x:Name="ComputersPaginationPanel" Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Button x:Name="ComputersFirstButton" Content="First" 
+                                    Style="{StaticResource ModernButton}" 
+                                    Click="ComputersFirstButton_Click" 
+                                    Width="75" Height="28" Padding="5,3" Margin="2"/>
+                            <Button x:Name="ComputersPrevButton" Content="◀️ Prev" 
+                                    Style="{StaticResource ModernButton}" 
+                                    Click="ComputersPrevButton_Click" 
+                                    Width="75" Height="28" Padding="5,3" Margin="2"/>
+                            <TextBlock x:Name="ComputersPageInfoText" 
+                                       Text="Page 1 of 1 (0 computers)" 
+                                       FontSize="13" 
+                                       FontWeight="SemiBold" 
+                                       Foreground="#050d60" 
+                                       VerticalAlignment="Center" 
+                                       Margin="12,0"/>
+                            <Button x:Name="ComputersNextButton" Content="Next ▶️" 
+                                    Style="{StaticResource ModernButton}" 
+                                    Click="ComputersNextButton_Click" 
+                                    Width="75" Height="28" Padding="5,3" Margin="2"/>
+                            <Button x:Name="ComputersLastButton" Content="Last" 
+                                    Style="{StaticResource ModernButton}" 
+                                    Click="ComputersLastButton_Click" 
+                                    Width="75" Height="28" Padding="5,3" Margin="2"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
             <!-- Class List Tab -->
             <TabItem x:Name="ClassListTab" Header="📚 Class List">
                 <Grid Margin="10">
@@ -415,14 +691,11 @@
 
                     <StackPanel Grid.Row="0" Orientation="Vertical" Margin="0,5,0,20">
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <TextBox x:Name="ClassListSearchBox" Width="250" Height="35" Padding="8,4"
-                                     BorderBrush="#050d60" BorderThickness="2"
+                            <TextBox x:Name="ClassListSearchBox" Width="250" Height="35"
+                                     Style="{StaticResource PlaceholderTextBox}"
                                      TextChanged="ClassListSearchBox_TextChanged"
                                      ToolTip="Search by Student No, Name, or Section"
-                                     VerticalContentAlignment="Center"
-                                     Margin="0,0,10,0"
-                                     Text="Search..." Foreground="Gray"
-                                     GotFocus="SearchBox_GotFocus" LostFocus="SearchBox_LostFocus"/>
+                                     Margin="0,0,10,0"/>
                             <Button x:Name="RefreshClassListButton" Content="🔄" ToolTip="Refresh Class List" Style="{StaticResource GoldButton}"
                                     Click="RefreshClassListButton_Click" Width="40" Height="35" Padding="0"/>
                             <Button x:Name="ExportClassListButton" Content="📤 Export" ToolTip="Export Class List" Style="{StaticResource ModernButton}"
@@ -447,12 +720,54 @@
                             </Style>
                         </DataGrid.RowStyle>
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Student No" Binding="{Binding StudNo}" Width="120" SortMemberPath="StudNo"/>
-                            <DataGridTextColumn Header="Last Name" Binding="{Binding LastName}" Width="150" SortMemberPath="LastName"/>
-                            <DataGridTextColumn Header="First Name" Binding="{Binding FirstName}" Width="150" SortMemberPath="FirstName"/>
-                            <DataGridTextColumn Header="Section" Binding="{Binding SectionName}" Width="120" SortMemberPath="SectionName"/>
-                            <DataGridTextColumn Header="Login Time" Binding="{Binding LoginTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="170" SortMemberPath="LoginTime"/>
-                            <DataGridTextColumn Header="Logout Time" Binding="{Binding LogoutTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="170" SortMemberPath="LogoutTime"/>
+                            <DataGridTextColumn Header="Student No" Binding="{Binding StudNo}" Width="120" SortMemberPath="StudNo">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Last Name" Binding="{Binding LastName}" Width="150" SortMemberPath="LastName">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="First Name" Binding="{Binding FirstName}" Width="150" SortMemberPath="FirstName">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Section" Binding="{Binding SectionName}" Width="120" SortMemberPath="SectionName">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Login Time" Binding="{Binding LoginTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="170" SortMemberPath="LoginTime">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Logout Time" Binding="{Binding LogoutTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="170" SortMemberPath="LogoutTime">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
                             <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="120" SortMemberPath="Status">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
@@ -461,99 +776,14 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="PC Name" Binding="{Binding ClientName}" Width="140" SortMemberPath="ClientName"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </Grid>
-            </TabItem>
-
-            <!-- Computers Tab -->
-            <TabItem Header="💻 Computers">
-                <Grid Margin="10">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
-                        <TextBox x:Name="ComputersSearchBox" Width="250" Height="35" Padding="8,4"
-                                 BorderBrush="#050d60" BorderThickness="2"
-                                 TextChanged="ComputersSearchBox_TextChanged"
-                                 ToolTip="Search by Client Name or IP Address"
-                                 VerticalContentAlignment="Center"
-                                 Margin="0,0,10,0"
-                                 Text="Search..." Foreground="Gray"
-                                 GotFocus="SearchBox_GotFocus" LostFocus="SearchBox_LostFocus"/>
-                        <Button x:Name="RefreshComputersButton" Content="🔄" ToolTip="Refresh Computers" Style="{StaticResource GoldButton}" 
-                                Click="RefreshComputersButton_Click" Width="40" Height="35" Padding="0"/>
-                    </StackPanel>
-
-                    <DataGrid x:Name="ComputersDataGrid" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" 
-                              GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True" RowHeight="35">
-                        <DataGrid.RowStyle>
-                            <Style TargetType="DataGridRow">
-                                <Setter Property="VerticalContentAlignment" Value="Center"/>
-                            </Style>
-                        </DataGrid.RowStyle>
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Client Name" Binding="{Binding ClientName}" Width="200"/>
-                            <DataGridTextColumn Header="IP Address" Binding="{Binding IpAddress}" Width="130"/>
-                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100">
+                            <DataGridTextColumn Header="PC Name" Binding="{Binding ClientName}" Width="140" SortMemberPath="ClientName">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="VerticalAlignment" Value="Center"/>
                                         <Setter Property="HorizontalAlignment" Value="Center"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Status}" Value="Online">
-                                                <Setter Property="Foreground" Value="Green"/>
-                                                <Setter Property="FontWeight" Value="Bold"/>
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding Status}" Value="Offline">
-                                                <Setter Property="Foreground" Value="Red"/>
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding Status}" Value="Maintenance">
-                                                <Setter Property="Foreground" Value="Orange"/>
-                                                <Setter Property="FontWeight" Value="Bold"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridCheckBoxColumn Header="Online" Binding="{Binding IsOnline}" Width="70">
-                                <DataGridCheckBoxColumn.ElementStyle>
-                                    <Style TargetType="CheckBox">
-                                        <Setter Property="HorizontalAlignment" Value="Center"/>
-                                        <Setter Property="VerticalAlignment" Value="Center"/>
-                                    </Style>
-                                </DataGridCheckBoxColumn.ElementStyle>
-                            </DataGridCheckBoxColumn>
-                            <DataGridCheckBoxColumn Header="Locked" Binding="{Binding IsLocked}" Width="70">
-                                <DataGridCheckBoxColumn.ElementStyle>
-                                    <Style TargetType="CheckBox">
-                                        <Setter Property="HorizontalAlignment" Value="Center"/>
-                                        <Setter Property="VerticalAlignment" Value="Center"/>
-                                    </Style>
-                                </DataGridCheckBoxColumn.ElementStyle>
-                            </DataGridCheckBoxColumn>
-                            <DataGridTextColumn Header="Last Seen" Binding="{Binding LastSeen, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="170"/>
-                            <DataGridTemplateColumn Header="Actions" Width="*" IsReadOnly="False">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Orientation="Horizontal">
-                                            <Button Content="🔧" ToolTip="Maintenance Mode" 
-                                                    Style="{StaticResource ModernButton}" 
-                                                    Click="MaintenanceModeButton_Click" 
-                                                    Tag="{Binding}" 
-                                                    Width="40" Height="30" Padding="5,4" Margin="2,0"/>
-                                            <Button Content="✏️" ToolTip="Edit Computer" 
-                                                    Style="{StaticResource GoldButton}" 
-                                                    Click="EditComputerButton_Click" 
-                                                    Tag="{Binding}" 
-                                                    Width="40" Height="30" Padding="5,4" Margin="2,0"/>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>
@@ -577,14 +807,11 @@
 
                     <StackPanel Grid.Row="0" Orientation="Vertical" Margin="0,5,0,20">
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <TextBox x:Name="AttendanceSearchBox" Width="250" Height="35" Padding="8,4"
-                                     BorderBrush="#050d60" BorderThickness="2"
+                            <TextBox x:Name="AttendanceSearchBox" Width="250" Height="35"
+                                     Style="{StaticResource PlaceholderTextBox}"
                                      TextChanged="AttendanceSearchBox_TextChanged"
                                      ToolTip="Search by Student No, Name, or PC Name"
-                                     VerticalContentAlignment="Center"
-                                     Margin="0,0,10,0"
-                                     Text="Search..." Foreground="Gray"
-                                     GotFocus="SearchBox_GotFocus" LostFocus="SearchBox_LostFocus"/>
+                                     Margin="0,0,10,0"/>
                             <Button x:Name="RefreshAttendanceButton" Content="🔄" ToolTip="Refresh Attendance" Style="{StaticResource GoldButton}" 
                                     Click="RefreshAttendanceButton_Click" Width="40" Height="35" Padding="0"/>
                             <Button x:Name="ExportAttendanceButton" Content="📤 Export" ToolTip="Export Attendance Logs" Style="{StaticResource ModernButton}" 
@@ -618,13 +845,62 @@
                             </Style>
                         </DataGrid.RowStyle>
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Date" Binding="{Binding TimeIn, StringFormat=yyyy-MM-dd}" Width="120" SortMemberPath="TimeIn"/>
-                            <DataGridTextColumn Header="Student No" Binding="{Binding StudNo}" Width="120" SortMemberPath="StudNo"/>
-                            <DataGridTextColumn Header="Student Name" Binding="{Binding StudentName}" Width="150" SortMemberPath="StudentName"/>
-                            <DataGridTextColumn Header="PC Name" Binding="{Binding PcName}" Width="120" SortMemberPath="PcName"/>
-                            <DataGridTextColumn Header="Time In" Binding="{Binding TimeIn, StringFormat=HH:mm:ss}" Width="100" SortMemberPath="TimeIn"/>
-                            <DataGridTextColumn Header="Time Out" Binding="{Binding TimeOut, StringFormat=HH:mm:ss}" Width="100" SortMemberPath="TimeOut"/>
-                            <DataGridTextColumn Header="Duration" Binding="{Binding Duration}" Width="100"/>
+                            <DataGridTextColumn Header="Date" Binding="{Binding TimeIn, StringFormat=yyyy-MM-dd}" Width="120" SortMemberPath="TimeIn">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Student No" Binding="{Binding StudNo}" Width="120" SortMemberPath="StudNo">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Student Name" Binding="{Binding StudentName}" Width="150" SortMemberPath="StudentName">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="PC Name" Binding="{Binding PcName}" Width="120" SortMemberPath="PcName">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Time In" Binding="{Binding TimeIn, StringFormat=HH:mm:ss}" Width="100" SortMemberPath="TimeIn">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Time Out" Binding="{Binding TimeOut, StringFormat=HH:mm:ss}" Width="100" SortMemberPath="TimeOut">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Duration" Binding="{Binding Duration}" Width="100">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
                             <DataGridTextColumn Header="Timeliness" Binding="{Binding TimelinessDisplay}" Width="140" SortMemberPath="TimelinessStatus">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
@@ -715,12 +991,54 @@
                             </Style>
                         </DataGrid.RowStyle>
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150" SortMemberPath="Timestamp"/>
-                            <DataGridTextColumn Header="Student No" Binding="{Binding StudNo}" Width="120" SortMemberPath="StudNo"/>
-                            <DataGridTextColumn Header="Student Name" Binding="{Binding StudentName}" Width="150" SortMemberPath="StudentName"/>
-                            <DataGridTextColumn Header="PC Name" Binding="{Binding PcName}" Width="120" SortMemberPath="PcName"/>
-                            <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="150" SortMemberPath="Action"/>
-                            <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*"/>
+                            <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150" SortMemberPath="Timestamp">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Student No" Binding="{Binding StudNo}" Width="120" SortMemberPath="StudNo">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Student Name" Binding="{Binding StudentName}" Width="150" SortMemberPath="StudentName">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="PC Name" Binding="{Binding PcName}" Width="120" SortMemberPath="PcName">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="150" SortMemberPath="Action">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Left"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>
@@ -732,6 +1050,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0" Orientation="Vertical" Margin="0,5,0,20">
@@ -767,10 +1086,38 @@
                             </Style>
                         </DataGrid.RowStyle>
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150" SortMemberPath="Timestamp"/>
-                            <DataGridTextColumn Header="User ID" Binding="{Binding UserIdString}" Width="100" SortMemberPath="UserIdString"/>
-                            <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="150" SortMemberPath="Action"/>
-                            <DataGridTextColumn Header="Client" Binding="{Binding ClientName}" Width="120" SortMemberPath="ClientName"/>
+                            <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150" SortMemberPath="Timestamp">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="User ID" Binding="{Binding UserIdString}" Width="100" SortMemberPath="UserIdString">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="150" SortMemberPath="Action">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Client" Binding="{Binding ClientName}" Width="120" SortMemberPath="ClientName">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
                             <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100" SortMemberPath="Status">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
@@ -779,9 +1126,45 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="Details" Binding="{Binding Details}" Width="*"/>
+                            <DataGridTextColumn Header="Details" Binding="{Binding Details}" Width="*">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="HorizontalAlignment" Value="Left"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
                         </DataGrid.Columns>
                     </DataGrid>
+
+                    <!-- Pagination Controls -->
+                    <Border Grid.Row="2" BorderBrush="#050d60" BorderThickness="0,2,0,0" Padding="8" Background="#F5F5F5" Margin="0,8,0,0">
+                        <StackPanel x:Name="SystemLogsPaginationPanel" Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Button x:Name="SystemLogsFirstButton" Content="First" 
+                                    Style="{StaticResource ModernButton}" 
+                                    Click="SystemLogsFirstButton_Click" 
+                                    Width="75" Height="28" Padding="5,3" Margin="2"/>
+                            <Button x:Name="SystemLogsPrevButton" Content="◀️ Prev" 
+                                    Style="{StaticResource ModernButton}" 
+                                    Click="SystemLogsPrevButton_Click" 
+                                    Width="75" Height="28" Padding="5,3" Margin="2"/>
+                            <TextBlock x:Name="SystemLogsPageInfoText" 
+                                       Text="Page 1 of 1 (0 records)" 
+                                       FontSize="13" 
+                                       FontWeight="SemiBold" 
+                                       Foreground="#050d60" 
+                                       VerticalAlignment="Center" 
+                                       Margin="12,0"/>
+                            <Button x:Name="SystemLogsNextButton" Content="Next ▶️" 
+                                    Style="{StaticResource ModernButton}" 
+                                    Click="SystemLogsNextButton_Click" 
+                                    Width="75" Height="28" Padding="5,3" Margin="2"/>
+                            <Button x:Name="SystemLogsLastButton" Content="Last" 
+                                    Style="{StaticResource ModernButton}" 
+                                    Click="SystemLogsLastButton_Click" 
+                                    Width="75" Height="28" Padding="5,3" Margin="2"/>
+                        </StackPanel>
+                    </Border>
                 </Grid>
             </TabItem>
         </TabControl>

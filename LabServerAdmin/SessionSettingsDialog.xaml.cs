@@ -26,7 +26,15 @@ namespace LabServerAdmin
             AdminTimeoutMinutesTextBox.Text = currentTimeoutMinutes.ToString();
             AdminWarningMinutesTextBox.Text = currentWarningMinutes.ToString();
             
+            // Update current settings display
+            UpdateCurrentSettingsDisplay();
+            
             WasSaved = false;
+        }
+
+        private void UpdateCurrentSettingsDisplay()
+        {
+            CurrentSettingsTextBlock.Text = $"Timeout: {_originalTimeoutMinutes} min, Warning: {_originalWarningMinutes} min";
         }
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)

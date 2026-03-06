@@ -187,7 +187,10 @@ namespace LabServerClient
                 });
 
                 // Start monitoring
-                _ = Task.Run(() => MonitorUsageLimitAsync(_usageLimitExpiryUtc.Value, _usageLimitCts.Token));
+                if (_usageLimitExpiryUtc.HasValue && _usageLimitCts != null)
+                {
+                    _ = Task.Run(() => MonitorUsageLimitAsync(_usageLimitExpiryUtc.Value, _usageLimitCts.Token));
+                }
 
                 LogMessage($"[TIMER] Automatic schedule-based timer activated - expires at {scheduleEnd:HH:mm:ss}");
             }
@@ -209,7 +212,9 @@ namespace LabServerClient
 
             try
             {
-                var serverStartTime = await _databaseService.GetTodayServerStartTimeAsync();
+                var pcName = _clientWindow?.GetClientName() ?? Environment.MachineName;
+                var schedule = await _databaseService.GetStudentScheduleAsync(_username, pcName);
+                var serverStartTime = schedule?.serverStart;
 
                 if (serverStartTime.HasValue)
                 {
