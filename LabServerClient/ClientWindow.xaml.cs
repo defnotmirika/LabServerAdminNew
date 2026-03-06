@@ -22,6 +22,10 @@ namespace LabServerClient
         private readonly bool _isAdmin;
         private SessionWindow? _sessionWindow;
 
+        // P/Invoke for system sleep
+        [System.Runtime.InteropServices.DllImport("PowrProf.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto, ExactSpelling = true)]
+        private static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);
+
         public void SetSessionWindow(SessionWindow? sessionWindow)
         {
             _sessionWindow = sessionWindow;
@@ -63,6 +67,19 @@ namespace LabServerClient
         {
             try
             {
+                // Clean up any existing connection first
+                if (_tcpClient != null)
+                {
+                    try
+                    {
+                        _stream?.Close();
+                        _tcpClient.Close();
+                    }
+                    catch { }
+                    _stream = null;
+                    _tcpClient = null;
+                }
+
                 _tcpClient = new TcpClient();
                 await _tcpClient.ConnectAsync(ServerIpTextBox.Text, 9000);
                 _stream = _tcpClient.GetStream();
@@ -72,6 +89,9 @@ namespace LabServerClient
                 StatusText.Style = (Style)FindResource("StatusConnected");
 
                 await SendRegistrationMessage();
+
+                // Start listening for server messages
+                _ = Task.Run(ListenForServerMessagesAsync);
 
                 SaveSettings();
                 UpdateStatus($"Connected to {ServerIpTextBox.Text}");
@@ -84,6 +104,26 @@ namespace LabServerClient
                 StatusText.Style = (Style)FindResource("StatusDisconnected");
                 UpdateStatus($"Connection failed: {ex.Message}");
                 LogMessage($"Connection error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Attempts to reconnect to the server
+        /// </summary>
+        public async Task<bool> ReconnectToServer()
+        {
+            LogMessage("Attempting to reconnect to server...");
+            UpdateStatus("Reconnecting to server...");
+
+            try
+            {
+                await ConnectToServer();
+                return _isConnected;
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Reconnection failed: {ex.Message}");
+                return false;
             }
         }
 
@@ -298,6 +338,247 @@ namespace LabServerClient
         public string GetClientName()
         {
             return PcNameTextBox.Text;
+        }
+
+        private async Task ListenForServerMessagesAsync()
+        {
+            if (_stream == null || _tcpClient == null) return;
+
+            var buffer = new byte[4096];
+            var messageBuilder = new StringBuilder();
+
+            try
+            {
+                while (_isConnected && _tcpClient.Connected)
+                {
+                    var bytesRead = await _stream.ReadAsync(buffer, 0, buffer.Length);
+                    if (bytesRead == 0)
+                    {
+                        LogMessage("Server disconnected - connection closed by server");
+                        break;
+                    }
+
+                    var message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                    messageBuilder.Append(message);
+
+                    // Process complete messages (ending with newline)
+                    var messages = messageBuilder.ToString().Split('\n');
+                    for (int i = 0; i < messages.Length - 1; i++)
+                    {
+                        if (!string.IsNullOrWhiteSpace(messages[i]))
+                        {
+                            await ProcessServerMessageAsync(messages[i]);
+                        }
+                    }
+
+                    // Keep the last incomplete message in the buffer
+                    messageBuilder.Clear();
+                    if (messages.Length > 0)
+                    {
+                        messageBuilder.Append(messages[^1]);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Error listening for messages: {ex.Message}");
+            }
+            finally
+            {
+                // Update UI to show disconnected status but DON'T close the app
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    _isConnected = false;
+                    StatusText.Text = "Server Disconnected";
+                    StatusText.Style = (Style)FindResource("StatusDisconnected");
+                    UpdateStatus("Connection to server lost. You can continue working offline.");
+                    LogMessage("Server connection lost - client remains open");
+                });
+
+                // Clean up network resources
+                try
+                {
+                    _stream?.Close();
+                    _stream = null;
+                    _tcpClient?.Close();
+                    _tcpClient = null;
+                }
+                catch (Exception ex)
+                {
+                    LogMessage($"Error cleaning up connection: {ex.Message}");
+                }
+            }
+        }
+
+        private async Task ProcessServerMessageAsync(string message)
+        {
+            try
+            {
+                LogMessage($"Received: {message}");
+
+                var doc = JsonDocument.Parse(message);
+                var root = doc.RootElement;
+
+                if (!root.TryGetProperty("type", out var typeElement))
+                {
+                    return;
+                }
+
+                var type = typeElement.GetString();
+
+                if (type == "command")
+                {
+                    if (root.TryGetProperty("command", out var commandElement))
+                    {
+                        var command = commandElement.GetString();
+                        await Dispatcher.InvokeAsync(async () => await ExecuteCommandAsync(command));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Error processing message: {ex.Message}");
+            }
+        }
+
+        private async Task ExecuteCommandAsync(string? command)
+        {
+            if (string.IsNullOrEmpty(command)) return;
+
+            LogMessage($"Executing command: {command}");
+
+            try
+            {
+                // If SessionWindow exists, forward command to it (the visible student window)
+                if (_sessionWindow != null)
+                {
+                    LogMessage($"Forwarding command '{command}' to SessionWindow");
+                    // SessionWindow will handle the command and return status
+                    await Dispatcher.InvokeAsync(async () =>
+                    {
+                        try
+                        {
+                            // Let SessionWindow handle all commands
+                            await _sessionWindow.HandleServerCommand(command, null);
+                        }
+                        catch (Exception ex)
+                        {
+                            LogMessage($"Error forwarding command to SessionWindow: {ex.Message}");
+                        }
+                    });
+                }
+                else
+                {
+                    // No SessionWindow - handle critical commands locally for ClientWindow
+                    switch (command.ToLowerInvariant())
+                    {
+                        case "shutdown":
+                            await ShutdownAsync();
+                            break;
+
+                        case "restart":
+                            await RestartAsync();
+                            break;
+
+                        case "sleep":
+                            await SleepAsync();
+                            break;
+
+                        default:
+                            LogMessage($"No SessionWindow available - cannot execute command: {command}");
+                            break;
+                    }
+                }
+
+                // Send acknowledgment
+                await SendResponseAsync(command, "success");
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Error executing command: {ex.Message}");
+                await SendResponseAsync(command, "error", ex.Message);
+            }
+        }
+
+        private async Task SendResponseAsync(string command, string status, string? details = null)
+        {
+            if (_stream == null) return;
+
+            try
+            {
+                var response = new
+                {
+                    type = "response",
+                    command,
+                    status,
+                    details,
+                    timestamp = DateTime.UtcNow
+                };
+
+                var json = JsonSerializer.Serialize(response);
+                var data = Encoding.UTF8.GetBytes(json + "\n");
+
+                await _stream.WriteAsync(data, 0, data.Length);
+                await _stream.FlushAsync();
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Error sending response: {ex.Message}");
+            }
+        }
+
+        private async Task ShutdownAsync()
+        {
+            await Dispatcher.InvokeAsync(() =>
+            {
+                LogMessage("Shutdown requested by admin");
+                UpdateStatus("Shutting down...");
+                
+                // Force close to allow shutdown
+                _allowClose = true;
+                
+                // Execute shutdown command
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "shutdown",
+                    Arguments = "/s /t 0",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                });
+            });
+        }
+
+        private async Task RestartAsync()
+        {
+            await Dispatcher.InvokeAsync(() =>
+            {
+                LogMessage("Restart requested by admin");
+                UpdateStatus("Restarting...");
+                
+                // Force close to allow restart
+                _allowClose = true;
+                
+                // Execute restart command
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "shutdown",
+                    Arguments = "/r /t 0",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                });
+            });
+        }
+
+        private async Task SleepAsync()
+        {
+            await Dispatcher.InvokeAsync(() =>
+            {
+                LogMessage("Sleep requested by admin");
+                UpdateStatus("Entering sleep mode...");
+                
+                // Set system to sleep mode using P/Invoke
+                SetSuspendState(false, true, false);
+            });
         }
 
         public void UpdateClientName(string newName)

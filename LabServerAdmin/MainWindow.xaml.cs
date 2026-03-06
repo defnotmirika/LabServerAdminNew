@@ -413,14 +413,17 @@ namespace LabServerAdmin
             await _tcpServerService.SendCommandToAllAsync("lock");
             UpdateStatus("Lock command sent to all clients");
             
-            // Log admin action
-            if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+            // Log admin action (skip if database unavailable)
+            if (!string.IsNullOrWhiteSpace(_currentAdminUsername) && _databaseService != null)
             {
                 await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Lock All Clients", "Lock command sent to all connected clients");
             }
             
-            // Refresh system logs after action
-            await RefreshSystemLogs();
+            // Refresh system logs after action (skip if database unavailable)
+            if (_databaseService != null)
+            {
+                await RefreshSystemLogs();
+            }
         }
 
         private async void UnlockAllButton_Click(object sender, RoutedEventArgs e)
@@ -434,14 +437,17 @@ namespace LabServerAdmin
             await _tcpServerService.SendCommandToAllAsync("unlock");
             UpdateStatus("Unlock command sent to all clients");
             
-            // Log admin action
-            if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+            // Log admin action (skip if database unavailable)
+            if (!string.IsNullOrWhiteSpace(_currentAdminUsername) && _databaseService != null)
             {
                 await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Unlock All Clients", "Unlock command sent to all connected clients");
             }
             
-            // Refresh system logs after action
-            await RefreshSystemLogs();
+            // Refresh system logs after action (skip if database unavailable)
+            if (_databaseService != null)
+            {
+                await RefreshSystemLogs();
+            }
         }
 
         private async void ShutdownAllButton_Click(object sender, RoutedEventArgs e)
@@ -454,14 +460,17 @@ namespace LabServerAdmin
                 await _tcpServerService.SendCommandToAllAsync("shutdown");
                 UpdateStatus("Shutdown command sent to all clients");
                 
-                // Log admin action
-                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                // Log admin action (skip if database unavailable)
+                if (!string.IsNullOrWhiteSpace(_currentAdminUsername) && _databaseService != null)
                 {
                     await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Shutdown All Clients", "Shutdown command sent to all connected clients");
                 }
                 
-                // Refresh system logs after action
-                await RefreshSystemLogs();
+                // Refresh system logs after action (skip if database unavailable)
+                if (_databaseService != null)
+                {
+                    await RefreshSystemLogs();
+                }
             }
         }
 
@@ -475,14 +484,17 @@ namespace LabServerAdmin
                 await _tcpServerService.SendCommandToAllAsync("restart");
                 UpdateStatus("Restart command sent to all clients");
                 
-                // Log admin action
-                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                // Log admin action (skip if database unavailable)
+                if (!string.IsNullOrWhiteSpace(_currentAdminUsername) && _databaseService != null)
                 {
                     await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Restart All Clients", "Restart command sent to all connected clients");
                 }
                 
-                // Refresh system logs after action
-                await RefreshSystemLogs();
+                // Refresh system logs after action (skip if database unavailable)
+                if (_databaseService != null)
+                {
+                    await RefreshSystemLogs();
+                }
             }
         }
 
@@ -497,14 +509,17 @@ namespace LabServerAdmin
             await _tcpServerService.SendCommandToAllAsync("sleep");
             UpdateStatus("Sleep command sent to all clients");
             
-            // Log admin action
-            if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+            // Log admin action (skip if database unavailable)
+            if (!string.IsNullOrWhiteSpace(_currentAdminUsername) && _databaseService != null)
             {
                 await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Sleep All Clients", "Sleep command sent to all connected clients");
             }
             
-            // Refresh system logs after action
-            await RefreshSystemLogs();
+            // Refresh system logs after action (skip if database unavailable)
+            if (_databaseService != null)
+            {
+                await RefreshSystemLogs();
+            }
         }
 
         private async void RefreshClientsButton_Click(object sender, RoutedEventArgs e)
@@ -524,14 +539,17 @@ namespace LabServerAdmin
                 await _tcpServerService.SendCommandAsync(clientName, "lock");
                 UpdateStatus($"Lock command sent to {clientName}");
                 
-                // Log admin action
-                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                // Log admin action (skip if database unavailable)
+                if (!string.IsNullOrWhiteSpace(_currentAdminUsername) && _databaseService != null)
                 {
                     await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Lock Client", $"Lock command sent to {clientName}", clientName);
                 }
                 
-                // Refresh system logs after action
-                await RefreshSystemLogs();
+                // Refresh system logs after action (skip if database unavailable)
+                if (_databaseService != null)
+                {
+                    await RefreshSystemLogs();
+                }
             }
         }
 
@@ -542,14 +560,17 @@ namespace LabServerAdmin
                 await _tcpServerService.SendCommandAsync(clientName, "unlock");
                 UpdateStatus($"Unlock command sent to {clientName}");
                 
-                // Log admin action
-                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                // Log admin action (skip if database unavailable)
+                if (!string.IsNullOrWhiteSpace(_currentAdminUsername) && _databaseService != null)
                 {
                     await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Unlock Client", $"Unlock command sent to {clientName}", clientName);
                 }
                 
-                // Refresh system logs after action
-                await RefreshSystemLogs();
+                // Refresh system logs after action (skip if database unavailable)
+                if (_databaseService != null)
+                {
+                    await RefreshSystemLogs();
+                }
             }
         }
 
@@ -565,14 +586,17 @@ namespace LabServerAdmin
                     await _tcpServerService.SendCommandAsync(clientName, "shutdown");
                     UpdateStatus($"Shutdown command sent to {clientName}");
                     
-                    // Log admin action
-                    if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                    // Log admin action (skip if database unavailable)
+                    if (!string.IsNullOrWhiteSpace(_currentAdminUsername) && _databaseService != null)
                     {
                         await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Shutdown Client", $"Shutdown command sent to {clientName}", clientName);
                     }
                     
-                    // Refresh system logs after action
-                    await RefreshSystemLogs();
+                    // Refresh system logs after action (skip if database unavailable)
+                    if (_databaseService != null)
+                    {
+                        await RefreshSystemLogs();
+                    }
                 }
             }
         }
@@ -589,14 +613,17 @@ namespace LabServerAdmin
                     await _tcpServerService.SendCommandAsync(clientName, "restart");
                     UpdateStatus($"Restart command sent to {clientName}");
                     
-                    // Log admin action
-                    if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                    // Log admin action (skip if database unavailable)
+                    if (!string.IsNullOrWhiteSpace(_currentAdminUsername) && _databaseService != null)
                     {
                         await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Restart Client", $"Restart command sent to {clientName}", clientName);
                     }
                     
-                    // Refresh system logs after action
-                    await RefreshSystemLogs();
+                    // Refresh system logs after action (skip if database unavailable)
+                    if (_databaseService != null)
+                    {
+                        await RefreshSystemLogs();
+                    }
                 }
             }
         }
@@ -608,14 +635,17 @@ namespace LabServerAdmin
                 await _tcpServerService.SendCommandAsync(clientName, "sleep");
                 UpdateStatus($"Sleep command sent to {clientName}");
                 
-                // Log admin action
-                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                // Log admin action (skip if database unavailable)
+                if (!string.IsNullOrWhiteSpace(_currentAdminUsername) && _databaseService != null)
                 {
                     await _databaseService.LogAdminActionAsync(_currentAdminUsername, "Sleep Client", $"Sleep command sent to {clientName}", clientName);
                 }
                 
-                // Refresh system logs after action
-                await RefreshSystemLogs();
+                // Refresh system logs after action (skip if database unavailable)
+                if (_databaseService != null)
+                {
+                    await RefreshSystemLogs();
+                }
             }
         }
 
@@ -945,7 +975,7 @@ namespace LabServerAdmin
 
         private void OnClientConnected(object? sender, ClientConnectedEventArgs e)
         {
-            Dispatcher.Invoke(() =>
+            Dispatcher.Invoke(async () =>
             {
                 var clientInfo = new ClientInfo
                 {
@@ -960,7 +990,17 @@ namespace LabServerAdmin
                 UpdateConnectedClientsCount();
                 UpdateStatus($"Client {e.ClientName} connected from {e.IpAddress}");
                 
-                // Refresh computers tab to update online status
+                // Ensure computer is registered in database
+                if (_databaseService != null)
+                {
+                    var computerId = await _databaseService.EnsureComputerExistsAsync(e.ClientName, e.IpAddress);
+                    if (computerId.HasValue)
+                    {
+                        UpdateStatus($"Client {e.ClientName} registered in database (ID: {computerId.Value})");
+                    }
+                }
+                
+                // Refresh computers tab to update online status and show new computers
                 _ = RefreshComputers();
                 
                 // Refresh system logs when client connects
@@ -970,7 +1010,7 @@ namespace LabServerAdmin
 
         private void OnClientDisconnected(object? sender, ClientDisconnectedEventArgs e)
         {
-            Dispatcher.Invoke(() =>
+            Dispatcher.Invoke(async () =>
             {
                 var client = _connectedClients.FirstOrDefault(c => c.Name == e.ClientName);
                 if (client != null)
@@ -980,6 +1020,16 @@ namespace LabServerAdmin
                 }
                 UpdateConnectedClientsCount();
                 UpdateStatus($"Client {e.ClientName} disconnected");
+                
+                // Mark computer as offline in database
+                if (_databaseService != null)
+                {
+                    var success = await _databaseService.MarkComputerOfflineAsync(e.ClientName);
+                    if (success)
+                    {
+                        UpdateStatus($"Client {e.ClientName} marked as offline in database");
+                    }
+                }
                 
                 // Refresh computers tab to update offline status
                 _ = RefreshComputers();
@@ -1109,37 +1159,37 @@ namespace LabServerAdmin
             });
         }
 
-        private async void SystemLogsFirstButton_Click(object sender, RoutedEventArgs e)
+        private void SystemLogsFirstButton_Click(object sender, RoutedEventArgs e)
         {
             _systemLogsCurrentPage = 1;
-            await RefreshSystemLogsPage();
+            _ = RefreshSystemLogsPage();
         }
 
-        private async void SystemLogsPrevButton_Click(object sender, RoutedEventArgs e)
+        private void SystemLogsPrevButton_Click(object sender, RoutedEventArgs e)
         {
             if (_systemLogsCurrentPage > 1)
             {
                 _systemLogsCurrentPage--;
-                await RefreshSystemLogsPage();
+                _ = RefreshSystemLogsPage();
             }
         }
 
-        private async void SystemLogsNextButton_Click(object sender, RoutedEventArgs e)
+        private void SystemLogsNextButton_Click(object sender, RoutedEventArgs e)
         {
             if (_systemLogsCurrentPage < _systemLogsTotalPages)
             {
                 _systemLogsCurrentPage++;
-                await RefreshSystemLogsPage();
+                _ = RefreshSystemLogsPage();
             }
         }
 
-        private async void SystemLogsLastButton_Click(object sender, RoutedEventArgs e)
+        private void SystemLogsLastButton_Click(object sender, RoutedEventArgs e)
         {
             _systemLogsCurrentPage = _systemLogsTotalPages;
-            await RefreshSystemLogsPage();
+            _ = RefreshSystemLogsPage();
         }
 
-        private async Task RefreshSystemLogsPage()
+        private Task RefreshSystemLogsPage()
         {
             try
             {
@@ -1161,6 +1211,7 @@ namespace LabServerAdmin
             {
                 UpdateStatus($"Error loading page: {ex.Message}");
             }
+            return Task.CompletedTask;
         }
 
         // Clients Pagination Methods
@@ -1178,37 +1229,37 @@ namespace LabServerAdmin
             });
         }
 
-        private async void ClientsFirstButton_Click(object sender, RoutedEventArgs e)
+        private void ClientsFirstButton_Click(object sender, RoutedEventArgs e)
         {
             _clientsCurrentPage = 1;
-            await RefreshClientsPage();
+            _ = RefreshClientsPage();
         }
 
-        private async void ClientsPrevButton_Click(object sender, RoutedEventArgs e)
+        private void ClientsPrevButton_Click(object sender, RoutedEventArgs e)
         {
             if (_clientsCurrentPage > 1)
             {
                 _clientsCurrentPage--;
-                await RefreshClientsPage();
+                _ = RefreshClientsPage();
             }
         }
 
-        private async void ClientsNextButton_Click(object sender, RoutedEventArgs e)
+        private void ClientsNextButton_Click(object sender, RoutedEventArgs e)
         {
             if (_clientsCurrentPage < _clientsTotalPages)
             {
                 _clientsCurrentPage++;
-                await RefreshClientsPage();
+                _ = RefreshClientsPage();
             }
         }
 
-        private async void ClientsLastButton_Click(object sender, RoutedEventArgs e)
+        private void ClientsLastButton_Click(object sender, RoutedEventArgs e)
         {
             _clientsCurrentPage = _clientsTotalPages;
-            await RefreshClientsPage();
+            _ = RefreshClientsPage();
         }
 
-        private async Task RefreshClientsPage()
+        private Task RefreshClientsPage()
         {
             try
             {
@@ -1229,6 +1280,7 @@ namespace LabServerAdmin
             {
                 UpdateStatus($"Error loading clients page: {ex.Message}");
             }
+            return Task.CompletedTask;
         }
 
         // Computers Pagination Methods
@@ -1246,37 +1298,37 @@ namespace LabServerAdmin
             });
         }
 
-        private async void ComputersFirstButton_Click(object sender, RoutedEventArgs e)
+        private void ComputersFirstButton_Click(object sender, RoutedEventArgs e)
         {
             _computersCurrentPage = 1;
-            await RefreshComputersPage();
+            _ = RefreshComputersPage();
         }
 
-        private async void ComputersPrevButton_Click(object sender, RoutedEventArgs e)
+        private void ComputersPrevButton_Click(object sender, RoutedEventArgs e)
         {
             if (_computersCurrentPage > 1)
             {
                 _computersCurrentPage--;
-                await RefreshComputersPage();
+                _ = RefreshComputersPage();
             }
         }
 
-        private async void ComputersNextButton_Click(object sender, RoutedEventArgs e)
+        private void ComputersNextButton_Click(object sender, RoutedEventArgs e)
         {
             if (_computersCurrentPage < _computersTotalPages)
             {
                 _computersCurrentPage++;
-                await RefreshComputersPage();
+                _ = RefreshComputersPage();
             }
         }
 
-        private async void ComputersLastButton_Click(object sender, RoutedEventArgs e)
+        private void ComputersLastButton_Click(object sender, RoutedEventArgs e)
         {
             _computersCurrentPage = _computersTotalPages;
-            await RefreshComputersPage();
+            _ = RefreshComputersPage();
         }
 
-        private async Task RefreshComputersPage()
+        private Task RefreshComputersPage()
         {
             try
             {
@@ -1297,6 +1349,7 @@ namespace LabServerAdmin
             {
                 UpdateStatus($"Error loading computers page: {ex.Message}");
             }
+            return Task.CompletedTask;
         }
 
         private async Task RefreshComputers()
@@ -2192,6 +2245,21 @@ namespace LabServerAdmin
         {
             try
             {
+                // Send logout command to all connected clients BEFORE stopping the server
+                var connectedClients = _tcpServerService.GetConnectedClients();
+                if (connectedClients.Count > 0)
+                {
+                    UpdateStatus($"Notifying {connectedClients.Count} connected client(s) - Server is shutting down...");
+                    
+                    // Send server_shutdown command to all clients
+                    await _tcpServerService.SendCommandToAllAsync("server_shutdown");
+                    
+                    // Give clients a moment to process the logout command
+                    await Task.Delay(1000);
+                    
+                    UpdateStatus("All clients notified of server shutdown");
+                }
+
                 // Record server stop time
                 await _databaseService.RecordServerStopAsync();
 
@@ -2316,7 +2384,7 @@ namespace LabServerAdmin
             _timeoutWarningShown = false;
         }
 
-        private async void InactivityTimer_Tick(object? sender, EventArgs e)
+        private void InactivityTimer_Tick(object? sender, EventArgs e)
         {
             var inactiveMinutes = (DateTime.Now - _lastActivityTime).TotalMinutes;
             

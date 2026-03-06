@@ -42,7 +42,6 @@ namespace LabServerAdmin
         private const uint VK_ESCAPE = 0x1B;
         private const int HOTKEY_ID = 9000;
 
-        private HwndSource? _source;
         public bool IsAuthenticated { get; private set; } = false;
         public string? AuthenticatedUsername { get; private set; } = null;
         public string? UserRole { get; private set; } = null;
@@ -118,7 +117,7 @@ namespace LabServerAdmin
             {
                 UnregisterHotKey(hwnd, HOTKEY_ID);
             }
-            _source?.RemoveHook(WndProc);
+            // _source?.RemoveHook(WndProc); // Commented out - matching disabled feature above
         }
 
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)

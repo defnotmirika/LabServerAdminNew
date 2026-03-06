@@ -960,6 +960,14 @@ namespace LabServerClient
         }
 
 
+        /// <summary>
+        /// Public method to handle server commands from ClientWindow
+        /// </summary>
+        public async Task<string?> HandleServerCommand(string command, string? parameters = null)
+        {
+            return await ExecuteCommand(command, parameters);
+        }
+
         private async Task<string?> ExecuteCommand(string command, string? parameters)
         {
             if (string.IsNullOrWhiteSpace(command))
@@ -991,6 +999,8 @@ namespace LabServerClient
                     return await HandleRemoteInput(parameters);
                 case "force_logout":
                     return await ForceLogout();
+                case "server_shutdown":
+                    return await HandleServerShutdown();
                 case "update_config":
                     return await UpdateConfiguration(parameters);
                 default:
@@ -1027,6 +1037,34 @@ namespace LabServerClient
             {
                 LogMessage($"Force logout error: {ex.Message}");
                 return $"Force logout failed: {ex.Message}";
+            }
+        }
+
+        private async Task<string> HandleServerShutdown()
+        {
+            try
+            {
+                LogMessage("Server shutdown command received - server is stopping");
+                
+                // Show notification
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show(
+                        "The server has been stopped by the administrator.\n\nYou will be logged out automatically.",
+                        "Server Shutdown",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                });
+
+                // Perform logout
+                await PerformLogout();
+
+                return "Server shutdown processed - logout successful";
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Server shutdown handler error: {ex.Message}");
+                return $"Server shutdown handler failed: {ex.Message}";
             }
         }
 

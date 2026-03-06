@@ -1426,6 +1426,112 @@ namespace LabServerAdmin.Services
             }
         }
 
+        /// <summary>
+        /// Ensures a computer exists in the database. If it doesn't exist, creates it. If it exists, updates its status.
+        /// </summary>
+        /// <param name="clientName">Name of the client/computer</param>
+        /// <param name="ipAddress">IP address of the client</param>
+        /// <returns>Computer ID</returns>
+        public async Task<int?> EnsureComputerExistsAsync(string clientName, string? ipAddress = null)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                // Check if computer already exists
+                var checkQuery = "SELECT id FROM computers WHERE client_name = @clientName LIMIT 1";
+                using var checkCmd = new NpgsqlCommand(checkQuery, connection);
+                checkCmd.Parameters.AddWithValue("@clientName", clientName);
+                var existingId = await checkCmd.ExecuteScalarAsync();
+
+                if (existingId != null && existingId != DBNull.Value)
+                {
+                    // Computer exists - update its status to Online and last_seen
+                    var updateQuery = @"
+                        UPDATE computers
+                        SET status = 'Online',
+                            is_online = TRUE,
+                            last_seen = CURRENT_TIMESTAMP,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = @id
+                        RETURNING id
+                    ";
+                    
+                    using var updateCmd = new NpgsqlCommand(updateQuery, connection);
+                    updateCmd.Parameters.AddWithValue("@id", existingId);
+                    var updatedId = await updateCmd.ExecuteScalarAsync();
+                    
+                    return updatedId == null || updatedId == DBNull.Value ? null : Convert.ToInt32(updatedId);
+                }
+
+                // Computer doesn't exist - create it
+                var insertQuery = @"
+                    INSERT INTO computers (client_name, status, is_online, is_locked, last_seen, created_at, updated_at)
+                    VALUES (@clientName, 'Online', TRUE, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    RETURNING id
+                ";
+
+                using var insertCmd = new NpgsqlCommand(insertQuery, connection);
+                insertCmd.Parameters.AddWithValue("@clientName", clientName);
+                var newId = await insertCmd.ExecuteScalarAsync();
+
+                if (newId != null && newId != DBNull.Value)
+                {
+                    await LogSystemActionAsync(
+                        "Computer Auto-Registered",
+                        clientName,
+                        "INFO",
+                        $"New computer '{clientName}' automatically registered in database"
+                    );
+                }
+
+                return newId == null || newId == DBNull.Value ? null : Convert.ToInt32(newId);
+            }
+            catch (Exception ex)
+            {
+                await LogSystemActionAsync("Ensure Computer Exists Error", clientName, "Error", $"Failed to ensure computer exists: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Marks a computer as offline in the database
+        /// </summary>
+        /// <param name="clientName">Name of the client/computer</param>
+        /// <returns>True if successful, false otherwise</returns>
+        public async Task<bool> MarkComputerOfflineAsync(string clientName)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+                    UPDATE computers
+                    SET status = CASE 
+                                    WHEN status = 'Maintenance' THEN 'Maintenance'
+                                    ELSE 'Offline'
+                                 END,
+                        is_online = FALSE,
+                        last_seen = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE client_name = @clientName
+                ";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@clientName", clientName);
+
+                var rowsAffected = await command.ExecuteNonQueryAsync();
+                return rowsAffected > 0;
+            }
+            catch (Exception ex)
+            {
+                await LogSystemActionAsync("Mark Computer Offline Error", clientName, "Error", $"Failed to mark computer offline: {ex.Message}");
+                return false;
+            }
+        }
+
         public async Task<List<InstructorClassListItem>> GetInstructorClassListAsync(string instructorId, DateTime? dateFilter = null)
         {
             using var connection = new NpgsqlConnection(_connectionString);
