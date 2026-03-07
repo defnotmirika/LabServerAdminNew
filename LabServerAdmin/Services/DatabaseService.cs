@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using Npgsql;
 using LabServerAdmin.Models;
 using System;
@@ -20,7 +20,7 @@ namespace LabServerAdmin.Services
                 ?? _configuration["Supabase:ConnectionString"];
 
             var defaultConnection = _configuration.GetConnectionString("DefaultConnection")
-                ?? "Host=localhost;Database=labserver;Username=postgres;Password=abc123";
+                ?? "Host=localhost;Port=5432;Database=learniqDB;Username=postgres;Password=mynewpass";
 
             _connectionString = !string.IsNullOrWhiteSpace(supabaseConnection)
                 ? supabaseConnection
@@ -32,10 +32,6 @@ namespace LabServerAdmin.Services
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
-            // Lightweight initialization - assumes main tables already exist in PostgreSQL
-            // Only create application-specific helper tables if needed
-            
-            // Create connected_clients table if it doesn't exist (runtime tracking)
             var createConnectedClients = @"
                 CREATE TABLE IF NOT EXISTS connected_clients (
                     id SERIAL PRIMARY KEY,
@@ -46,11 +42,9 @@ namespace LabServerAdmin.Services
                     status VARCHAR(50) DEFAULT 'Online'
                 );
             ";
-
             using var command = new NpgsqlCommand(createConnectedClients, connection);
             await command.ExecuteNonQueryAsync();
 
-            // Create login_requests table if it doesn't exist (runtime tracking)
             var createLoginRequests = @"
                 CREATE TABLE IF NOT EXISTS login_requests (
                     id SERIAL PRIMARY KEY,
@@ -65,16 +59,13 @@ namespace LabServerAdmin.Services
                     CONSTRAINT chk_status CHECK (status IN ('Pending', 'Approved', 'Declined')),
                     CONSTRAINT chk_request_type CHECK (request_type IN ('Login', 'Logout'))
                 );
-                
                 CREATE INDEX IF NOT EXISTS idx_login_requests_status ON login_requests(status);
                 CREATE INDEX IF NOT EXISTS idx_login_requests_timestamp ON login_requests(request_timestamp DESC);
                 CREATE INDEX IF NOT EXISTS idx_login_requests_type ON login_requests(request_type);
             ";
-
             using var loginRequestCommand = new NpgsqlCommand(createLoginRequests, connection);
             await loginRequestCommand.ExecuteNonQueryAsync();
 
-            // Migration: Ensure request_type column exists (in case table was created before this column was added)
             var ensureRequestTypeColumn = @"
                 DO $$ 
                 BEGIN
@@ -82,24 +73,19 @@ namespace LabServerAdmin.Services
                         SELECT 1 FROM information_schema.columns 
                         WHERE table_name = 'login_requests' AND column_name = 'request_type'
                     ) THEN
-                        ALTER TABLE login_requests 
-                        ADD COLUMN request_type VARCHAR(20) NOT NULL DEFAULT 'Login';
-                        
-                        ALTER TABLE login_requests 
-                        ADD CONSTRAINT chk_request_type CHECK (request_type IN ('Login', 'Logout'));
+                        ALTER TABLE login_requests ADD COLUMN request_type VARCHAR(20) NOT NULL DEFAULT 'Login';
+                        ALTER TABLE login_requests ADD CONSTRAINT chk_request_type CHECK (request_type IN ('Login', 'Logout'));
                     END IF;
                 END $$;
             ";
             using var requestTypeCommand = new NpgsqlCommand(ensureRequestTypeColumn, connection);
             await requestTypeCommand.ExecuteNonQueryAsync();
 
-            // Ensure UNIQUE constraint exists on connected_clients.name
             var ensureUniqueConstraint = @"
                 DO $$ 
                 BEGIN
                     IF NOT EXISTS (
-                        SELECT 1 FROM pg_constraint 
-                        WHERE conname = 'connected_clients_name_key'
+                        SELECT 1 FROM pg_constraint WHERE conname = 'connected_clients_name_key'
                     ) THEN
                         ALTER TABLE connected_clients ADD CONSTRAINT connected_clients_name_key UNIQUE (name);
                     END IF;
@@ -108,7 +94,6 @@ namespace LabServerAdmin.Services
             using var constraintCommand = new NpgsqlCommand(ensureUniqueConstraint, connection);
             await constraintCommand.ExecuteNonQueryAsync();
 
-            // Ensure lab_id column exists in computers table
             var ensureLabIdColumn = @"
                 DO $$ 
                 BEGIN
@@ -116,26 +101,36 @@ namespace LabServerAdmin.Services
                         SELECT 1 FROM information_schema.columns 
                         WHERE table_name = 'computers' AND column_name = 'lab_id'
                     ) THEN
-                        ALTER TABLE computers 
-                        ADD COLUMN lab_id INTEGER;
+                        ALTER TABLE computers ADD COLUMN lab_id INTEGER;
                     END IF;
                 END $$;
             ";
             using var labIdCommand = new NpgsqlCommand(ensureLabIdColumn, connection);
             await labIdCommand.ExecuteNonQueryAsync();
-
-            // All other tables (ua_geninfo, ui_geninfo, us_geninfo, ua_credentials, ui_credentials, 
-            // system_logs, attendance_logs, computers, settings, etc.) should already exist in PostgreSQL
         }
 
         private static bool IsValidBcryptHash(string? hash)
         {
-            if (string.IsNullOrWhiteSpace(hash))
-            {
-                return false;
-            }
-
+            if (string.IsNullOrWhiteSpace(hash)) return false;
             return Regex.IsMatch(hash, @"^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$");
+        }
+
+        // ── Resolve username OR empID → empID ────────────────────────
+        private async Task<string?> ResolveInstructorEmpIdAsync(string usernameOrEmpId)
+        {
+            using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var query = @"
+                SELECT empID FROM ui_credentials
+                WHERE username = @value OR empID = @value
+                LIMIT 1";
+
+            using var command = new NpgsqlCommand(query, connection);
+            command.Parameters.AddWithValue("@value", usernameOrEmpId);
+
+            var result = await command.ExecuteScalarAsync();
+            return result == null || result == DBNull.Value ? null : result.ToString();
         }
 
         public async Task<bool> ValidateAdminAsync(string username, string password)
@@ -145,13 +140,10 @@ namespace LabServerAdmin.Services
 
             try
             {
-                // Query ua_credentials table for admin authentication
                 var query = @"
-                    SELECT password_hash 
-                    FROM ua_credentials 
-                    WHERE (username = @username OR empID = @username) 
-                    AND role = 'ADMIN'";
-                
+                    SELECT password_hash FROM ua_credentials 
+                    WHERE (username = @username OR empID = @username) AND role = 'ADMIN'";
+
                 using var command = new NpgsqlCommand(query, connection);
                 command.Parameters.AddWithValue("@username", username);
 
@@ -159,49 +151,29 @@ namespace LabServerAdmin.Services
                 var passwordHash = result?.ToString();
 
                 if (string.IsNullOrWhiteSpace(passwordHash))
-                {
-                    // Fallback to hardcoded credentials if table doesn't exist or user not found
                     return (username == "admin" && password == "admin123");
-                }
 
-                // Check if it's a valid bcrypt hash
                 if (IsValidBcryptHash(passwordHash))
                 {
-                    try
-                    {
-                        return BCrypt.Net.BCrypt.Verify(password, passwordHash);
-                    }
-                    catch (BCrypt.Net.SaltParseException)
-                    {
-                        return false;
-                    }
+                    try { return BCrypt.Net.BCrypt.Verify(password, passwordHash); }
+                    catch (BCrypt.Net.SaltParseException) { return false; }
                 }
 
-                // Fallback: plain text comparison (for migration)
                 if (passwordHash == password)
                 {
-                    // Update to hashed password
-                    var updateQuery = @"
-                        UPDATE ua_credentials 
-                        SET password_hash = @newHash 
-                        WHERE (username = @username OR empID = @username) 
-                        AND role = 'ADMIN'";
-        
                     var hashedPassword = BCrypt.Net.BCrypt.HashPassword(password);
+                    var updateQuery = @"
+                        UPDATE ua_credentials SET password_hash = @newHash 
+                        WHERE (username = @username OR empID = @username) AND role = 'ADMIN'";
                     using var updateCommand = new NpgsqlCommand(updateQuery, connection);
                     updateCommand.Parameters.AddWithValue("@newHash", hashedPassword);
                     updateCommand.Parameters.AddWithValue("@username", username);
                     await updateCommand.ExecuteNonQueryAsync();
-        
                     return true;
                 }
                 return false;
             }
-            catch (Exception)
-            {
-                // If database error, fallback to hardcoded credentials
-                return (username == "admin" && password == "admin123");
-            }
+            catch (Exception) { return (username == "admin" && password == "admin123"); }
         }
 
         public async Task<bool> ValidateClientAsync(string username, string password)
@@ -211,13 +183,10 @@ namespace LabServerAdmin.Services
 
             try
             {
-                // First try instructor credentials (ui_credentials)
                 var instructorQuery = @"
-                    SELECT password_hash 
-                    FROM ui_credentials 
-                    WHERE (username = @username OR empID = @username) 
-                    AND role = 'INSTRUCTOR'";
-                
+                    SELECT password_hash FROM ui_credentials 
+                    WHERE (username = @username OR empID = @username) AND role = 'INSTRUCTOR'";
+
                 using var instructorCommand = new NpgsqlCommand(instructorQuery, connection);
                 instructorCommand.Parameters.AddWithValue("@username", username);
 
@@ -226,47 +195,31 @@ namespace LabServerAdmin.Services
 
                 if (!string.IsNullOrWhiteSpace(instructorPasswordHash))
                 {
-                    // Check if it's a valid bcrypt hash
                     if (IsValidBcryptHash(instructorPasswordHash))
                     {
-                        try
-                        {
-                            return BCrypt.Net.BCrypt.Verify(password, instructorPasswordHash);
-                        }
-                        catch (BCrypt.Net.SaltParseException)
-                        {
-                            return false;
-                        }
+                        try { return BCrypt.Net.BCrypt.Verify(password, instructorPasswordHash); }
+                        catch (BCrypt.Net.SaltParseException) { return false; }
                     }
-
-                    // Fallback: plain text comparison (for migration)
                     if (instructorPasswordHash == password)
                     {
-                        // Update to hashed password
-                        var updateQuery = @"
-                            UPDATE ui_credentials 
-                            SET password_hash = @newHash 
-                            WHERE (username = @username OR empID = @username) 
-                            AND role = 'INSTRUCTOR'";
-            
                         var hashedPassword = BCrypt.Net.BCrypt.HashPassword(password);
+                        var updateQuery = @"
+                            UPDATE ui_credentials SET password_hash = @newHash 
+                            WHERE (username = @username OR empID = @username) AND role = 'INSTRUCTOR'";
                         using var updateCommand = new NpgsqlCommand(updateQuery, connection);
                         updateCommand.Parameters.AddWithValue("@newHash", hashedPassword);
                         updateCommand.Parameters.AddWithValue("@username", username);
                         await updateCommand.ExecuteNonQueryAsync();
-                        
                         return true;
                     }
                 }
 
-                // Fallback to hardcoded credentials if not found
-                return (username == "student" && password == "student123") || 
+                return (username == "student" && password == "student123") ||
                        (username == "client" && password == "client123");
             }
             catch (Exception)
             {
-                // If database error, fallback to hardcoded credentials
-                return (username == "student" && password == "student123") || 
+                return (username == "student" && password == "student123") ||
                        (username == "client" && password == "client123");
             }
         }
@@ -279,10 +232,8 @@ namespace LabServerAdmin.Services
             try
             {
                 var instructorQuery = @"
-                    SELECT password_hash 
-                    FROM ui_credentials 
-                    WHERE (username = @username OR empID = @username) 
-                    AND role = 'INSTRUCTOR'";
+                    SELECT password_hash FROM ui_credentials 
+                    WHERE (username = @username OR empID = @username) AND role = 'INSTRUCTOR'";
 
                 using var instructorCommand = new NpgsqlCommand(instructorQuery, connection);
                 instructorCommand.Parameters.AddWithValue("@username", username);
@@ -290,47 +241,29 @@ namespace LabServerAdmin.Services
                 var instructorResult = await instructorCommand.ExecuteScalarAsync();
                 var instructorPasswordHash = instructorResult?.ToString();
 
-                if (string.IsNullOrWhiteSpace(instructorPasswordHash))
-                {
-                    return false;
-                }
+                if (string.IsNullOrWhiteSpace(instructorPasswordHash)) return false;
 
                 if (IsValidBcryptHash(instructorPasswordHash))
                 {
-                    try
-                    {
-                        return BCrypt.Net.BCrypt.Verify(password, instructorPasswordHash);
-                    }
-                    catch (BCrypt.Net.SaltParseException)
-                    {
-                        return false;
-                    }
+                    try { return BCrypt.Net.BCrypt.Verify(password, instructorPasswordHash); }
+                    catch (BCrypt.Net.SaltParseException) { return false; }
                 }
 
-                // Fallback: plain text comparison (for migration)
                 if (instructorPasswordHash == password)
                 {
-                    var updateQuery = @"
-                        UPDATE ui_credentials 
-                        SET password_hash = @newHash 
-                        WHERE (username = @username OR empID = @username) 
-                        AND role = 'INSTRUCTOR'";
-
                     var hashedPassword = BCrypt.Net.BCrypt.HashPassword(password);
+                    var updateQuery = @"
+                        UPDATE ui_credentials SET password_hash = @newHash 
+                        WHERE (username = @username OR empID = @username) AND role = 'INSTRUCTOR'";
                     using var updateCommand = new NpgsqlCommand(updateQuery, connection);
                     updateCommand.Parameters.AddWithValue("@newHash", hashedPassword);
                     updateCommand.Parameters.AddWithValue("@username", username);
                     await updateCommand.ExecuteNonQueryAsync();
-
                     return true;
                 }
-
                 return false;
             }
-            catch
-            {
-                return false;
-            }
+            catch { return false; }
         }
 
         public async Task LogSystemActionAsync(string action, string clientName, string status, string? details = null, string? userId = null)
@@ -338,7 +271,6 @@ namespace LabServerAdmin.Services
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
-            // Get computer_id if clientName exists
             int? computerId = null;
             if (!string.IsNullOrWhiteSpace(clientName))
             {
@@ -347,9 +279,7 @@ namespace LabServerAdmin.Services
                 getComputerCmd.Parameters.AddWithValue("@clientName", clientName);
                 var computerIdObj = await getComputerCmd.ExecuteScalarAsync();
                 if (computerIdObj != null)
-                {
                     computerId = Convert.ToInt32(computerIdObj);
-                }
             }
 
             var logLevel = status.ToUpper() switch
@@ -360,9 +290,6 @@ namespace LabServerAdmin.Services
                 _ => "INFO"
             };
 
-            var logMessage = details ?? action;
-            var actionType = action;
-
             var query = @"
                 INSERT INTO system_logs (log_level, log_message, action_type, user_id, computer_id, log_time) 
                 VALUES (@logLevel, @logMessage, @actionType, @userId, @computerId, CURRENT_TIMESTAMP)
@@ -370,8 +297,8 @@ namespace LabServerAdmin.Services
 
             using var command = new NpgsqlCommand(query, connection);
             command.Parameters.AddWithValue("@logLevel", logLevel);
-            command.Parameters.AddWithValue("@logMessage", logMessage);
-            command.Parameters.AddWithValue("@actionType", actionType);
+            command.Parameters.AddWithValue("@logMessage", details ?? action);
+            command.Parameters.AddWithValue("@actionType", action);
             command.Parameters.AddWithValue("@userId", string.IsNullOrWhiteSpace(userId) ? (object)DBNull.Value : userId);
             command.Parameters.AddWithValue("@computerId", computerId ?? (object)DBNull.Value);
 
@@ -384,50 +311,25 @@ namespace LabServerAdmin.Services
             await connection.OpenAsync();
 
             var query = @"
-                SELECT 
-                    sl.id, 
-                    sl.log_level, 
-                    sl.log_message, 
-                    sl.log_time, 
-                    sl.computer_id, 
-                    sl.user_id, 
-                    sl.action_type,
-                    COALESCE(c.client_name, '') as client_name
+                SELECT sl.id, sl.log_level, sl.log_message, sl.log_time,
+                       sl.computer_id, sl.user_id, sl.action_type,
+                       COALESCE(c.client_name, '') as client_name
                 FROM system_logs sl
                 LEFT JOIN computers c ON sl.computer_id = c.id
                 WHERE 1=1
             ";
 
-            // Add date filtering if provided
-            if (startDate.HasValue)
-            {
-                query += " AND DATE(sl.log_time) >= @startDate";
-            }
-
-            if (endDate.HasValue)
-            {
-                query += " AND DATE(sl.log_time) <= @endDate";
-            }
-
+            if (startDate.HasValue) query += " AND DATE(sl.log_time) >= @startDate";
+            if (endDate.HasValue) query += " AND DATE(sl.log_time) <= @endDate";
             query += " ORDER BY sl.log_time DESC LIMIT @limit";
 
             using var command = new NpgsqlCommand(query, connection);
             command.Parameters.AddWithValue("@limit", limit);
-
-            // Add parameters if dates are provided
-            if (startDate.HasValue)
-            {
-                command.Parameters.AddWithValue("@startDate", startDate.Value.Date);
-            }
-
-            if (endDate.HasValue)
-            {
-                command.Parameters.AddWithValue("@endDate", endDate.Value.Date);
-            }
+            if (startDate.HasValue) command.Parameters.AddWithValue("@startDate", startDate.Value.Date);
+            if (endDate.HasValue) command.Parameters.AddWithValue("@endDate", endDate.Value.Date);
 
             var logs = new List<SystemLog>();
             using var reader = await command.ExecuteReaderAsync();
-
             while (await reader.ReadAsync())
             {
                 logs.Add(new SystemLog
@@ -442,70 +344,41 @@ namespace LabServerAdmin.Services
                     ClientName = reader.IsDBNull("client_name") ? "" : reader.GetString("client_name")
                 });
             }
-
             return logs;
         }
 
+        // ── FIX: replaced us.full_name with CONCAT(us.f_name, ' ', us.l_name) ──
         public async Task<List<AttendanceLog>> GetAttendanceLogsAsync(DateTime? startDate = null, DateTime? endDate = null)
         {
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
             var query = @"
-                SELECT 
-                    al.id, 
-                    al.studNo,
-                    al.computer_id, 
-                    al.login_time, 
-                    al.logout_time, 
-                    al.session_duration, 
-                    al.status,
-                    al.schedule_start_time,
-                    al.expected_login_time,
-                    al.is_late,
-                    al.minutes_late,
-                    al.timeliness_status,
-                    al.server_start_time,
-                    COALESCE(us.full_name, al.studNo, '') as student_name,
-                    COALESCE(c.client_name, '') as pc_name
+                SELECT al.id, al.studNo, al.computer_id, al.login_time, al.logout_time,
+                       al.session_duration, al.status, al.schedule_start_time,
+                       al.expected_login_time, al.is_late, al.minutes_late,
+                       al.timeliness_status, al.server_start_time,
+                       COALESCE(NULLIF(CONCAT(us.f_name, ' ', us.l_name), ' '), al.studNo, '') as student_name,
+                       COALESCE(c.client_name, '') as pc_name
                 FROM attendance_logs al
                 LEFT JOIN us_geninfo us ON al.studNo = us.studNo
-                LEFT JOIN computers c ON al.computer_id = c.id
+                LEFT JOIN computers c  ON al.computer_id = c.id
                 WHERE 1=1
             ";
 
-            // Add date filtering if provided
-            if (startDate.HasValue)
-            {
-                query += " AND DATE(al.login_time) >= @startDate";
-            }
-
-            if (endDate.HasValue)
-            {
-                query += " AND DATE(al.login_time) <= @endDate";
-            }
-
+            if (startDate.HasValue) query += " AND DATE(al.login_time) >= @startDate";
+            if (endDate.HasValue) query += " AND DATE(al.login_time) <= @endDate";
             query += " ORDER BY al.login_time DESC";
 
             using var command = new NpgsqlCommand(query, connection);
-
-            // Add parameters if dates are provided
-            if (startDate.HasValue)
-            {
-                command.Parameters.AddWithValue("@startDate", startDate.Value.Date);
-            }
-
-            if (endDate.HasValue)
-            {
-                command.Parameters.AddWithValue("@endDate", endDate.Value.Date);
-            }
+            if (startDate.HasValue) command.Parameters.AddWithValue("@startDate", startDate.Value.Date);
+            if (endDate.HasValue) command.Parameters.AddWithValue("@endDate", endDate.Value.Date);
 
             var logs = new List<AttendanceLog>();
             using var reader = await command.ExecuteReaderAsync();
-
             while (await reader.ReadAsync())
             {
-                var log = new AttendanceLog
+                logs.Add(new AttendanceLog
                 {
                     Id = reader.GetInt32("id"),
                     StudNo = reader.IsDBNull("studNo") ? null : reader.GetString("studNo"),
@@ -522,65 +395,39 @@ namespace LabServerAdmin.Services
                     ServerStartTime = reader.IsDBNull("server_start_time") ? null : reader.GetDateTime("server_start_time"),
                     StudentName = reader.IsDBNull("student_name") ? "" : reader.GetString("student_name"),
                     PcName = reader.IsDBNull("pc_name") ? "" : reader.GetString("pc_name")
-                };
-
-                logs.Add(log);
+                });
             }
-
             return logs;
         }
 
-        /// <summary>
-        /// Gets attendance logs including absent students (students enrolled but not logged in)
-        /// </summary>
+        // ── FIX: replaced us.full_name with CONCAT in both present & absent sections ──
         public async Task<List<AttendanceLog>> GetAttendanceWithAbsentStudentsAsync(DateTime? startDate = null, DateTime? endDate = null)
         {
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
-            // Use startDate/endDate or default to today
             var filterDate = startDate ?? DateTime.Today;
             var currentDay = filterDate.DayOfWeek.ToString();
 
             var query = @"
-                -- Get present students (logged in)
-                SELECT 
-                    al.id, 
-                    al.studNo,
-                    al.computer_id, 
-                    al.login_time, 
-                    al.logout_time, 
-                    al.session_duration, 
-                    al.status,
-                    al.schedule_start_time,
-                    al.expected_login_time,
-                    al.is_late,
-                    al.minutes_late,
-                    al.timeliness_status,
-                    al.server_start_time,
-                    COALESCE(us.full_name, al.studNo, '') as student_name,
-                    COALESCE(c.client_name, '') as pc_name
+                SELECT al.id, al.studNo, al.computer_id, al.login_time, al.logout_time,
+                       al.session_duration, al.status, al.schedule_start_time,
+                       al.expected_login_time, al.is_late, al.minutes_late,
+                       al.timeliness_status, al.server_start_time,
+                       COALESCE(NULLIF(CONCAT(us.f_name, ' ', us.l_name), ' '), al.studNo, '') as student_name,
+                       COALESCE(c.client_name, '') as pc_name
                 FROM attendance_logs al
                 LEFT JOIN us_geninfo us ON al.studNo = us.studNo
-                LEFT JOIN computers c ON al.computer_id = c.id
+                LEFT JOIN computers c  ON al.computer_id = c.id
                 WHERE 1=1
             ";
 
-            if (startDate.HasValue)
-            {
-                query += " AND DATE(al.login_time) >= @startDate";
-            }
-
-            if (endDate.HasValue)
-            {
-                query += " AND DATE(al.login_time) <= @endDate";
-            }
+            if (startDate.HasValue) query += " AND DATE(al.login_time) >= @startDate";
+            if (endDate.HasValue) query += " AND DATE(al.login_time) <= @endDate";
 
             query += @"
                 UNION ALL
-
-                -- Get absent students (enrolled but didn't log in)
-                SELECT 
+                SELECT
                     NULL::INTEGER as id,
                     us.studNo,
                     NULL::INTEGER as computer_id,
@@ -594,25 +441,17 @@ namespace LabServerAdmin.Services
                     0 as minutes_late,
                     'Absent' as timeliness_status,
                     NULL::TIMESTAMP as server_start_time,
-                    COALESCE(us.full_name, us.studNo, '') as student_name,
+                    COALESCE(NULLIF(CONCAT(us.f_name, ' ', us.l_name), ' '), us.studNo, '') as student_name,
                     '' as pc_name
                 FROM us_geninfo us
                 INNER JOIN course_schedules cs ON us.section_id = cs.section_id
                 WHERE cs.day_of_week = @dayOfWeek
                   AND NOT EXISTS (
-                      SELECT 1 FROM attendance_logs al 
-                      WHERE al.studNo = us.studNo
+                      SELECT 1 FROM attendance_logs al WHERE al.studNo = us.studNo
             ";
 
-            if (startDate.HasValue)
-            {
-                query += " AND DATE(al.login_time) >= @startDate";
-            }
-
-            if (endDate.HasValue)
-            {
-                query += " AND DATE(al.login_time) <= @endDate";
-            }
+            if (startDate.HasValue) query += " AND DATE(al.login_time) >= @startDate";
+            if (endDate.HasValue) query += " AND DATE(al.login_time) <= @endDate";
 
             query += @"
                   )
@@ -620,25 +459,15 @@ namespace LabServerAdmin.Services
             ";
 
             using var command = new NpgsqlCommand(query, connection);
-
-            if (startDate.HasValue)
-            {
-                command.Parameters.AddWithValue("@startDate", startDate.Value.Date);
-            }
-
-            if (endDate.HasValue)
-            {
-                command.Parameters.AddWithValue("@endDate", endDate.Value.Date);
-            }
-
+            if (startDate.HasValue) command.Parameters.AddWithValue("@startDate", startDate.Value.Date);
+            if (endDate.HasValue) command.Parameters.AddWithValue("@endDate", endDate.Value.Date);
             command.Parameters.AddWithValue("@dayOfWeek", currentDay);
 
             var logs = new List<AttendanceLog>();
             using var reader = await command.ExecuteReaderAsync();
-
             while (await reader.ReadAsync())
             {
-                var log = new AttendanceLog
+                logs.Add(new AttendanceLog
                 {
                     Id = reader.IsDBNull("id") ? 0 : reader.GetInt32("id"),
                     StudNo = reader.IsDBNull("studNo") ? null : reader.GetString("studNo"),
@@ -655,68 +484,41 @@ namespace LabServerAdmin.Services
                     ServerStartTime = reader.IsDBNull("server_start_time") ? null : reader.GetDateTime("server_start_time"),
                     StudentName = reader.IsDBNull("student_name") ? "" : reader.GetString("student_name"),
                     PcName = reader.IsDBNull("pc_name") ? "" : reader.GetString("pc_name")
-                };
-
-                logs.Add(log);
+                });
             }
-
             return logs;
         }
 
+        // ── FIX: replaced us.full_name with CONCAT ──
         public async Task<List<ActivityLog>> GetActivityLogsAsync(DateTime? startDate = null, DateTime? endDate = null, int limit = 100)
         {
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
             var query = @"
-                SELECT 
-                    al.id, 
-                    al.studNo,
-                    al.computer_id, 
-                    al.action, 
-                    al.description, 
-                    al.timestamp,
-                    COALESCE(us.full_name, al.studNo, '') as student_name,
-                    COALESCE(c.client_name, '') as pc_name
+                SELECT al.id, al.studNo, al.computer_id, al.action, al.description, al.timestamp,
+                       COALESCE(NULLIF(CONCAT(us.f_name, ' ', us.l_name), ' '), al.studNo, '') as student_name,
+                       COALESCE(c.client_name, '') as pc_name
                 FROM activity_logs al
                 LEFT JOIN us_geninfo us ON al.studNo = us.studNo
-                LEFT JOIN computers c ON al.computer_id = c.id
+                LEFT JOIN computers c  ON al.computer_id = c.id
                 WHERE 1=1
             ";
 
-            // Add date filtering if provided
-            if (startDate.HasValue)
-            {
-                query += " AND DATE(al.timestamp) >= @startDate";
-            }
-
-            if (endDate.HasValue)
-            {
-                query += " AND DATE(al.timestamp) <= @endDate";
-            }
-
+            if (startDate.HasValue) query += " AND DATE(al.timestamp) >= @startDate";
+            if (endDate.HasValue) query += " AND DATE(al.timestamp) <= @endDate";
             query += " ORDER BY al.timestamp DESC LIMIT @limit";
 
             using var command = new NpgsqlCommand(query, connection);
             command.Parameters.AddWithValue("@limit", limit);
-
-            // Add parameters if dates are provided
-            if (startDate.HasValue)
-            {
-                command.Parameters.AddWithValue("@startDate", startDate.Value.Date);
-            }
-
-            if (endDate.HasValue)
-            {
-                command.Parameters.AddWithValue("@endDate", endDate.Value.Date);
-            }
+            if (startDate.HasValue) command.Parameters.AddWithValue("@startDate", startDate.Value.Date);
+            if (endDate.HasValue) command.Parameters.AddWithValue("@endDate", endDate.Value.Date);
 
             var logs = new List<ActivityLog>();
             using var reader = await command.ExecuteReaderAsync();
-
             while (await reader.ReadAsync())
             {
-                var log = new ActivityLog
+                logs.Add(new ActivityLog
                 {
                     Id = reader.GetInt32("id"),
                     StudNo = reader.GetString("studNo"),
@@ -726,11 +528,8 @@ namespace LabServerAdmin.Services
                     Timestamp = reader.GetDateTime("timestamp"),
                     StudentName = reader.IsDBNull("student_name") ? "" : reader.GetString("student_name"),
                     PcName = reader.IsDBNull("pc_name") ? "" : reader.GetString("pc_name")
-                };
-
-                logs.Add(log);
+                });
             }
-
             return logs;
         }
 
@@ -741,32 +540,24 @@ namespace LabServerAdmin.Services
                 using var connection = new NpgsqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                // Update computers table (no ip_address in schema)
                 var updateComputerQuery = @"
                     INSERT INTO computers (client_name, status, is_online, is_locked, last_seen)
                     VALUES (@clientName, @status, @isOnline, FALSE, CURRENT_TIMESTAMP)
-                    ON CONFLICT (client_name)
-                    DO UPDATE SET
-                        status = EXCLUDED.status,
+                    ON CONFLICT (client_name) DO UPDATE SET
+                        status    = EXCLUDED.status,
                         is_online = EXCLUDED.is_online,
                         last_seen = CURRENT_TIMESTAMP,
                         updated_at = CURRENT_TIMESTAMP
                 ";
-
                 using var computerCommand = new NpgsqlCommand(updateComputerQuery, connection);
                 computerCommand.Parameters.AddWithValue("@clientName", clientName);
                 computerCommand.Parameters.AddWithValue("@status", status);
                 computerCommand.Parameters.AddWithValue("@isOnline", isConnected);
                 await computerCommand.ExecuteNonQueryAsync();
 
-                // Also update connected_clients for backward compatibility
                 var ensureConstraint = @"
-                    DO $$ 
-                    BEGIN
-                        IF NOT EXISTS (
-                            SELECT 1 FROM pg_constraint 
-                            WHERE conname = 'connected_clients_name_key'
-                        ) THEN
+                    DO $$ BEGIN
+                        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'connected_clients_name_key') THEN
                             ALTER TABLE connected_clients ADD CONSTRAINT connected_clients_name_key UNIQUE (name);
                         END IF;
                     END $$;
@@ -777,26 +568,22 @@ namespace LabServerAdmin.Services
                 var query = @"
                     INSERT INTO connected_clients (name, ip_address, is_connected, status, last_response) 
                     VALUES (@name, @ipAddress, @isConnected, @status, @lastResponse)
-                    ON CONFLICT (name) 
-                    DO UPDATE SET 
-                        ip_address = EXCLUDED.ip_address,
+                    ON CONFLICT (name) DO UPDATE SET 
+                        ip_address   = EXCLUDED.ip_address,
                         is_connected = EXCLUDED.is_connected,
-                        status = EXCLUDED.status,
+                        status       = EXCLUDED.status,
                         last_response = EXCLUDED.last_response
                 ";
-
                 using var command = new NpgsqlCommand(query, connection);
                 command.Parameters.AddWithValue("@name", clientName);
                 command.Parameters.AddWithValue("@ipAddress", ipAddress);
                 command.Parameters.AddWithValue("@isConnected", isConnected);
                 command.Parameters.AddWithValue("@status", status);
                 command.Parameters.AddWithValue("@lastResponse", DateTime.UtcNow);
-
                 await command.ExecuteNonQueryAsync();
             }
             catch (Exception ex)
             {
-                // Log error but don't throw - we don't want to break the connection flow
                 await LogSystemActionAsync("Database Update Error", clientName, "Error", $"Failed to update client status: {ex.Message}");
             }
         }
@@ -806,16 +593,12 @@ namespace LabServerAdmin.Services
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
-            var query = @"
-                SELECT id, name, ip_address, last_response, is_connected, status 
-                FROM connected_clients 
-                ORDER BY name
-            ";
+            using var command = new NpgsqlCommand(
+                "SELECT id, name, ip_address, last_response, is_connected, status FROM connected_clients ORDER BY name",
+                connection);
 
-            using var command = new NpgsqlCommand(query, connection);
             var clients = new List<ConnectedClient>();
             using var reader = await command.ExecuteReaderAsync();
-
             while (await reader.ReadAsync())
             {
                 clients.Add(new ConnectedClient
@@ -828,7 +611,6 @@ namespace LabServerAdmin.Services
                     Status = reader.GetString("status")
                 });
             }
-
             return clients;
         }
 
@@ -836,11 +618,8 @@ namespace LabServerAdmin.Services
         {
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
-
-            var query = "SELECT setting_value FROM settings WHERE setting_key = @key";
-            using var command = new NpgsqlCommand(query, connection);
+            using var command = new NpgsqlCommand("SELECT setting_value FROM settings WHERE setting_key = @key", connection);
             command.Parameters.AddWithValue("@key", key);
-
             var result = await command.ExecuteScalarAsync();
             return result == null || result == DBNull.Value ? null : result.ToString();
         }
@@ -849,20 +628,15 @@ namespace LabServerAdmin.Services
         {
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
-
             var query = @"
                 INSERT INTO settings (setting_key, setting_value, updated_at)
                 VALUES (@key, @value, CURRENT_TIMESTAMP)
-                ON CONFLICT (setting_key)
-                DO UPDATE SET
-                    setting_value = EXCLUDED.setting_value,
-                    updated_at = CURRENT_TIMESTAMP
+                ON CONFLICT (setting_key) DO UPDATE SET
+                    setting_value = EXCLUDED.setting_value, updated_at = CURRENT_TIMESTAMP
             ";
-
             using var command = new NpgsqlCommand(query, connection);
             command.Parameters.AddWithValue("@key", key);
             command.Parameters.AddWithValue("@value", value);
-
             await command.ExecuteNonQueryAsync();
         }
 
@@ -870,12 +644,8 @@ namespace LabServerAdmin.Services
         {
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
-
-            var query = "DELETE FROM settings WHERE setting_key = @key";
-
-            using var command = new NpgsqlCommand(query, connection);
+            using var command = new NpgsqlCommand("DELETE FROM settings WHERE setting_key = @key", connection);
             command.Parameters.AddWithValue("@key", key);
-
             await command.ExecuteNonQueryAsync();
         }
 
@@ -883,51 +653,27 @@ namespace LabServerAdmin.Services
         {
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
-
             try
             {
-                // First try admin credentials (ua_credentials)
-                var adminQuery = @"
-                    SELECT id 
-                    FROM ua_credentials 
-                    WHERE (username = @username OR empID = @username) 
-                    AND role = 'ADMIN' 
-                    LIMIT 1";
-        
-                using var adminCommand = new NpgsqlCommand(adminQuery, connection);
+                using var adminCommand = new NpgsqlCommand(
+                    "SELECT id FROM ua_credentials WHERE (username = @username OR empID = @username) AND role = 'ADMIN' LIMIT 1",
+                    connection);
                 adminCommand.Parameters.AddWithValue("@username", username);
                 var adminResult = await adminCommand.ExecuteScalarAsync();
-        
                 if (adminResult != null && adminResult != DBNull.Value)
-                {
                     return Convert.ToInt32(adminResult);
-                }
 
-                // Try instructor credentials (ui_credentials)
-                var instructorQuery = @"
-                    SELECT id 
-                    FROM ui_credentials 
-                    WHERE (username = @username OR empID = @username) 
-                    AND role = 'INSTRUCTOR' 
-                    LIMIT 1";
-        
-                using var instructorCommand = new NpgsqlCommand(instructorQuery, connection);
+                using var instructorCommand = new NpgsqlCommand(
+                    "SELECT id FROM ui_credentials WHERE (username = @username OR empID = @username) AND role = 'INSTRUCTOR' LIMIT 1",
+                    connection);
                 instructorCommand.Parameters.AddWithValue("@username", username);
                 var instructorResult = await instructorCommand.ExecuteScalarAsync();
-        
                 if (instructorResult != null && instructorResult != DBNull.Value)
-                {
                     return Convert.ToInt32(instructorResult);
-                }
 
-                // No fallback - return null if not found
                 return null;
             }
-            catch (Exception)
-            {
-                // If database error, return null
-                return null;
-            }
+            catch (Exception) { return null; }
         }
 
         public async Task LogAdminActionAsync(string username, string action, string? description = null, string? computerName = null, string? ipAddress = null)
@@ -937,72 +683,52 @@ namespace LabServerAdmin.Services
                 using var connection = new NpgsqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                // Get user ID
                 var userId = await GetUserIdByUsernameAsync(username);
-                if (userId == null)
-                {
-                    // If user not found, skip logging
-                    return;
-                }
+                if (userId == null) return;
 
-                // Get computer ID if computer name is provided
                 int? computerId = null;
                 if (!string.IsNullOrWhiteSpace(computerName))
                 {
-                    var getComputerQuery = "SELECT id FROM computers WHERE client_name = @clientName LIMIT 1";
-                    using var getComputerCmd = new NpgsqlCommand(getComputerQuery, connection);
+                    using var getComputerCmd = new NpgsqlCommand(
+                        "SELECT id FROM computers WHERE client_name = @clientName LIMIT 1", connection);
                     getComputerCmd.Parameters.AddWithValue("@clientName", computerName);
                     var computerIdObj = await getComputerCmd.ExecuteScalarAsync();
-                    if (computerIdObj != null)
-                    {
-                        computerId = Convert.ToInt32(computerIdObj);
-                    }
+                    if (computerIdObj != null) computerId = Convert.ToInt32(computerIdObj);
                 }
 
                 var query = @"
                     INSERT INTO activity_logs (user_id, computer_id, action, description, timestamp, ip_address)
                     VALUES (@userId, @computerId, @action, @description, CURRENT_TIMESTAMP, @ipAddress)
                 ";
-
                 using var command = new NpgsqlCommand(query, connection);
                 command.Parameters.AddWithValue("@userId", userId);
                 command.Parameters.AddWithValue("@computerId", computerId ?? (object)DBNull.Value);
                 command.Parameters.AddWithValue("@action", action);
                 command.Parameters.AddWithValue("@description", description ?? (object)DBNull.Value);
                 command.Parameters.AddWithValue("@ipAddress", !string.IsNullOrWhiteSpace(ipAddress) ? ipAddress : (object)DBNull.Value);
-
                 await command.ExecuteNonQueryAsync();
             }
             catch (Exception ex)
             {
-                // Log error but don't throw - we don't want to break the admin action flow
                 await LogSystemActionAsync("Admin Action Logging Error", username, "Error", $"Failed to log admin action: {ex.Message}");
             }
         }
 
         #region Login Request Management
 
-        /// <summary>
-        /// Creates a new login request from a client
-        /// </summary>
         public async Task<int> CreateLoginRequestAsync(string studNo, string pcName, string? ipAddress = null, string? requestMessage = null, string requestType = "Login")
         {
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
-            // Get computer_id from pc_name
             var computerId = await GetComputerIdByNameAsync(connection, pcName, ipAddress);
-            if (!computerId.HasValue)
-            {
-                throw new Exception($"Computer not found: {pcName}");
-            }
+            if (!computerId.HasValue) throw new Exception($"Computer not found: {pcName}");
 
             var query = @"
                 INSERT INTO login_requests (studNo, computer_id, request_type, request_message, request_timestamp, status)
                 VALUES (@studNo, @computerId, @requestType, @requestMessage, CURRENT_TIMESTAMP, 'Pending')
                 RETURNING id
             ";
-
             using var command = new NpgsqlCommand(query, connection);
             command.Parameters.AddWithValue("@studNo", studNo);
             command.Parameters.AddWithValue("@computerId", computerId.Value);
@@ -1010,77 +736,50 @@ namespace LabServerAdmin.Services
             command.Parameters.AddWithValue("@requestMessage", requestMessage ?? (object)DBNull.Value);
 
             var requestId = await command.ExecuteScalarAsync();
-            
-            // Log the request in system logs
-            await LogSystemActionAsync(
-                $"{requestType} Request", 
-                pcName, 
-                "INFO", 
-                $"Student '{studNo}' requests {requestType.ToLower()} approval on PC '{pcName}'"
-            );
-
+            await LogSystemActionAsync($"{requestType} Request", pcName, "INFO",
+                $"Student '{studNo}' requests {requestType.ToLower()} approval on PC '{pcName}'");
             return Convert.ToInt32(requestId);
         }
 
         private async Task<int?> GetComputerIdByNameAsync(NpgsqlConnection connection, string pcName, string? ipAddress = null)
         {
-            var getComputerQuery = "SELECT id FROM computers WHERE client_name = @clientName LIMIT 1";
-            using var getComputerCmd = new NpgsqlCommand(getComputerQuery, connection);
+            using var getComputerCmd = new NpgsqlCommand(
+                "SELECT id FROM computers WHERE client_name = @clientName LIMIT 1", connection);
             getComputerCmd.Parameters.AddWithValue("@clientName", pcName);
             var existingId = await getComputerCmd.ExecuteScalarAsync();
-            
             if (existingId != null && existingId != DBNull.Value)
-            {
                 return Convert.ToInt32(existingId);
-            }
 
-            // Auto-create computer entry when client application connects
-            // Security: Only client app with valid authentication can trigger this
-            // This provides better UX while maintaining security through user authentication
-            var insertComputer = @"
+            using var insertCmd = new NpgsqlCommand(@"
                 INSERT INTO computers (client_name, status, is_online, is_locked, last_seen, created_at, updated_at)
                 VALUES (@clientName, 'Online', TRUE, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                RETURNING id;
-            ";
-
-            using var insertCmd = new NpgsqlCommand(insertComputer, connection);
+                RETURNING id", connection);
             insertCmd.Parameters.AddWithValue("@clientName", pcName);
             var newId = await insertCmd.ExecuteScalarAsync();
             return newId == null || newId == DBNull.Value ? null : Convert.ToInt32(newId);
         }
 
-        /// <summary>
-        /// Retrieves all pending login requests
-        /// </summary>
-        /// <returns>List of pending LoginRequest objects</returns>
         public async Task<List<LoginRequest>> GetPendingLoginRequestsAsync()
         {
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
             var query = @"
-                SELECT lr.id,
-                       lr.studNo,
+                SELECT lr.id, lr.studNo,
                        COALESCE(CONCAT(us.f_name, ' ', us.l_name), lr.studNo) AS student_name,
-                       lr.computer_id,
-                       COALESCE(c.client_name, '') AS pc_name,
+                       lr.computer_id, COALESCE(c.client_name, '') AS pc_name,
                        COALESCE(lr.request_type, 'Login') AS request_type,
-                       lr.request_timestamp,
-                       lr.request_message,
-                       lr.status,
-                       lr.processed_by,
-                       lr.processed_timestamp
+                       lr.request_timestamp, lr.request_message, lr.status,
+                       lr.processed_by, lr.processed_timestamp
                 FROM login_requests lr
                 LEFT JOIN us_geninfo us ON lr.studNo = us.studNo
-                LEFT JOIN computers c ON lr.computer_id = c.id
+                LEFT JOIN computers c  ON lr.computer_id = c.id
                 WHERE lr.status = 'Pending'
                 ORDER BY lr.request_timestamp DESC
             ";
-
             using var command = new NpgsqlCommand(query, connection);
             var requests = new List<LoginRequest>();
             using var reader = await command.ExecuteReaderAsync();
-
             while (await reader.ReadAsync())
             {
                 requests.Add(new LoginRequest
@@ -1098,45 +797,31 @@ namespace LabServerAdmin.Services
                     ProcessedTimestamp = reader.IsDBNull("processed_timestamp") ? null : reader.GetDateTime("processed_timestamp")
                 });
             }
-
             return requests;
         }
 
-        /// <summary>
-        /// Retrieves all login requests (for history/reporting)
-        /// </summary>
-        /// <param name="limit">Maximum number of requests to return</param>
-        /// <returns>List of LoginRequest objects</returns>
         public async Task<List<LoginRequest>> GetAllLoginRequestsAsync(int limit = 100)
         {
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
             var query = @"
-                SELECT lr.id,
-                       lr.studNo,
+                SELECT lr.id, lr.studNo,
                        COALESCE(CONCAT(us.f_name, ' ', us.l_name), lr.studNo) AS student_name,
-                       lr.computer_id,
-                       COALESCE(c.client_name, '') AS pc_name,
+                       lr.computer_id, COALESCE(c.client_name, '') AS pc_name,
                        COALESCE(lr.request_type, 'Login') AS request_type,
-                       lr.request_timestamp,
-                       lr.request_message,
-                       lr.status,
-                       lr.processed_by,
-                       lr.processed_timestamp
+                       lr.request_timestamp, lr.request_message, lr.status,
+                       lr.processed_by, lr.processed_timestamp
                 FROM login_requests lr
                 LEFT JOIN us_geninfo us ON lr.studNo = us.studNo
-                LEFT JOIN computers c ON lr.computer_id = c.id
+                LEFT JOIN computers c  ON lr.computer_id = c.id
                 ORDER BY lr.request_timestamp DESC
                 LIMIT @limit
             ";
-
             using var command = new NpgsqlCommand(query, connection);
             command.Parameters.AddWithValue("@limit", limit);
-
             var requests = new List<LoginRequest>();
             using var reader = await command.ExecuteReaderAsync();
-
             while (await reader.ReadAsync())
             {
                 requests.Add(new LoginRequest
@@ -1154,169 +839,106 @@ namespace LabServerAdmin.Services
                     ProcessedTimestamp = reader.IsDBNull("processed_timestamp") ? null : reader.GetDateTime("processed_timestamp")
                 });
             }
-
             return requests;
         }
 
-        /// <summary>
-        /// Approves a login request
-        /// </summary>
-        /// <param name="requestId">ID of the request to approve</param>
-        /// <param name="adminUsername">Username of the admin approving the request</param>
-        /// <returns>True if successful, false otherwise</returns>
         public async Task<bool> ApproveLoginRequestAsync(int requestId, string adminUsername)
         {
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
-            var getRequestQuery = @"
+            string? studNo = null, requestType = null, pcName = null;
+            using (var getCmd = new NpgsqlCommand(@"
                 SELECT lr.studNo, lr.request_type, c.client_name 
                 FROM login_requests lr
                 LEFT JOIN computers c ON lr.computer_id = c.id
-                WHERE lr.id = @id AND lr.status = 'Pending'";
-            using var getCmd = new NpgsqlCommand(getRequestQuery, connection);
-            getCmd.Parameters.AddWithValue("@id", requestId);
-
-            string? studNo = null;
-            string? requestType = null;
-            string? pcName = null;
-
-            using (var reader = await getCmd.ExecuteReaderAsync())
+                WHERE lr.id = @id AND lr.status = 'Pending'", connection))
             {
+                getCmd.Parameters.AddWithValue("@id", requestId);
+                using var reader = await getCmd.ExecuteReaderAsync();
                 if (await reader.ReadAsync())
                 {
                     studNo = reader.GetString("studNo");
                     requestType = reader.IsDBNull("request_type") ? "Login" : reader.GetString("request_type");
                     pcName = reader.IsDBNull("client_name") ? null : reader.GetString("client_name");
                 }
-                else
-                {
-                    return false;
-                }
+                else return false;
             }
 
-            var query = @"
-                UPDATE login_requests
-                SET status = 'Approved',
-                    processed_by = @processedBy,
-                    processed_timestamp = CURRENT_TIMESTAMP
-                WHERE id = @id AND status = 'Pending'
-            ";
-
-            using var command = new NpgsqlCommand(query, connection);
+            using var command = new NpgsqlCommand(@"
+                UPDATE login_requests SET status = 'Approved', processed_by = @processedBy, processed_timestamp = CURRENT_TIMESTAMP
+                WHERE id = @id AND status = 'Pending'", connection);
             command.Parameters.AddWithValue("@id", requestId);
             command.Parameters.AddWithValue("@processedBy", adminUsername);
-
             var rowsAffected = await command.ExecuteNonQueryAsync();
 
             if (rowsAffected > 0)
             {
-                await LogSystemActionAsync(
-                    $"{requestType} Request Approved",
-                    pcName ?? "Unknown",
-                    "INFO",
-                    $"Admin '{adminUsername}' approved {requestType?.ToLower()} request for student '{studNo}' on PC '{pcName ?? "Unknown"}'"
-                );
+                await LogSystemActionAsync($"{requestType} Request Approved", pcName ?? "Unknown", "INFO",
+                    $"Admin '{adminUsername}' approved {requestType?.ToLower()} request for student '{studNo}' on PC '{pcName ?? "Unknown"}'");
                 return true;
             }
-
             return false;
         }
 
-        /// <summary>
-        /// Declines a login request
-        /// </summary>
-        /// <param name="requestId">ID of the request to decline</param>
-        /// <param name="adminUsername">Username of the admin declining the request</param>
-        /// <returns>True if successful, false otherwise</returns>
         public async Task<bool> DeclineLoginRequestAsync(int requestId, string adminUsername)
         {
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
-            var getRequestQuery = @"
+            string? studNo = null, requestType = null, pcName = null;
+            using (var getCmd = new NpgsqlCommand(@"
                 SELECT lr.studNo, lr.request_type, c.client_name 
                 FROM login_requests lr
                 LEFT JOIN computers c ON lr.computer_id = c.id
-                WHERE lr.id = @id AND lr.status = 'Pending'";
-            using var getCmd = new NpgsqlCommand(getRequestQuery, connection);
-            getCmd.Parameters.AddWithValue("@id", requestId);
-
-            string? studNo = null;
-            string? requestType = null;
-            string? pcName = null;
-
-            using (var reader = await getCmd.ExecuteReaderAsync())
+                WHERE lr.id = @id AND lr.status = 'Pending'", connection))
             {
+                getCmd.Parameters.AddWithValue("@id", requestId);
+                using var reader = await getCmd.ExecuteReaderAsync();
                 if (await reader.ReadAsync())
                 {
                     studNo = reader.GetString("studNo");
                     requestType = reader.IsDBNull("request_type") ? "Login" : reader.GetString("request_type");
                     pcName = reader.IsDBNull("client_name") ? null : reader.GetString("client_name");
                 }
-                else
-                {
-                    return false;
-                }
+                else return false;
             }
 
-            var query = @"
-                UPDATE login_requests
-                SET status = 'Declined',
-                    processed_by = @processedBy,
-                    processed_timestamp = CURRENT_TIMESTAMP
-                WHERE id = @id AND status = 'Pending'
-            ";
-
-            using var command = new NpgsqlCommand(query, connection);
+            using var command = new NpgsqlCommand(@"
+                UPDATE login_requests SET status = 'Declined', processed_by = @processedBy, processed_timestamp = CURRENT_TIMESTAMP
+                WHERE id = @id AND status = 'Pending'", connection);
             command.Parameters.AddWithValue("@id", requestId);
             command.Parameters.AddWithValue("@processedBy", adminUsername);
-
             var rowsAffected = await command.ExecuteNonQueryAsync();
 
             if (rowsAffected > 0)
             {
-                await LogSystemActionAsync(
-                    $"{requestType} Request Declined",
-                    pcName ?? "Unknown",
-                    "INFO",
-                    $"Admin '{adminUsername}' declined {requestType?.ToLower()} request for student '{studNo}' on PC '{pcName ?? "Unknown"}'"
-                );
+                await LogSystemActionAsync($"{requestType} Request Declined", pcName ?? "Unknown", "INFO",
+                    $"Admin '{adminUsername}' declined {requestType?.ToLower()} request for student '{studNo}' on PC '{pcName ?? "Unknown"}'");
                 return true;
             }
-
             return false;
         }
+
+        #endregion
 
         public async Task<List<Computer>> GetComputersAsync()
         {
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
+            using var command = new NpgsqlCommand(@"
+                SELECT id, client_name, lab_id, status, is_locked, is_online, last_seen, created_at, updated_at
+                FROM computers ORDER BY client_name", connection);
 
-            var query = @"
-                SELECT id,
-                       client_name,
-                       lab_id,
-                       status,
-                       is_locked,
-                       is_online,
-                       last_seen,
-                       created_at,
-                       updated_at
-                FROM computers
-                ORDER BY client_name";
-
-            using var command = new NpgsqlCommand(query, connection);
             var computers = new List<Computer>();
             using var reader = await command.ExecuteReaderAsync();
-
             while (await reader.ReadAsync())
             {
                 computers.Add(new Computer
                 {
                     Id = reader.GetInt32("id"),
                     ClientName = reader.GetString("client_name"),
-                    IpAddress = string.Empty, // Runtime IP from TcpServerService
+                    IpAddress = string.Empty,
                     LabId = reader.IsDBNull("lab_id") ? null : reader.GetInt32("lab_id"),
                     Status = reader.IsDBNull("status") ? "Offline" : reader.GetString("status"),
                     IsLocked = reader.IsDBNull("is_locked") ? false : reader.GetBoolean("is_locked"),
@@ -1326,51 +948,27 @@ namespace LabServerAdmin.Services
                     UpdatedAt = reader.IsDBNull("updated_at") ? DateTime.UtcNow : reader.GetDateTime("updated_at")
                 });
             }
-
             return computers;
         }
 
-        /// <summary>
-        /// Updates computer configuration in the database
-        /// </summary>
-        /// <param name="computerId">ID of the computer to update</param>
-        /// <param name="clientName">New PC name</param>
-        /// <param name="ipAddress">New IP address</param>
-        /// <param name="labId">New Lab ID (optional)</param>
-        /// <returns>True if successful, false otherwise</returns>
         public async Task<bool> UpdateComputerAsync(int computerId, string clientName, int? labId)
         {
             try
             {
                 using var connection = new NpgsqlConnection(_connectionString);
                 await connection.OpenAsync();
-
-                var query = @"
-                    UPDATE computers
-                    SET client_name = @clientName,
-                        lab_id = @labId,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = @id
-                ";
-
-                using var command = new NpgsqlCommand(query, connection);
+                using var command = new NpgsqlCommand(@"
+                    UPDATE computers SET client_name = @clientName, lab_id = @labId, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = @id", connection);
                 command.Parameters.AddWithValue("@id", computerId);
                 command.Parameters.AddWithValue("@clientName", clientName);
                 command.Parameters.AddWithValue("@labId", labId ?? (object)DBNull.Value);
-
                 var rowsAffected = await command.ExecuteNonQueryAsync();
-
                 if (rowsAffected > 0)
                 {
-                    await LogSystemActionAsync(
-                        "Update Computer",
-                        clientName,
-                        "INFO",
-                        $"Computer configuration updated: {clientName}"
-                    );
+                    await LogSystemActionAsync("Update Computer", clientName, "INFO", $"Computer configuration updated: {clientName}");
                     return true;
                 }
-
                 return false;
             }
             catch (Exception ex)
@@ -1380,43 +978,22 @@ namespace LabServerAdmin.Services
             }
         }
 
-        /// <summary>
-        /// Updates only the status of a computer (e.g., for maintenance mode)
-        /// </summary>
-        /// <param name="computerId">ID of the computer to update</param>
-        /// <param name="status">New status (Online, Offline, Maintenance)</param>
-        /// <returns>True if successful, false otherwise</returns>
         public async Task<bool> UpdateComputerStatusAsync(int computerId, string status)
         {
             try
             {
                 using var connection = new NpgsqlConnection(_connectionString);
                 await connection.OpenAsync();
-
-                var query = @"
-                    UPDATE computers
-                    SET status = @status,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = @id
-                ";
-
-                using var command = new NpgsqlCommand(query, connection);
+                using var command = new NpgsqlCommand(
+                    "UPDATE computers SET status = @status, updated_at = CURRENT_TIMESTAMP WHERE id = @id", connection);
                 command.Parameters.AddWithValue("@id", computerId);
                 command.Parameters.AddWithValue("@status", status);
-
                 var rowsAffected = await command.ExecuteNonQueryAsync();
-
                 if (rowsAffected > 0)
                 {
-                    await LogSystemActionAsync(
-                        "Update Computer Status",
-                        $"Computer ID: {computerId}",
-                        "INFO",
-                        $"Computer status updated to: {status}"
-                    );
+                    await LogSystemActionAsync("Update Computer Status", $"Computer ID: {computerId}", "INFO", $"Computer status updated to: {status}");
                     return true;
                 }
-
                 return false;
             }
             catch (Exception ex)
@@ -1426,12 +1003,6 @@ namespace LabServerAdmin.Services
             }
         }
 
-        /// <summary>
-        /// Ensures a computer exists in the database. If it doesn't exist, creates it. If it exists, updates its status.
-        /// </summary>
-        /// <param name="clientName">Name of the client/computer</param>
-        /// <param name="ipAddress">IP address of the client</param>
-        /// <returns>Computer ID</returns>
         public async Task<int?> EnsureComputerExistsAsync(string clientName, string? ipAddress = null)
         {
             try
@@ -1439,53 +1010,29 @@ namespace LabServerAdmin.Services
                 using var connection = new NpgsqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                // Check if computer already exists
-                var checkQuery = "SELECT id FROM computers WHERE client_name = @clientName LIMIT 1";
-                using var checkCmd = new NpgsqlCommand(checkQuery, connection);
+                using var checkCmd = new NpgsqlCommand("SELECT id FROM computers WHERE client_name = @clientName LIMIT 1", connection);
                 checkCmd.Parameters.AddWithValue("@clientName", clientName);
                 var existingId = await checkCmd.ExecuteScalarAsync();
 
                 if (existingId != null && existingId != DBNull.Value)
                 {
-                    // Computer exists - update its status to Online and last_seen
-                    var updateQuery = @"
-                        UPDATE computers
-                        SET status = 'Online',
-                            is_online = TRUE,
-                            last_seen = CURRENT_TIMESTAMP,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE id = @id
-                        RETURNING id
-                    ";
-                    
-                    using var updateCmd = new NpgsqlCommand(updateQuery, connection);
+                    using var updateCmd = new NpgsqlCommand(@"
+                        UPDATE computers SET status = 'Online', is_online = TRUE,
+                            last_seen = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = @id RETURNING id", connection);
                     updateCmd.Parameters.AddWithValue("@id", existingId);
                     var updatedId = await updateCmd.ExecuteScalarAsync();
-                    
                     return updatedId == null || updatedId == DBNull.Value ? null : Convert.ToInt32(updatedId);
                 }
 
-                // Computer doesn't exist - create it
-                var insertQuery = @"
+                using var insertCmd = new NpgsqlCommand(@"
                     INSERT INTO computers (client_name, status, is_online, is_locked, last_seen, created_at, updated_at)
                     VALUES (@clientName, 'Online', TRUE, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    RETURNING id
-                ";
-
-                using var insertCmd = new NpgsqlCommand(insertQuery, connection);
+                    RETURNING id", connection);
                 insertCmd.Parameters.AddWithValue("@clientName", clientName);
                 var newId = await insertCmd.ExecuteScalarAsync();
-
                 if (newId != null && newId != DBNull.Value)
-                {
-                    await LogSystemActionAsync(
-                        "Computer Auto-Registered",
-                        clientName,
-                        "INFO",
-                        $"New computer '{clientName}' automatically registered in database"
-                    );
-                }
-
+                    await LogSystemActionAsync("Computer Auto-Registered", clientName, "INFO", $"New computer '{clientName}' automatically registered");
                 return newId == null || newId == DBNull.Value ? null : Convert.ToInt32(newId);
             }
             catch (Exception ex)
@@ -1495,35 +1042,19 @@ namespace LabServerAdmin.Services
             }
         }
 
-        /// <summary>
-        /// Marks a computer as offline in the database
-        /// </summary>
-        /// <param name="clientName">Name of the client/computer</param>
-        /// <returns>True if successful, false otherwise</returns>
         public async Task<bool> MarkComputerOfflineAsync(string clientName)
         {
             try
             {
                 using var connection = new NpgsqlConnection(_connectionString);
                 await connection.OpenAsync();
-
-                var query = @"
+                using var command = new NpgsqlCommand(@"
                     UPDATE computers
-                    SET status = CASE 
-                                    WHEN status = 'Maintenance' THEN 'Maintenance'
-                                    ELSE 'Offline'
-                                 END,
-                        is_online = FALSE,
-                        last_seen = CURRENT_TIMESTAMP,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE client_name = @clientName
-                ";
-
-                using var command = new NpgsqlCommand(query, connection);
+                    SET status = CASE WHEN status = 'Maintenance' THEN 'Maintenance' ELSE 'Offline' END,
+                        is_online = FALSE, last_seen = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                    WHERE client_name = @clientName", connection);
                 command.Parameters.AddWithValue("@clientName", clientName);
-
-                var rowsAffected = await command.ExecuteNonQueryAsync();
-                return rowsAffected > 0;
+                return await command.ExecuteNonQueryAsync() > 0;
             }
             catch (Exception ex)
             {
@@ -1532,63 +1063,62 @@ namespace LabServerAdmin.Services
             }
         }
 
-        public async Task<List<InstructorClassListItem>> GetInstructorClassListAsync(string instructorId, DateTime? dateFilter = null)
+        // ── FIX: LATERAL join replaces SELECT DISTINCT, ORDER BY uses aliases ──
+        public async Task<List<InstructorClassListItem>> GetInstructorClassListAsync(string instructorUsernameOrEmpId, DateTime? dateFilter = null)
         {
+            var empId = await ResolveInstructorEmpIdAsync(instructorUsernameOrEmpId);
+            if (string.IsNullOrWhiteSpace(empId))
+                return new List<InstructorClassListItem>();
+
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
-            // Query to get students in sections taught by this instructor
-            // FILTERED BY CURRENT SCHEDULE (day_of_week and time)
-            // Uses empID column from course_schedules (matches ui_geninfo.empID)
-            // Table name: 'section' (singular, as per Trinity schema)
-            
             var targetDate = dateFilter ?? DateTime.Now;
-            var dayOfWeek = targetDate.DayOfWeek.ToString(); // "Monday", "Tuesday", etc.
+            var dayOfWeek = targetDate.DayOfWeek.ToString();
             var currentTime = targetDate.TimeOfDay;
-            
+
             var query = @"
-                SELECT DISTINCT
-                       us.studNo,
-                       COALESCE(us.f_name, '') AS first_name,
-                       COALESCE(us.l_name, '') AS last_name,
-                       COALESCE(s.section_name, '') AS section_name,
-                       al.login_time,
-                       al.logout_time,
-                       al.status,
-                       COALESCE(c.client_name, '') AS client_name
+                SELECT
+                    us.studNo,
+                    COALESCE(us.f_name, '') AS first_name,
+                    COALESCE(us.l_name,  '') AS last_name,
+                    COALESCE(s.section_name, '') AS section_name,
+                    al.login_time,
+                    al.logout_time,
+                    al.status,
+                    COALESCE(c.client_name, '') AS client_name
                 FROM us_geninfo us
                 INNER JOIN section s ON us.section_id = s.section_id
                 INNER JOIN course_schedules cs ON s.section_id = cs.section_id
-                LEFT JOIN attendance_logs al ON us.studNo = al.studNo";
+                LEFT JOIN LATERAL (
+                    SELECT login_time, logout_time, status, computer_id
+                    FROM attendance_logs
+                    WHERE studNo = us.studNo
+            ";
 
-            // Add date filter for attendance if specified
             if (dateFilter.HasValue)
-            {
-                query += " AND DATE(al.login_time) = @date";
-            }
+                query += " AND DATE(login_time) = @date";
             else
-            {
-                // If no date specified, show today's attendance
-                query += " AND (al.login_time IS NULL OR DATE(al.login_time) = CURRENT_DATE)";
-            }
+                query += " AND DATE(login_time) = CURRENT_DATE";
 
             query += @"
+                    ORDER BY login_time DESC
+                    LIMIT 1
+                ) al ON TRUE
                 LEFT JOIN computers c ON al.computer_id = c.id
-                WHERE cs.empID = @instructorId
+                WHERE cs.empID       = @empId
                   AND cs.day_of_week = @dayOfWeek
-                  AND @currentTime >= cs.time_in
-                  AND @currentTime <= cs.time_out
-                ORDER BY s.section_name, us.l_name, us.f_name";
+                  AND @currentTime  >= cs.time_in
+                  AND @currentTime  <= cs.time_out
+                ORDER BY section_name, last_name, first_name
+            ";
 
             using var command = new NpgsqlCommand(query, connection);
-            command.Parameters.AddWithValue("@instructorId", instructorId);
+            command.Parameters.AddWithValue("@empId", empId);
             command.Parameters.AddWithValue("@dayOfWeek", dayOfWeek);
             command.Parameters.AddWithValue("@currentTime", currentTime);
-            
             if (dateFilter.HasValue)
-            {
                 command.Parameters.AddWithValue("@date", dateFilter.Value.Date);
-            }
 
             var list = new List<InstructorClassListItem>();
             using var reader = await command.ExecuteReaderAsync();
@@ -1606,31 +1136,23 @@ namespace LabServerAdmin.Services
                     ClientName = reader.IsDBNull(7) ? null : reader.GetString(7)
                 });
             }
-
             return list;
         }
 
-        #endregion
-
-        /// <summary>
-        /// Records when the instructor starts the server for tracking late arrivals
-        /// </summary>
-        public async Task<int?> RecordServerStartAsync(string instructorId, int? labId = null)
+        // ── FIX: resolve empID before inserting server session ──
+        public async Task<int?> RecordServerStartAsync(string instructorUsernameOrEmpId, int? labId = null)
         {
             try
             {
+                var empId = await ResolveInstructorEmpIdAsync(instructorUsernameOrEmpId) ?? instructorUsernameOrEmpId;
                 using var connection = new NpgsqlConnection(_connectionString);
                 await connection.OpenAsync();
-
-                var query = @"
+                using var command = new NpgsqlCommand(@"
                     INSERT INTO server_sessions (instructor_id, server_start_time, session_date, lab_id, is_active)
                     VALUES (@instructorId, CURRENT_TIMESTAMP, CURRENT_DATE, @labId, TRUE)
-                    RETURNING id";
-
-                using var command = new NpgsqlCommand(query, connection);
-                command.Parameters.AddWithValue("@instructorId", instructorId);
+                    RETURNING id", connection);
+                command.Parameters.AddWithValue("@instructorId", empId);
                 command.Parameters.AddWithValue("@labId", labId ?? (object)DBNull.Value);
-
                 var result = await command.ExecuteScalarAsync();
                 return result != null ? Convert.ToInt32(result) : null;
             }
@@ -1641,53 +1163,31 @@ namespace LabServerAdmin.Services
             }
         }
 
-        /// <summary>
-        /// Gets the server start time for today's session
-        /// </summary>
         public async Task<DateTime?> GetTodayServerStartTimeAsync()
         {
             try
             {
                 using var connection = new NpgsqlConnection(_connectionString);
                 await connection.OpenAsync();
-
-                var query = @"
-                    SELECT server_start_time
-                    FROM server_sessions
-                    WHERE session_date = CURRENT_DATE
-                      AND is_active = TRUE
-                    ORDER BY server_start_time DESC
-                    LIMIT 1";
-
-                using var command = new NpgsqlCommand(query, connection);
+                using var command = new NpgsqlCommand(@"
+                    SELECT server_start_time FROM server_sessions
+                    WHERE session_date = CURRENT_DATE AND is_active = TRUE
+                    ORDER BY server_start_time DESC LIMIT 1", connection);
                 var result = await command.ExecuteScalarAsync();
-                
                 return result != null && result != DBNull.Value ? Convert.ToDateTime(result) : null;
             }
-            catch
-            {
-                return null;
-            }
+            catch { return null; }
         }
 
-        /// <summary>
-        /// Records server stop time
-        /// </summary>
         public async Task RecordServerStopAsync()
         {
             try
             {
                 using var connection = new NpgsqlConnection(_connectionString);
                 await connection.OpenAsync();
-
-                var query = @"
-                    UPDATE server_sessions
-                    SET server_stop_time = CURRENT_TIMESTAMP,
-                        is_active = FALSE
-                    WHERE session_date = CURRENT_DATE
-                      AND is_active = TRUE";
-
-                using var command = new NpgsqlCommand(query, connection);
+                using var command = new NpgsqlCommand(@"
+                    UPDATE server_sessions SET server_stop_time = CURRENT_TIMESTAMP, is_active = FALSE
+                    WHERE session_date = CURRENT_DATE AND is_active = TRUE", connection);
                 await command.ExecuteNonQueryAsync();
             }
             catch (Exception ex)
@@ -1696,44 +1196,40 @@ namespace LabServerAdmin.Services
             }
         }
 
-        /// <summary>
-        /// Gets the end time of the current schedule for today
-        /// </summary>
-        public async Task<TimeSpan?> GetTodayScheduleEndTimeAsync(string instructorId)
+        // ── FIX: resolve username → empID, correct column names ──
+        public async Task<TimeSpan?> GetTodayScheduleEndTimeAsync(string instructorUsernameOrEmpId)
         {
             try
             {
+                var empId = await ResolveInstructorEmpIdAsync(instructorUsernameOrEmpId);
+                if (string.IsNullOrWhiteSpace(empId))
+                {
+                    await LogSystemActionAsync("Get Schedule End Time", "Server", "WARNING",
+                        $"Could not resolve empID for '{instructorUsernameOrEmpId}'");
+                    return null;
+                }
+
                 using var connection = new NpgsqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                var dayOfWeek = DateTime.Now.DayOfWeek.ToString(); // "Monday", "Tuesday", etc.
+                var dayOfWeek = DateTime.Now.DayOfWeek.ToString();
 
-                var query = @"
-                    SELECT cs.time_end
-                    FROM course_schedules cs
-                    WHERE cs.empID = @instructorId
-                      AND cs.day = @dayOfWeek
-                    LIMIT 1";
-
-                using var command = new NpgsqlCommand(query, connection);
-                command.Parameters.AddWithValue("@instructorId", instructorId);
+                using var command = new NpgsqlCommand(@"
+                    SELECT cs.time_out FROM course_schedules cs
+                    WHERE cs.empID = @empId AND cs.day_of_week = @dayOfWeek
+                    LIMIT 1", connection);
+                command.Parameters.AddWithValue("@empId", empId);
                 command.Parameters.AddWithValue("@dayOfWeek", dayOfWeek);
 
                 var result = await command.ExecuteScalarAsync();
-                
-                if (result != null && result != DBNull.Value)
-                {
-                    return (TimeSpan)result;
-                }
-                
-                return null;
+                return result != null && result != DBNull.Value ? (TimeSpan)result : null;
             }
             catch (Exception ex)
             {
-                await LogSystemActionAsync("Get Schedule End Time Error", "Server", "Error", $"Failed to get schedule end time: {ex.Message}");
+                await LogSystemActionAsync("Get Schedule End Time Error", "Server", "Error",
+                    $"Failed to get schedule end time: {ex.Message}");
                 return null;
             }
         }
     }
 }
-

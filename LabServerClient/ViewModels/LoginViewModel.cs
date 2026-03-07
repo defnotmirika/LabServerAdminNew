@@ -31,7 +31,7 @@ namespace LabServerClient.ViewModels
         public event Action? LoginSuccess;
         public event Action<string, string>? PcMismatchDetected; // username, assignedPcName
         public event Action? LoginCancelled;
-
+         
         public LoginViewModel(DatabaseService? databaseService = null)
         {
             _databaseService = databaseService;

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
@@ -19,6 +19,17 @@ namespace LabServerAdmin.Services
         public event EventHandler<VoiceCommandEventArgs>? VoiceCommandRecognized;
         public event EventHandler<string>? RecognitionError;
 
+        // Word-to-number mapping so "two" → 2, "zero two" → 02, etc.
+        private static readonly Dictionary<string, int> _wordNumbers = new(StringComparer.OrdinalIgnoreCase)
+        {
+            {"one",1},{"two",2},{"three",3},{"four",4},{"five",5},
+            {"six",6},{"seven",7},{"eight",8},{"nine",9},{"ten",10},
+            {"eleven",11},{"twelve",12},{"thirteen",13},{"fourteen",14},{"fifteen",15},
+            {"sixteen",16},{"seventeen",17},{"eighteen",18},{"nineteen",19},{"twenty",20},
+            {"twenty one",21},{"twenty two",22},{"twenty three",23},{"twenty four",24},{"twenty five",25},
+            {"twenty six",26},{"twenty seven",27},{"twenty eight",28},{"twenty nine",29},{"thirty",30},
+        };
+
         public VoiceRecognitionService(TcpServerService tcpServer, IConfiguration configuration)
         {
             _tcpServer = tcpServer;
@@ -38,6 +49,7 @@ namespace LabServerAdmin.Services
             {
                 _recognizerCulture = CultureInfo.CurrentCulture;
             }
+
             InitializeRecognizer();
         }
 
@@ -47,35 +59,52 @@ namespace LabServerAdmin.Services
             {
                 _recognizer = new SpeechRecognitionEngine(_recognizerCulture);
 
-                var deviceCommands = new Choices("lock", "unlock", "shutdown", "restart", "sleep", "refresh", "view logs");
-                var deviceGrammarBuilder = new GrammarBuilder();
-                deviceGrammarBuilder.Append(deviceCommands);
+                // ── Structured grammar ──────────────────────────────────────
+                var actions = new Choices("lock", "unlock", "shutdown", "restart", "sleep", "refresh");
 
-                var targetChoices = new Choices("all");
-                var numberedTargets = Enumerable.Range(1, 50).Select(i => i.ToString(CultureInfo.InvariantCulture)).ToArray();
-                targetChoices.Add(numberedTargets);
+                var numbers = Enumerable.Range(1, 50)
+                    .Select(i => i.ToString(CultureInfo.InvariantCulture))
+                    .ToArray();
+                var numberChoices = new Choices(numbers);
 
-                var targetGrammar = new GrammarBuilder();
-                targetGrammar.Append("PC", 0, 1);
-                targetGrammar.Append(targetChoices);
+                // "lock all" / "unlock all" etc.
+                var allBuilder = new GrammarBuilder();
+                allBuilder.Append(actions);
+                allBuilder.Append("all");
+                _recognizer.LoadGrammar(new Grammar(allBuilder) { Name = "CommandAll" });
 
-                deviceGrammarBuilder.Append(targetGrammar);
-                var deviceGrammar = new Grammar(deviceGrammarBuilder) { Name = "DeviceCommands" };
-                _recognizer.LoadGrammar(deviceGrammar);
+                // "lock PC 2" / "unlock PC 5" etc.
+                var pcBuilder = new GrammarBuilder();
+                pcBuilder.Append(actions);
+                pcBuilder.Append("PC");
+                pcBuilder.Append(numberChoices);
+                _recognizer.LoadGrammar(new Grammar(pcBuilder) { Name = "CommandPC" });
 
+                // "lock 2" shorthand
+                var numBuilder = new GrammarBuilder();
+                numBuilder.Append(actions);
+                numBuilder.Append(numberChoices);
+                _recognizer.LoadGrammar(new Grammar(numBuilder) { Name = "CommandNumber" });
+
+                // ── Dictation fallback (catches anything else) ──────────────
+                // This is the key fix — if structured grammar fails, dictation
+                // captures free speech and we parse it manually
+                var dictation = new DictationGrammar();
+                dictation.Name = "Dictation";
+                dictation.Weight = 0.5f;
+                _recognizer.LoadGrammar(dictation);
+
+                // ── Open application grammar ────────────────────────────────
                 if (_voiceApplications.Count > 0)
                 {
-                    var applicationNames = new Choices(_voiceApplications.Keys.ToArray());
-                    var openGrammarBuilder = new GrammarBuilder();
-                    openGrammarBuilder.Append("open");
-                    openGrammarBuilder.Append(new Choices(new[] { "application", "app" }), 0, 1);
-                    openGrammarBuilder.Append(applicationNames);
-
-                    var openGrammar = new Grammar(openGrammarBuilder) { Name = "OpenApplications" };
-                    _recognizer.LoadGrammar(openGrammar);
+                    var appNames = new Choices(_voiceApplications.Keys.ToArray());
+                    var openBuilder = new GrammarBuilder();
+                    openBuilder.Append("open");
+                    openBuilder.Append(new Choices("application", "app"), 0, 1);
+                    openBuilder.Append(appNames);
+                    _recognizer.LoadGrammar(new Grammar(openBuilder) { Name = "OpenApplications" });
                 }
-                
-                // Set up event handlers
+
                 _recognizer.SpeechRecognized += OnSpeechRecognized;
                 _recognizer.SpeechRecognitionRejected += OnSpeechRecognitionRejected;
             }
@@ -88,7 +117,6 @@ namespace LabServerAdmin.Services
         public Task StartListeningAsync()
         {
             if (_recognizer == null || _isListening) return Task.CompletedTask;
-
             try
             {
                 _recognizer.SetInputToDefaultAudioDevice();
@@ -115,13 +143,21 @@ namespace LabServerAdmin.Services
         {
             try
             {
-                var command = e.Result.Text.ToLowerInvariant();
-                var parsedCommand = ParseVoiceCommand(command);
-                
-                if (parsedCommand != null)
+                var text = e.Result.Text.Trim();
+
+                // Always show what was heard in the status bar — very useful for debugging
+                RecognitionError?.Invoke(this, $"Heard: \"{text}\"");
+
+                var parsed = ParseVoiceCommand(text.ToLowerInvariant());
+
+                if (parsed != null)
                 {
-                    VoiceCommandRecognized?.Invoke(this, new VoiceCommandEventArgs(parsedCommand.Command, parsedCommand.Target));
-                    await ExecuteVoiceCommandAsync(parsedCommand);
+                    VoiceCommandRecognized?.Invoke(this, new VoiceCommandEventArgs(parsed.Command, parsed.Target));
+                    await ExecuteVoiceCommandAsync(parsed);
+                }
+                else if (e.Result.Grammar.Name != "Dictation")
+                {
+                    RecognitionError?.Invoke(this, $"Could not parse: \"{text}\"");
                 }
             }
             catch (Exception ex)
@@ -132,54 +168,82 @@ namespace LabServerAdmin.Services
 
         private void OnSpeechRecognitionRejected(object? sender, SpeechRecognitionRejectedEventArgs e)
         {
-            RecognitionError?.Invoke(this, "Voice command not recognized. Please try again.");
+            // Silently ignore — don't spam on ambient noise
         }
 
-        private VoiceCommand? ParseVoiceCommand(string command)
+        // ── Command parser ───────────────────────────────────────────────────
+        private VoiceCommand? ParseVoiceCommand(string text)
         {
-            if (command.StartsWith("open ", StringComparison.OrdinalIgnoreCase))
+            text = text.Trim().ToLowerInvariant();
+
+            // open [app/application] <name>
+            if (text.StartsWith("open "))
             {
-                var appName = command.Substring(5).Trim();
-
-                if (appName.StartsWith("application ", StringComparison.OrdinalIgnoreCase))
-                {
-                    appName = appName.Substring("application ".Length).Trim();
-                }
-                else if (appName.StartsWith("app ", StringComparison.OrdinalIgnoreCase))
-                {
-                    appName = appName.Substring("app ".Length).Trim();
-                }
-
-                if (string.IsNullOrWhiteSpace(appName))
-                {
-                    RecognitionError?.Invoke(this, "Please specify an application to open.");
-                    return null;
-                }
-
-                return new VoiceCommand
-                {
-                    Command = "open",
-                    Target = appName
-                };
+                var appName = text.Substring(5).Trim();
+                appName = Regex.Replace(appName, @"^(application|app)\s+", "", RegexOptions.IgnoreCase).Trim();
+                if (!string.IsNullOrWhiteSpace(appName))
+                    return new VoiceCommand { Command = "open", Target = appName };
+                return null;
             }
 
-            var devicePattern = @"^(lock|unlock|shutdown|restart|sleep|refresh|view logs)\s+(?:pc\s+)?(\d+|all)$";
-            var deviceMatch = Regex.Match(command, devicePattern, RegexOptions.IgnoreCase);
-            if (deviceMatch.Success)
-            {
-                var action = deviceMatch.Groups[1].Value.ToLowerInvariant();
-                var target = deviceMatch.Groups[2].Value.ToLowerInvariant();
+            // Match action keyword (longest first to avoid "lock" matching "unlock")
+            var validActions = new[] { "view logs", "shutdown", "restart", "unlock", "refresh", "sleep", "lock" };
+            string? action = null;
+            string rest = text;
 
-                return new VoiceCommand
+            foreach (var a in validActions)
+            {
+                if (text.StartsWith(a))
                 {
-                    Command = action,
-                    Target = target
-                };
+                    action = a;
+                    rest = text.Substring(a.Length).Trim();
+                    break;
+                }
+            }
+
+            if (action == null) return null;
+
+            // Target: "all" or empty → all
+            if (rest == "all" || rest == "")
+                return new VoiceCommand { Command = action, Target = "all" };
+
+            // Strip "pc", "p.c.", "computer" prefix
+            rest = Regex.Replace(rest, @"^(pc|p\.?c\.?|computer)\s*", "", RegexOptions.IgnoreCase).Trim();
+
+            // Digit number: "2", "02"
+            var digitMatch = Regex.Match(rest, @"^(\d{1,2})$");
+            if (digitMatch.Success)
+                return new VoiceCommand { Command = action, Target = FormatPcName(int.Parse(digitMatch.Groups[1].Value)) };
+
+            // "oh 2" or "zero 2" → 2
+            var normalized = Regex.Replace(rest, @"\b(oh|zero)\b", "0").Trim();
+            var zeroDigit = Regex.Match(normalized, @"^0\s*(\d)$");
+            if (zeroDigit.Success)
+                return new VoiceCommand { Command = action, Target = FormatPcName(int.Parse(zeroDigit.Groups[1].Value)) };
+
+            // Word number: "two", "twenty two"
+            if (_wordNumbers.TryGetValue(normalized, out var wordNum))
+                return new VoiceCommand { Command = action, Target = FormatPcName(wordNum) };
+
+            // Partial word match fallback
+            foreach (var kvp in _wordNumbers.OrderByDescending(k => k.Key.Length))
+            {
+                if (normalized.Contains(kvp.Key))
+                    return new VoiceCommand { Command = action, Target = FormatPcName(kvp.Value) };
             }
 
             return null;
         }
 
+        /// <summary>
+        /// Change this format to match YOUR actual PC naming convention.
+        /// Current: PC-02, PC-03, etc.
+        /// If your PCs are named "PC 02" (with space), change to $"PC {number:D2}"
+        /// If named "PC02" (no separator), change to $"PC{number:D2}"
+        /// </summary>
+        private static string FormatPcName(int number) => $"PC-{number:D2}";
+
+        // ── Command executor ─────────────────────────────────────────────────
         private async Task ExecuteVoiceCommandAsync(VoiceCommand command)
         {
             try
@@ -193,23 +257,41 @@ namespace LabServerAdmin.Services
                 if (command.Target == "all")
                 {
                     await _tcpServer.SendCommandToAllAsync(command.Command);
+                    RecognitionError?.Invoke(this, $"✅ {command.Command.ToUpper()} sent to ALL clients");
+                    return;
+                }
+
+                // Try exact name first
+                if (_tcpServer.IsClientConnected(command.Target))
+                {
+                    await _tcpServer.SendCommandAsync(command.Target, command.Command);
+                    RecognitionError?.Invoke(this, $"✅ {command.Command.ToUpper()} sent to {command.Target}");
+                    return;
+                }
+
+                // Fuzzy fallback: match connected clients by number only
+                var connectedClients = _tcpServer.GetConnectedClients();
+                var targetNum = Regex.Match(command.Target, @"\d+").Value.TrimStart('0');
+
+                var matched = connectedClients.Keys.FirstOrDefault(k =>
+                    Regex.Match(k, @"\d+").Value.TrimStart('0') == targetNum);
+
+                if (matched != null)
+                {
+                    await _tcpServer.SendCommandAsync(matched, command.Command);
+                    RecognitionError?.Invoke(this, $"✅ {command.Command.ToUpper()} sent to {matched}");
                 }
                 else
                 {
-                    var clientName = $"PC {command.Target}";
-                    if (_tcpServer.IsClientConnected(clientName))
-                    {
-                        await _tcpServer.SendCommandAsync(clientName, command.Command);
-                    }
-                    else
-                    {
-                        RecognitionError?.Invoke(this, $"PC {command.Target} is not connected");
-                    }
+                    var available = connectedClients.Count > 0
+                        ? string.Join(", ", connectedClients.Keys)
+                        : "none connected";
+                    RecognitionError?.Invoke(this, $"❌ '{command.Target}' not found. Connected: {available}");
                 }
             }
             catch (Exception ex)
             {
-                RecognitionError?.Invoke(this, $"Failed to execute voice command: {ex.Message}");
+                RecognitionError?.Invoke(this, $"Failed to execute command: {ex.Message}");
             }
         }
 
@@ -221,28 +303,14 @@ namespace LabServerAdmin.Services
                 return Task.CompletedTask;
             }
 
-            var lookupKey = applicationKey.Trim();
-
-            if (!_voiceApplications.TryGetValue(lookupKey, out var executable))
+            if (!_voiceApplications.TryGetValue(applicationKey.Trim(), out var executable))
             {
-                RecognitionError?.Invoke(this, $"Application '{lookupKey}' is not configured for voice control.");
+                RecognitionError?.Invoke(this, $"Application '{applicationKey}' not configured.");
                 return Task.CompletedTask;
             }
 
-            try
-            {
-                var startInfo = new ProcessStartInfo
-                {
-                    FileName = executable,
-                    UseShellExecute = true
-                };
-
-                Process.Start(startInfo);
-            }
-            catch (Exception ex)
-            {
-                RecognitionError?.Invoke(this, $"Failed to open {lookupKey}: {ex.Message}");
-            }
+            try { Process.Start(new ProcessStartInfo { FileName = executable, UseShellExecute = true }); }
+            catch (Exception ex) { RecognitionError?.Invoke(this, $"Failed to open {applicationKey}: {ex.Message}"); }
 
             return Task.CompletedTask;
         }
@@ -264,11 +332,6 @@ namespace LabServerAdmin.Services
     {
         public string Command { get; }
         public string Target { get; }
-
-        public VoiceCommandEventArgs(string command, string target)
-        {
-            Command = command;
-            Target = target;
-        }
+        public VoiceCommandEventArgs(string command, string target) { Command = command; Target = target; }
     }
 }
