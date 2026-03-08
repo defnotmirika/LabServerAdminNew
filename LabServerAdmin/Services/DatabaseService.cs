@@ -82,7 +82,7 @@ namespace LabServerAdmin.Services
             await requestTypeCommand.ExecuteNonQueryAsync();
 
             var ensureUniqueConstraint = @"
-                DO $$ ad
+                DO $$ 
                 BEGIN
                     IF NOT EXISTS (
                         SELECT 1 FROM pg_constraint WHERE conname = 'connected_clients_name_key'

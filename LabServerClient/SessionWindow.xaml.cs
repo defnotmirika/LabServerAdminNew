@@ -1,4 +1,4 @@
-using LabServerClient;
+﻿using LabServerClient;
 using LabServerClient.Services;
 using System;
 using System.Collections.Generic;
@@ -115,7 +115,7 @@ namespace LabServerClient
 
             UpdateDisplay();
             Closing += SessionWindow_Closing;
-            
+
             // Set automatic timer based on schedule
             _ = Task.Run(async () => await InitializeScheduleBasedTimerAsync());
         }
@@ -150,7 +150,7 @@ namespace LabServerClient
                 if (serverStartTime == null)
                 {
                     LogMessage("[TIMER] Server has not started yet - locking screen and waiting");
-                    
+
                     // Lock the screen but keep timer running
                     await Dispatcher.InvokeAsync(async () =>
                     {
@@ -220,7 +220,7 @@ namespace LabServerClient
                 {
                     // Server has started! Unlock the screen
                     LogMessage($"[SERVER] Server started at {serverStartTime.Value:HH:mm:ss} - unlocking screen");
-                    
+
                     _serverStartCheckTimer.Stop();
                     _isWaitingForServerStart = false;
 
@@ -401,7 +401,7 @@ namespace LabServerClient
 
                             // Log the logout request activity
                             await _databaseService.LogStudentActivityAsync(_username, pcName, "Logout Request", "Student requested early logout");
-                            
+
                             // Start polling for approval
                             _hasPendingLogoutRequest = true;
                             _logoutRequestCheckTimer.Start();
@@ -442,17 +442,17 @@ namespace LabServerClient
             if (_databaseService != null && !string.IsNullOrWhiteSpace(_username))
             {
                 var pcName = _clientWindow?.GetClientName() ?? Environment.MachineName;
-                
+
                 try
                 {
                     // Record logout attendance
                     var logoutRecorded = await _databaseService.RecordStudentLogoutAsync(_username, pcName);
-                    
+
                     if (logoutRecorded)
                     {
                         LogMessage($"Logout attendance recorded for {_username}");
                     }
-                    
+
                     // Log logout activity
                     await _databaseService.LogStudentActivityAsync(_username, pcName, "Logout", "Student logged out");
                 }
@@ -537,7 +537,7 @@ namespace LabServerClient
             UpdateDisplay();
         }
 
-        // Remote viewing methods - moved from ClientWindow
+        // Remote viewing methods
         public Task<string?> StartScreenShare(string? parameters)
         {
             try
@@ -684,10 +684,18 @@ namespace LabServerClient
             }
         }
 
+        // ✅ FIX: SystemParameters must be accessed on the UI thread
         private (byte[] ImageBytes, int Width, int Height)? CaptureScreenFrame()
         {
-            var screenWidth = (int)SystemParameters.PrimaryScreenWidth;
-            var screenHeight = (int)SystemParameters.PrimaryScreenHeight;
+            int screenWidth = 0, screenHeight = 0;
+
+            Dispatcher.Invoke(() =>
+            {
+                screenWidth = (int)SystemParameters.PrimaryScreenWidth;
+                screenHeight = (int)SystemParameters.PrimaryScreenHeight;
+            });
+
+            if (screenWidth == 0 || screenHeight == 0) return null;
 
             using var bitmap = new Bitmap(screenWidth, screenHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             using (var graphics = Graphics.FromImage(bitmap))
@@ -959,7 +967,6 @@ namespace LabServerClient
             }
         }
 
-
         /// <summary>
         /// Public method to handle server commands from ClientWindow
         /// </summary>
@@ -1013,7 +1020,7 @@ namespace LabServerClient
             try
             {
                 LogMessage("Force logout command received - logout request approved");
-                
+
                 // Stop polling timer if active
                 _logoutRequestCheckTimer?.Stop();
                 _hasPendingLogoutRequest = false;
@@ -1045,7 +1052,7 @@ namespace LabServerClient
             try
             {
                 LogMessage("Server shutdown command received - server is stopping");
-                
+
                 // Show notification
                 await Dispatcher.InvokeAsync(() =>
                 {
@@ -1094,7 +1101,7 @@ namespace LabServerClient
                     {
                         var regKey = Registry.CurrentUser.OpenSubKey(@"Software\LabServerClient", true)
                             ?? Registry.CurrentUser.CreateSubKey(@"Software\LabServerClient");
-                        
+
                         regKey.SetValue("ClientName", config.pc_name);
                         regKey.Close();
 
@@ -1119,7 +1126,7 @@ namespace LabServerClient
                     {
                         var regKey = Registry.CurrentUser.OpenSubKey(@"Software\LabServerClient", true)
                             ?? Registry.CurrentUser.CreateSubKey(@"Software\LabServerClient");
-                        
+
                         regKey.SetValue("ServerIP", config.server_ip);
                         regKey.Close();
 
@@ -1137,11 +1144,11 @@ namespace LabServerClient
                     var message = "Configuration updated by administrator:\n\n";
                     if (!string.IsNullOrWhiteSpace(config.pc_name))
                     {
-                        message += $"� PC Name: {config.pc_name}\n";
+                        message += $"• PC Name: {config.pc_name}\n";
                     }
                     if (!string.IsNullOrWhiteSpace(config.server_ip))
                     {
-                        message += $"� Server IP: {config.server_ip}\n";
+                        message += $"• Server IP: {config.server_ip}\n";
                     }
                     message += "\nThe application will restart to apply changes.";
 
@@ -1179,8 +1186,6 @@ namespace LabServerClient
             public string? pc_name { get; set; }
             public string? server_ip { get; set; }
         }
-
-
 
         private async Task<string> LockSystem()
         {
@@ -1313,7 +1318,6 @@ namespace LabServerClient
             {
                 LogMessage("Shutdown command received");
 
-                // Schedule shutdown in 30 seconds
                 await Task.Run(() =>
                 {
                     System.Diagnostics.Process.Start("shutdown", "/s /t 30 /c \"Lab Server shutdown command\"");
@@ -1334,7 +1338,6 @@ namespace LabServerClient
             {
                 LogMessage("Restart command received");
 
-                // Schedule restart in 30 seconds
                 await Task.Run(() =>
                 {
                     System.Diagnostics.Process.Start("shutdown", "/r /t 30 /c \"Lab Server restart command\"");
@@ -1357,7 +1360,6 @@ namespace LabServerClient
 
                 await Task.Run(() =>
                 {
-                    // Use Windows API to put system to sleep
                     System.Diagnostics.Process.Start("rundll32.exe", "powrprof.dll,SetSuspendState 0,1,0");
                 });
 
@@ -1630,17 +1632,17 @@ namespace LabServerClient
             if (_databaseService != null && !string.IsNullOrWhiteSpace(_username))
             {
                 var pcName = _clientWindow?.GetClientName() ?? Environment.MachineName;
-                
+
                 try
                 {
                     // Record logout attendance
                     var logoutRecorded = await _databaseService.RecordStudentLogoutAsync(_username, pcName);
-                    
+
                     if (logoutRecorded)
                     {
                         LogMessage($"Logout attendance recorded for {_username}");
                     }
-                    
+
                     // Log logout activity
                     await _databaseService.LogStudentActivityAsync(_username, pcName, "Logout", "Student logged out");
                 }
@@ -1744,4 +1746,3 @@ namespace LabServerClient
         public DateTime Timestamp { get; set; }
     }
 }
-

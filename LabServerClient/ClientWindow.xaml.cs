@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ComponentModel;
 using System.Globalization;
 using System.Net.Sockets;
@@ -199,14 +199,14 @@ namespace LabServerClient
                 var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\LabServerClient", true);
                 if (key != null)
                 {
-                    ServerIpTextBox.Text = key.GetValue("ServerIP", "192.168.1.11")?.ToString() ?? "192.168.1.11";
+                    ServerIpTextBox.Text = key.GetValue("ServerIP", "192.168.0.11")?.ToString() ?? "192.168.0.11";
                     PcNameTextBox.Text = key.GetValue("PCName", Environment.MachineName)?.ToString() ?? Environment.MachineName;
                     key.Close();
                 }
                 else
                 {
                     // Set defaults if registry key doesn't exist
-                    ServerIpTextBox.Text = "192.168.1.11";
+                    ServerIpTextBox.Text = "192.168.0.11";
                     PcNameTextBox.Text = Environment.MachineName;
                 }
             }
@@ -214,7 +214,7 @@ namespace LabServerClient
             {
                 LogMessage($"Error loading settings: {ex.Message}");
                 // Set defaults on error
-                ServerIpTextBox.Text = "192.168.1.11";
+                ServerIpTextBox.Text = "192.168.0.11";
                 PcNameTextBox.Text = Environment.MachineName;
             }
         }
@@ -226,7 +226,7 @@ namespace LabServerClient
                 var key = Registry.CurrentUser.CreateSubKey(@"SOFTWARE\LabServerClient", true);
                 if (key != null)
                 {
-                    key.SetValue("ServerIP", ServerIpTextBox.Text ?? "192.168.1.11");
+                    key.SetValue("ServerIP", ServerIpTextBox.Text ?? "192.168.0.11");
                     key.SetValue("PCName", PcNameTextBox.Text ?? Environment.MachineName);
                     key.Close();
                     LogMessage("Configuration saved successfully");
@@ -431,7 +431,15 @@ namespace LabServerClient
                     if (root.TryGetProperty("command", out var commandElement))
                     {
                         var command = commandElement.GetString();
-                        await Dispatcher.InvokeAsync(async () => await ExecuteCommandAsync(command));
+
+                        // ✅ FIX: Extract parameters and pass to SessionWindow
+                        string? parameters = null;
+                        if (root.TryGetProperty("parameters", out var parametersElement))
+                        {
+                            parameters = parametersElement.GetString();
+                        }
+
+                        await Dispatcher.InvokeAsync(async () => await ExecuteCommandAsync(command, parameters));
                     }
                 }
             }
@@ -441,11 +449,12 @@ namespace LabServerClient
             }
         }
 
-        private async Task ExecuteCommandAsync(string? command)
+        // ✅ FIX: Added parameters argument
+        private async Task ExecuteCommandAsync(string? command, string? parameters = null)
         {
             if (string.IsNullOrEmpty(command)) return;
 
-            LogMessage($"Executing command: {command}");
+            LogMessage($"Executing command: {command} | Parameters: {parameters ?? "null"}");
 
             try
             {
@@ -453,13 +462,12 @@ namespace LabServerClient
                 if (_sessionWindow != null)
                 {
                     LogMessage($"Forwarding command '{command}' to SessionWindow");
-                    // SessionWindow will handle the command and return status
                     await Dispatcher.InvokeAsync(async () =>
                     {
                         try
                         {
-                            // Let SessionWindow handle all commands
-                            await _sessionWindow.HandleServerCommand(command, null);
+                            // ✅ FIX: Pass parameters to SessionWindow
+                            await _sessionWindow.HandleServerCommand(command, parameters);
                         }
                         catch (Exception ex)
                         {
@@ -533,10 +541,10 @@ namespace LabServerClient
             {
                 LogMessage("Shutdown requested by admin");
                 UpdateStatus("Shutting down...");
-                
+
                 // Force close to allow shutdown
                 _allowClose = true;
-                
+
                 // Execute shutdown command
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
@@ -554,10 +562,10 @@ namespace LabServerClient
             {
                 LogMessage("Restart requested by admin");
                 UpdateStatus("Restarting...");
-                
+
                 // Force close to allow restart
                 _allowClose = true;
-                
+
                 // Execute restart command
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
@@ -575,7 +583,7 @@ namespace LabServerClient
             {
                 LogMessage("Sleep requested by admin");
                 UpdateStatus("Entering sleep mode...");
-                
+
                 // Set system to sleep mode using P/Invoke
                 SetSuspendState(false, true, false);
             });
@@ -639,4 +647,3 @@ namespace LabServerClient
         }
     }
 }
-
