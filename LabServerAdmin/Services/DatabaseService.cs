@@ -54,7 +54,7 @@ namespace LabServerAdmin.Services
                     request_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     request_message VARCHAR(500),
                     status VARCHAR(20) NOT NULL DEFAULT 'Pending',
-                    processed_by VARCHAR(20) REFERENCES ua_geninfo(empid),
+                    processed_by VARCHAR(20) REFERENCES ua_geninfo(empID),
                     processed_timestamp TIMESTAMP,
                     CONSTRAINT chk_status CHECK (status IN ('Pending', 'Approved', 'Declined')),
                     CONSTRAINT chk_request_type CHECK (request_type IN ('Login', 'Logout'))

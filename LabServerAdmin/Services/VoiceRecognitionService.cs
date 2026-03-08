@@ -30,6 +30,46 @@ namespace LabServerAdmin.Services
             {"twenty six",26},{"twenty seven",27},{"twenty eight",28},{"twenty nine",29},{"thirty",30},
         };
 
+        // ── Filipino accent alias mappings ───────────────────────────────────
+        // Maps misheard words → correct command
+        private static readonly Dictionary<string, string> _commandAliases = new(StringComparer.OrdinalIgnoreCase)
+        {
+            // "lock" misheard as:
+            { "log",        "lock" },
+            { "lok",        "lock" },
+            { "lack",       "lock" },
+            { "loch",       "lock" },
+            { "block",      "lock" },
+
+            // "unlock" misheard as:
+            { "on lock",    "unlock" },
+            { "in lock",    "unlock" },
+            { "un log",     "unlock" },
+            { "unblock",    "unlock" },
+            { "on log",     "unlock" },
+
+            // "shutdown" misheard as:
+            { "shut down",  "shutdown" },
+            { "shot down",  "shutdown" },
+            { "shatter down","shutdown" },
+            { "shattered",  "shutdown" },
+            { "shadow",     "shutdown" },
+
+            // "restart" misheard as:
+            { "re start",   "restart" },
+            { "the start",  "restart" },
+            { "restarted",  "restart" },
+
+            // "sleep" misheard as:
+            { "slip",       "sleep" },
+            { "sleet",      "sleep" },
+            { "slim",       "sleep" },
+
+            // "refresh" misheard as:
+            { "the fresh",  "refresh" },
+            { "re fresh",   "refresh" },
+        };
+
         public VoiceRecognitionService(TcpServerService tcpServer, IConfiguration configuration)
         {
             _tcpServer = tcpServer;
@@ -43,11 +83,11 @@ namespace LabServerAdmin.Services
             {
                 _recognizerCulture = !string.IsNullOrWhiteSpace(languageSetting)
                     ? new CultureInfo(languageSetting)
-                    : CultureInfo.CurrentCulture;
+                    : new CultureInfo("en-US"); // Default to en-US for best SR compatibility
             }
             catch (CultureNotFoundException)
             {
-                _recognizerCulture = CultureInfo.CurrentCulture;
+                _recognizerCulture = new CultureInfo("en-US");
             }
 
             InitializeRecognizer();
@@ -59,8 +99,22 @@ namespace LabServerAdmin.Services
             {
                 _recognizer = new SpeechRecognitionEngine(_recognizerCulture);
 
+                // ── Lower confidence threshold for Filipino accent + built-in mic ──
+                _recognizer.UpdateRecognizerSetting("CFGConfidenceRejectionThreshold", 30);
+                _recognizer.UpdateRecognizerSetting("HighConfidenceThreshold", 60);
+
                 // ── Structured grammar ──────────────────────────────────────
-                var actions = new Choices("lock", "unlock", "shutdown", "restart", "sleep", "refresh");
+                // Include alias words so the SR engine can match Filipino pronunciations
+                var actions = new Choices(
+                    // Correct words
+                    "lock", "unlock", "shutdown", "shut down", "restart", "re start", "sleep", "refresh",
+                    // Filipino accent variants
+                    "log", "lok", "lack",           // lock
+                    "on lock", "in lock", "un log", // unlock
+                    "shot down", "shattered",        // shutdown
+                    "slip", "sleet",                 // sleep
+                    "the fresh", "re fresh"          // refresh
+                );
 
                 var numbers = Enumerable.Range(1, 50)
                     .Select(i => i.ToString(CultureInfo.InvariantCulture))
@@ -87,11 +141,9 @@ namespace LabServerAdmin.Services
                 _recognizer.LoadGrammar(new Grammar(numBuilder) { Name = "CommandNumber" });
 
                 // ── Dictation fallback (catches anything else) ──────────────
-                // This is the key fix — if structured grammar fails, dictation
-                // captures free speech and we parse it manually
                 var dictation = new DictationGrammar();
                 dictation.Name = "Dictation";
-                dictation.Weight = 0.5f;
+                dictation.Weight = 0.1f;
                 _recognizer.LoadGrammar(dictation);
 
                 // ── Open application grammar ────────────────────────────────
@@ -144,9 +196,17 @@ namespace LabServerAdmin.Services
             try
             {
                 var text = e.Result.Text.Trim();
+                var confidence = e.Result.Confidence;
 
-                // Always show what was heard in the status bar — very useful for debugging
-                RecognitionError?.Invoke(this, $"Heard: \"{text}\"");
+                // Always show what was heard + confidence score for debugging
+                RecognitionError?.Invoke(this, $"Heard: \"{text}\" (confidence: {confidence:P0})");
+
+                // Skip very low confidence results to avoid false triggers
+                if (confidence < 0.50f)
+                {
+                    RecognitionError?.Invoke(this, $"⚠️ Ignored low confidence: \"{text}\" ({confidence:P0})");
+                    return;
+                }
 
                 var parsed = ParseVoiceCommand(text.ToLowerInvariant());
 
@@ -157,7 +217,7 @@ namespace LabServerAdmin.Services
                 }
                 else if (e.Result.Grammar.Name != "Dictation")
                 {
-                    RecognitionError?.Invoke(this, $"Could not parse: \"{text}\"");
+                    RecognitionError?.Invoke(this, $"❓ Could not parse: \"{text}\"");
                 }
             }
             catch (Exception ex)
@@ -176,7 +236,18 @@ namespace LabServerAdmin.Services
         {
             text = text.Trim().ToLowerInvariant();
 
-            // open [app/application] <name>
+            // ── Step 1: Normalize misheard words using alias map ─────────────
+            // Try multi-word aliases first (longer matches take priority)
+            foreach (var alias in _commandAliases.OrderByDescending(k => k.Key.Length))
+            {
+                if (text.StartsWith(alias.Key, StringComparison.OrdinalIgnoreCase))
+                {
+                    text = alias.Value + text.Substring(alias.Key.Length);
+                    break;
+                }
+            }
+
+            // ── Step 2: Handle "open" commands ──────────────────────────────
             if (text.StartsWith("open "))
             {
                 var appName = text.Substring(5).Trim();
@@ -186,7 +257,8 @@ namespace LabServerAdmin.Services
                 return null;
             }
 
-            // Match action keyword (longest first to avoid "lock" matching "unlock")
+            // ── Step 3: Match action keyword ─────────────────────────────────
+            // Longest first to avoid "lock" matching "unlock"
             var validActions = new[] { "view logs", "shutdown", "restart", "unlock", "refresh", "sleep", "lock" };
             string? action = null;
             string rest = text;
@@ -203,7 +275,9 @@ namespace LabServerAdmin.Services
 
             if (action == null) return null;
 
-            // Target: "all" or empty → all
+            // ── Step 4: Parse target ─────────────────────────────────────────
+
+            // "all" or empty → all PCs
             if (rest == "all" || rest == "")
                 return new VoiceCommand { Command = action, Target = "all" };
 
