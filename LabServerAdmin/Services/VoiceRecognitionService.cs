@@ -19,7 +19,6 @@ namespace LabServerAdmin.Services
         public event EventHandler<VoiceCommandEventArgs>? VoiceCommandRecognized;
         public event EventHandler<string>? RecognitionError;
 
-        // Word-to-number mapping so "two" → 2, "zero two" → 02, etc.
         private static readonly Dictionary<string, int> _wordNumbers = new(StringComparer.OrdinalIgnoreCase)
         {
             {"one",1},{"two",2},{"three",3},{"four",4},{"five",5},
