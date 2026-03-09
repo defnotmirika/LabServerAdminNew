@@ -517,21 +517,27 @@ namespace LabServerAdmin.Services
             await connection.OpenAsync();
 
             var query = @"
-                SELECT al.id, 
-                       al.user_id,
-                       al.computer_id, 
-                       al.action, 
-                       al.description, 
-                       al.created_at,
-                       COALESCE(uc.studno, '') as studno,
-                       COALESCE(NULLIF(CONCAT(us.f_name, ' ', us.l_name), ' '), uc.studno, '') as student_name,
-                       COALESCE(c.client_name, '') as pc_name
-                FROM activity_logs al
-                LEFT JOIN us_credentials uc ON al.user_id = uc.id
-                LEFT JOIN us_geninfo us ON uc.studno = us.studNo
-                LEFT JOIN computers c ON al.computer_id = c.id
-                WHERE 1=1
-            ";
+                    SELECT al.id, 
+                           al.user_id,
+                           al.computer_id, 
+                           al.action, 
+                           al.description, 
+                           al.created_at,
+                           COALESCE(uc_student.studno, '') as studno,
+                           COALESCE(
+                               NULLIF(CONCAT(us.f_name, ' ', us.l_name), ' '),
+                               uc_student.username,
+                               uc_instructor.username,
+                               ''
+                           ) as student_name,
+                           COALESCE(c.client_name, '') as pc_name
+                    FROM activity_logs al
+                    LEFT JOIN us_credentials uc_student ON al.user_id = uc_student.id
+                    LEFT JOIN us_geninfo us ON uc_student.studno = us.studNo
+                    LEFT JOIN ui_credentials uc_instructor ON al.user_id = uc_instructor.id
+                    LEFT JOIN computers c ON al.computer_id = c.id
+                    WHERE 1=1
+                ";
 
             if (startDate.HasValue) query += " AND DATE(al.created_at) >= @startDate";
             if (endDate.HasValue) query += " AND DATE(al.created_at) <= @endDate";
