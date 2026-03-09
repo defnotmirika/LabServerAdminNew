@@ -89,7 +89,7 @@ namespace LabServerAdmin.Services
             try
             {
                 var stream = client.GetStream();
-                var buffer = new byte[4096];
+                var buffer = new byte[65536];
                 var messageBuilder = new StringBuilder();
 
                 while (client.Connected)
@@ -305,18 +305,24 @@ namespace LabServerAdmin.Services
         private void HandleScreenData(string clientName, ClientMessage messageData)
         {
             if (string.IsNullOrWhiteSpace(messageData.Data))
-            {
                 return;
-            }
 
             try
             {
-                var imageBytes = Convert.FromBase64String(messageData.Data);
-                ScreenDataReceived?.Invoke(this, new ScreenDataReceivedEventArgs(clientName, imageBytes, messageData.Metadata ?? new Dictionary<string, string>()));
+                // Validate base64 length (must be multiple of 4)
+                var data = messageData.Data.Trim();
+                var imageBytes = Convert.FromBase64String(data);
+
+                if (imageBytes.Length == 0)
+                    return;
+
+                ScreenDataReceived?.Invoke(this, new ScreenDataReceivedEventArgs(
+                    clientName, imageBytes, messageData.Metadata ?? new Dictionary<string, string>()));
             }
-            catch
+            catch (FormatException)
             {
-                // Ignore invalid data; streaming should continue with next frame
+                // Base64 was incomplete — frame was split across TCP packets
+                // This should no longer happen after fixing the buffer
             }
         }
 

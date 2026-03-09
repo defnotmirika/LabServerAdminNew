@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -16,7 +16,7 @@ namespace LabServerClient.ViewModels
     {
         private readonly DatabaseService? _databaseService;
         private readonly LoginRequestService _loginRequestService;
-        
+
         private string _username = string.Empty;
         private string _password = string.Empty;
         private string _errorMessage = string.Empty;
@@ -31,21 +31,18 @@ namespace LabServerClient.ViewModels
         public event Action? LoginSuccess;
         public event Action<string, string>? PcMismatchDetected; // username, assignedPcName
         public event Action? LoginCancelled;
-         
+
         public LoginViewModel(DatabaseService? databaseService = null)
         {
             _databaseService = databaseService;
             _loginRequestService = new LoginRequestService();
-            
+
             // Initialize PC Name from registry
             _currentPcName = PcNameService.GetPcName();
         }
 
         #region Properties
 
-        /// <summary>
-        /// Gets or sets the username entered in the login form.
-        /// </summary>
         public string Username
         {
             get => _username;
@@ -60,9 +57,6 @@ namespace LabServerClient.ViewModels
             }
         }
 
-        /// <summary>
-        /// Gets or sets the password entered in the login form.
-        /// </summary>
         public string Password
         {
             get => _password;
@@ -77,9 +71,6 @@ namespace LabServerClient.ViewModels
             }
         }
 
-        /// <summary>
-        /// Gets or sets the error message to display to the user.
-        /// </summary>
         public string ErrorMessage
         {
             get => _errorMessage;
@@ -93,10 +84,6 @@ namespace LabServerClient.ViewModels
             }
         }
 
-        /// <summary>
-        /// Gets or sets whether the login button is enabled.
-        /// Disabled during authentication to prevent multiple submissions.
-        /// </summary>
         public bool IsLoginButtonEnabled
         {
             get => _isLoginButtonEnabled;
@@ -110,9 +97,6 @@ namespace LabServerClient.ViewModels
             }
         }
 
-        /// <summary>
-        /// Gets whether the user is authenticated.
-        /// </summary>
         public bool IsAuthenticated
         {
             get => _isAuthenticated;
@@ -126,9 +110,6 @@ namespace LabServerClient.ViewModels
             }
         }
 
-        /// <summary>
-        /// Gets the authenticated username.
-        /// </summary>
         public string? AuthenticatedUsername
         {
             get => _authenticatedUsername;
@@ -142,9 +123,6 @@ namespace LabServerClient.ViewModels
             }
         }
 
-        /// <summary>
-        /// Gets the user role (Admin, Student, Teacher, etc.).
-        /// </summary>
         public string? UserRole
         {
             get => _userRole;
@@ -158,9 +136,6 @@ namespace LabServerClient.ViewModels
             }
         }
 
-        /// <summary>
-        /// Gets the authenticated client ID.
-        /// </summary>
         public int? AuthenticatedClientId
         {
             get => _authenticatedClientId;
@@ -174,9 +149,6 @@ namespace LabServerClient.ViewModels
             }
         }
 
-        /// <summary>
-        /// Gets the current PC Name from registry.
-        /// </summary>
         public string CurrentPcName
         {
             get => _currentPcName;
@@ -194,59 +166,35 @@ namespace LabServerClient.ViewModels
 
         #region Login Logic
 
-        /// <summary>
-        /// Validates input and attempts login with PC Name verification.
-        /// Flow:
-        /// 1. Validate username and password are not empty
-        /// 2. Check if TCP server is running (for non-admin users)
-        /// 3. Read PC Name from registry
-        /// 4. Send credentials and PC Name to server for verification
-        /// 5. If PC match: proceed with login
-        /// 6. If PC mismatch: show dialog asking user if they want to request access
-        /// 7. If credentials invalid: show error message
-        /// </summary>
         public async Task AttemptLoginAsync()
         {
-            // Validate input
             if (!ValidateInput())
-            {
                 return;
-            }
 
-            // Disable login button during authentication
             IsLoginButtonEnabled = false;
 
             try
             {
-                // Get current PC Name from registry
                 CurrentPcName = PcNameService.GetPcName();
                 System.Diagnostics.Debug.WriteLine($"[LOGIN] Attempting login for user: '{Username}' on PC: '{CurrentPcName}'");
 
-                // For non-admin users, check if TCP server is running first
-                if (!IsAdminCredentials(Username, Password))
-                {
-                    System.Diagnostics.Debug.WriteLine($"[LOGIN] Non-admin login detected - checking TCP server availability");
-                    bool serverAvailable = await CheckTcpServerAvailabilityAsync();
-                    
-                    if (!serverAvailable)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[LOGIN] TCP server not available - blocking login");
-                        ErrorMessage = "Server is not running. Please contact your instructor to start the server.";
-                        LoginCancelled?.Invoke();
-                        return;
-                    }
-                    
-                    System.Diagnostics.Debug.WriteLine($"[LOGIN] TCP server is available - proceeding with login");
-                }
+                // TEMPORARY: TCP server check commented out for debugging login issue
+                // if (!IsAdminCredentials(Username, Password))
+                // {
+                //     bool serverAvailable = await CheckTcpServerAvailabilityAsync();
+                //     if (!serverAvailable)
+                //     {
+                //         ErrorMessage = "Server is not running. Please contact your instructor to start the server.";
+                //         LoginCancelled?.Invoke();
+                //         return;
+                //     }
+                // }
 
-                // Attempt login verification with server
-                // (or local database if server is unavailable)
                 var verificationResult = await VerifyLoginAsync();
                 System.Diagnostics.Debug.WriteLine($"[LOGIN] Verification result - Success: {verificationResult.IsSuccessful}, PCMatch: {verificationResult.IsPcNameMatch}");
 
                 if (verificationResult.IsSuccessful && verificationResult.IsPcNameMatch)
                 {
-                    // Login successful with matching PC
                     System.Diagnostics.Debug.WriteLine($"[LOGIN] Login successful - completing login process");
                     await CompleteLogin(verificationResult);
                     System.Diagnostics.Debug.WriteLine($"[LOGIN] Invoking LoginSuccess event");
@@ -254,25 +202,20 @@ namespace LabServerClient.ViewModels
                 }
                 else if (!verificationResult.IsPcNameMatch && !string.IsNullOrWhiteSpace(verificationResult.AssignedPcName))
                 {
-                    // PC mismatch detected - ask user if they want to request access
                     System.Diagnostics.Debug.WriteLine($"[LOGIN] PC mismatch detected");
                     PcMismatchDetected?.Invoke(Username, verificationResult.AssignedPcName);
                     LoginCancelled?.Invoke();
                 }
                 else if (!string.IsNullOrWhiteSpace(verificationResult.ErrorMessage))
                 {
-                    // Login failed with specific error
                     System.Diagnostics.Debug.WriteLine($"[LOGIN] Login failed - {verificationResult.ErrorMessage}");
                     ErrorMessage = verificationResult.ErrorMessage;
-                    // Don't clear password - let user retry
                     LoginCancelled?.Invoke();
                 }
                 else
                 {
-                    // Generic failure
                     System.Diagnostics.Debug.WriteLine($"[LOGIN] Generic login failure");
                     ErrorMessage = "Invalid username or password. Please try again.";
-                    // Don't clear password - let user retry
                     LoginCancelled?.Invoke();
                 }
             }
@@ -280,7 +223,6 @@ namespace LabServerClient.ViewModels
             {
                 System.Diagnostics.Debug.WriteLine($"[LOGIN] Exception during login: {ex.Message}");
                 ErrorMessage = $"Login error: {ex.Message}";
-                // Don't clear password - let user retry
                 LoginCancelled?.Invoke();
             }
             finally
@@ -289,11 +231,6 @@ namespace LabServerClient.ViewModels
             }
         }
 
-        /// <summary>
-        /// Attempts to send a login request to the admin when PC mismatch is detected.
-        /// This allows users to request access from their current PC.
-        /// </summary>
-        /// <returns>True if request was sent successfully; false otherwise.</returns>
         public async Task<bool> SendLoginRequestAsync()
         {
             try
@@ -304,7 +241,6 @@ namespace LabServerClient.ViewModels
                     return false;
                 }
 
-                // Create login request using new schema (studNo, computer_id)
                 var requestId = await _databaseService.CreateLoginRequestAsync(
                     studNo: Username,
                     clientName: CurrentPcName,
@@ -334,10 +270,6 @@ namespace LabServerClient.ViewModels
 
         #region Private Helper Methods
 
-        /// <summary>
-        /// Validates username and password input.
-        /// </summary>
-        /// <returns>True if valid; false otherwise.</returns>
         private bool ValidateInput()
         {
             if (string.IsNullOrWhiteSpace(Username))
@@ -355,47 +287,36 @@ namespace LabServerClient.ViewModels
             return true;
         }
 
-        /// <summary>
-        /// Verifies login credentials using both server API (if available) and local database.
-        /// Falls back to hardcoded credentials for testing.
-        /// </summary>
-        /// <returns>LoginVerificationResult with verification details.</returns>
         private async Task<LoginRequestService.LoginVerificationResult> VerifyLoginAsync()
         {
             System.Diagnostics.Debug.WriteLine($"[VERIFY] Starting login verification for user: '{Username}'");
-            
-            // First, attempt server verification if implemented
+
             var result = await _loginRequestService.VerifyLoginAsync(Username, Password, CurrentPcName);
-            
+
             System.Diagnostics.Debug.WriteLine($"[VERIFY] Server result - Success: {result.IsSuccessful}, PCMatch: {result.IsPcNameMatch}");
-            
-            // Only use server result if it's not the "not implemented" placeholder
-            if (!string.IsNullOrWhiteSpace(result.ErrorMessage) && 
+
+            if (!string.IsNullOrWhiteSpace(result.ErrorMessage) &&
                 result.ErrorMessage.Contains("not yet implemented", StringComparison.OrdinalIgnoreCase))
             {
                 System.Diagnostics.Debug.WriteLine($"[VERIFY] Server not implemented, skipping to database");
             }
             else if (result.IsSuccessful || result.IsPcNameMatch == false)
             {
-                // Server returned a definitive answer
                 System.Diagnostics.Debug.WriteLine($"[VERIFY] Using server result");
                 return result;
             }
 
-            // Fall back to local database verification
             if (_databaseService != null)
             {
                 try
                 {
                     System.Diagnostics.Debug.WriteLine($"[VERIFY] Attempting database verification with PC Name check");
-                    
-                    // Query clients table with PC Name validation
+
                     var loginResult = await _databaseService.ValidateLoginWithPcNameAsync(Username, Password, CurrentPcName);
                     if (loginResult != null && loginResult.IsValid)
                     {
                         System.Diagnostics.Debug.WriteLine($"[VERIFY] Client validation passed - PC Match: {loginResult.IsPcNameMatch}");
-                        
-                        // Check PC Name match
+
                         if (loginResult.IsPcNameMatch)
                         {
                             System.Diagnostics.Debug.WriteLine($"[VERIFY] PC Name matches!");
@@ -408,7 +329,6 @@ namespace LabServerClient.ViewModels
                         }
                         else
                         {
-                            // PC mismatch
                             System.Diagnostics.Debug.WriteLine($"[VERIFY] PC Name mismatch detected - Current: {CurrentPcName}, Assigned: {loginResult.AssignedPcName}");
                             return new LoginRequestService.LoginVerificationResult
                             {
@@ -421,7 +341,6 @@ namespace LabServerClient.ViewModels
                     }
                     else if (loginResult != null && !loginResult.IsValid && !string.IsNullOrWhiteSpace(loginResult.ScheduleError))
                     {
-                        // Schedule validation failed
                         System.Diagnostics.Debug.WriteLine($"[VERIFY] Schedule validation failed: {loginResult.ScheduleError}");
                         return new LoginRequestService.LoginVerificationResult
                         {
@@ -432,7 +351,6 @@ namespace LabServerClient.ViewModels
                     }
 
                     System.Diagnostics.Debug.WriteLine($"[VERIFY] Client validation failed");
-                    
                 }
                 catch (Exception ex)
                 {
@@ -444,9 +362,8 @@ namespace LabServerClient.ViewModels
                 System.Diagnostics.Debug.WriteLine($"[VERIFY] No database service available");
             }
 
-            // Final fallback: hardcoded credentials for testing
             System.Diagnostics.Debug.WriteLine($"[VERIFY] Checking hardcoded credentials");
-            
+
             if (Username == "admin" && Password == "admin123")
             {
                 System.Diagnostics.Debug.WriteLine($"[VERIFY] Hardcoded admin match!");
@@ -470,7 +387,6 @@ namespace LabServerClient.ViewModels
                 };
             }
 
-            // All verification attempts failed
             System.Diagnostics.Debug.WriteLine($"[VERIFY] All verification attempts failed");
             return new LoginRequestService.LoginVerificationResult
             {
@@ -481,31 +397,57 @@ namespace LabServerClient.ViewModels
         }
 
         /// <summary>
-        /// Completes the login process by setting authenticated properties.
+        /// Completes the login process.
+        /// FIX: Resolves the actual studNo from the database so the timer works correctly.
+        /// The timer uses studNo to query GetStudentScheduleAsync — if the student logged in
+        /// using their username (not studNo), the schedule lookup would fail and show 00:00:00.
         /// </summary>
         private async Task CompleteLogin(LoginRequestService.LoginVerificationResult result)
         {
             IsAuthenticated = true;
-            AuthenticatedUsername = Username;
             UserRole = result.UserRole ?? "Student";
 
-            // Resolve client ID for non-admin users when DB is available
+            // ── FIX: Resolve actual studNo for non-admin users ──────────────────
+            // GetStudentScheduleAsync queries us_geninfo.studNo directly.
+            // If the student logged in with a username alias, we need the real studNo.
+            if (_databaseService != null &&
+                !string.Equals(UserRole, "Admin", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var resolvedStudNo = await ResolveStudNoAsync(Username);
+                    AuthenticatedUsername = resolvedStudNo ?? Username;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[LOGIN] Resolved studNo: '{resolvedStudNo}' for username: '{Username}'");
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[LOGIN] ResolveStudNo failed: {ex.Message}");
+                    AuthenticatedUsername = Username;
+                }
+            }
+            else
+            {
+                AuthenticatedUsername = Username;
+            }
+            // ────────────────────────────────────────────────────────────────────
+
             if (_databaseService != null && !string.Equals(UserRole, "Admin", StringComparison.OrdinalIgnoreCase))
             {
                 try
                 {
                     AuthenticatedClientId = await _databaseService.EnsureClientIdAsync(Username, Password, CurrentPcName);
-                    
-                    // Record attendance for student logins
-                    if (UserRole.Equals("Student", StringComparison.OrdinalIgnoreCase) || 
+
+                    if (UserRole.Equals("Student", StringComparison.OrdinalIgnoreCase) ||
                         UserRole.Equals("STUDENT", StringComparison.OrdinalIgnoreCase))
                     {
-                        await _databaseService.RecordStudentLoginAsync(Username, CurrentPcName);
-                        System.Diagnostics.Debug.WriteLine($"[LOGIN] Attendance recorded for {Username} on {CurrentPcName}");
+                        // Use resolved studNo for attendance recording
+                        var studNoForAttendance = AuthenticatedUsername ?? Username;
+                        await _databaseService.RecordStudentLoginAsync(studNoForAttendance, CurrentPcName);
+                        System.Diagnostics.Debug.WriteLine($"[LOGIN] Attendance recorded for {studNoForAttendance} on {CurrentPcName}");
 
-                        // Log login activity
-                        await _databaseService.LogStudentActivityAsync(Username, CurrentPcName, "Login", $"Student logged in successfully");
-                        System.Diagnostics.Debug.WriteLine($"[LOGIN] Activity logged for {Username}");
+                        await _databaseService.LogStudentActivityAsync(studNoForAttendance, CurrentPcName, "Login", "Student logged in successfully");
+                        System.Diagnostics.Debug.WriteLine($"[LOGIN] Activity logged for {studNoForAttendance}");
                     }
                 }
                 catch (Exception ex)
@@ -515,39 +457,56 @@ namespace LabServerClient.ViewModels
                 }
             }
 
-            // Clear sensitive data AFTER all operations complete
             System.Diagnostics.Debug.WriteLine($"[LOGIN] Clearing password after successful login");
             Password = string.Empty;
         }
 
         /// <summary>
-        /// Clears the error message.
+        /// Resolves the actual studNo from us_credentials given a username or studNo input.
+        /// This ensures the session timer uses the correct studNo for schedule lookups.
         /// </summary>
-        private void ClearErrorMessage()
+        private async Task<string?> ResolveStudNoAsync(string usernameOrStudNo)
         {
-            if (!string.IsNullOrEmpty(ErrorMessage))
+            if (_databaseService == null) return null;
+
+            try
             {
-                ErrorMessage = string.Empty;
+                using var connection = new Npgsql.NpgsqlConnection(_databaseService.ConnectionString);
+                await connection.OpenAsync();
+
+                using var cmd = new Npgsql.NpgsqlCommand(@"
+                    SELECT studNo FROM us_credentials 
+                    WHERE (username = @value OR studNo = @value)
+                    AND studNo IS NOT NULL
+                    LIMIT 1", connection);
+                cmd.Parameters.AddWithValue("@value", usernameOrStudNo);
+
+                var result = await cmd.ExecuteScalarAsync();
+                return result == null || result == DBNull.Value ? null : result.ToString();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[LOGIN] ResolveStudNo error: {ex.Message}");
+                return null;
             }
         }
 
-        /// <summary>
-        /// Checks if credentials are for admin account.
-        /// </summary>
+        private void ClearErrorMessage()
+        {
+            if (!string.IsNullOrEmpty(ErrorMessage))
+                ErrorMessage = string.Empty;
+        }
+
         private bool IsAdminCredentials(string username, string password)
         {
             return username == "admin" && password == "admin123";
         }
 
-        /// <summary>
-        /// Checks if TCP server is available by attempting a connection.
-        /// </summary>
         private async Task<bool> CheckTcpServerAvailabilityAsync()
         {
             try
             {
-                // Get server IP from registry
-                string serverIp = "192.168.1.100"; // Default
+                string serverIp = "192.168.1.100";
                 try
                 {
                     var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"SOFTWARE\LabServerClient");
@@ -562,7 +521,6 @@ namespace LabServerClient.ViewModels
                     // Use default if registry read fails
                 }
 
-                // Try to connect to TCP server with 2 second timeout
                 using var testClient = new System.Net.Sockets.TcpClient();
                 var connectTask = testClient.ConnectAsync(serverIp, 9000);
                 var timeoutTask = Task.Delay(2000);
@@ -571,12 +529,10 @@ namespace LabServerClient.ViewModels
 
                 if (completedTask == connectTask && testClient.Connected)
                 {
-                    // Server is reachable
                     testClient.Close();
                     return true;
                 }
 
-                // Timeout or connection failed
                 return false;
             }
             catch

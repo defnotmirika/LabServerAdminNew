@@ -127,76 +127,95 @@ namespace LabServerClient
         {
             try
             {
-                if (_databaseService == null || string.IsNullOrWhiteSpace(_username))
+                if (_databaseService == null)
                 {
-                    LogMessage("[TIMER] No database service or username - skipping schedule-based timer");
+                    LogMessage("[TIMER] No database service - skipping schedule-based timer");
+                    return;
+                }
+
+                // ← Gamitin ang studNo, hindi Environment.UserName
+                var studNo = _username;
+                if (string.IsNullOrWhiteSpace(studNo))
+                {
+                    LogMessage("[TIMER] No studNo set - skipping schedule-based timer");
                     return;
                 }
 
                 var pcName = _clientWindow?.GetClientName() ?? Environment.MachineName;
-                var schedule = await _databaseService.GetStudentScheduleAsync(_username, pcName);
+                LogMessage($"[TIMER] Fetching schedule for studNo='{studNo}', pcName='{pcName}'");
+
+                var schedule = await _databaseService.GetStudentScheduleAsync(studNo, pcName);
 
                 if (schedule == null || !schedule.Value.scheduleEnd.HasValue)
                 {
                     LogMessage("[TIMER] No schedule found for today - no automatic timer set");
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        // Ipakita na walang schedule pero huwag mag-lock agad
+                        TimeRemainingText.Text = "No Schedule";
+                        TimeRemainingText.Foreground = System.Windows.Media.Brushes.Gray;
+                    });
                     return;
                 }
 
                 var now = DateTime.Now;
                 var scheduleEnd = schedule.Value.scheduleEnd.Value;
+                var scheduleStart = schedule.Value.scheduleStart;
                 var serverStartTime = schedule.Value.serverStart;
 
-                // Check if server has started
-                if (serverStartTime == null)
-                {
-                    LogMessage("[TIMER] Server has not started yet - locking screen and waiting");
+                LogMessage($"[TIMER] Schedule: {scheduleStart:HH:mm} - {scheduleEnd:HH:mm}, ServerStart: {serverStartTime}");
 
-                    // Lock the screen but keep timer running
-                    await Dispatcher.InvokeAsync(async () =>
-                    {
-                        await LockSystemWithMessage("? Waiting for Instructor\n\nThe lab server has not been started yet.\nPlease wait for your instructor to start the session.\n\nTimer will begin when server starts.");
-                        _isWaitingForServerStart = true;
-                        _serverStartCheckTimer.Start();
-                    });
-                }
-
+                // Check kung tapos na ang schedule
                 if (scheduleEnd <= now)
                 {
                     LogMessage($"[TIMER] Schedule already ended at {scheduleEnd:HH:mm:ss} - locking system");
+                    await Dispatcher.InvokeAsync(async () => await LockSystem());
+                    return;
+                }
+
+                // Check kung nagsimula na ang server
+                if (serverStartTime == null)
+                {
+                    LogMessage("[TIMER] Server has not started yet - locking screen and waiting");
                     await Dispatcher.InvokeAsync(async () =>
                     {
-                        await LockSystem();
+                        await LockSystemWithMessage(
+                            "⏳ Waiting for Instructor\n\n" +
+                            "The lab server has not been started yet.\n" +
+                            "Please wait for your instructor to start the session.\n\n" +
+                            "Timer will begin when server starts.");
+                        _isWaitingForServerStart = true;
+                        _serverStartCheckTimer.Start();
                     });
                     return;
                 }
 
-                // Calculate time remaining until schedule ends
+                // I-set ang timer based sa schedule end time
                 var timeRemaining = scheduleEnd - now;
-                var hoursRemaining = timeRemaining.TotalHours;
 
-                LogMessage($"[TIMER] Schedule ends at {scheduleEnd:HH:mm:ss} - setting automatic timer for {hoursRemaining:F2} hours");
+                LogMessage($"[TIMER] Time remaining: {timeRemaining:hh\\:mm\\:ss} (ends at {scheduleEnd:HH:mm:ss})");
 
-                // Set usage limit based on schedule
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    ResetUsageLimitState(true);
+                    // I-cancel ang existing timer kung meron
+                    _usageLimitCts?.Cancel();
+                    _usageLimitCts?.Dispose();
+
                     _usageLimitExpiryUtc = scheduleEnd.ToUniversalTime();
                     _usageLimitCts = new CancellationTokenSource();
                     _usageLimitUiTimer.Start();
                     UpdateDisplay();
+
+                    LogMessage($"[TIMER] Timer activated — expires {scheduleEnd:HH:mm:ss}");
                 });
 
-                // Start monitoring
-                if (_usageLimitExpiryUtc.HasValue && _usageLimitCts != null)
-                {
-                    _ = Task.Run(() => MonitorUsageLimitAsync(_usageLimitExpiryUtc.Value, _usageLimitCts.Token));
-                }
-
-                LogMessage($"[TIMER] Automatic schedule-based timer activated - expires at {scheduleEnd:HH:mm:ss}");
+                _ = Task.Run(() => MonitorUsageLimitAsync(
+                    _usageLimitExpiryUtc!.Value,
+                    _usageLimitCts!.Token));
             }
             catch (Exception ex)
             {
-                LogMessage($"[TIMER] Error initializing schedule-based timer: {ex.Message}");
+                LogMessage($"[TIMER] Error: {ex.Message}");
             }
         }
 
@@ -1539,31 +1558,68 @@ namespace LabServerClient
                 {
                     var remaining = expiryUtc - DateTime.UtcNow;
                     if (remaining <= TimeSpan.Zero)
-                    {
                         break;
+
+                    // Mag-warn 5 minutes bago maubos
+                    if (remaining.TotalMinutes <= 5 && remaining.TotalMinutes > 4.9)
+                    {
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            MessageBox.Show(
+                                "⚠️ 5 minutes remaining!\n\nPlease save your work.",
+                                "Session Ending Soon",
+                                MessageBoxButton.OK,
+                                MessageBoxImage.Warning);
+                        });
                     }
 
                     await Task.Delay(TimeSpan.FromSeconds(5), token);
                 }
 
-                if (token.IsCancellationRequested)
+                if (token.IsCancellationRequested) return;
+
+                LogMessage("[TIMER] Session time expired — locking and shutting down");
+
+                // I-record ang logout sa database
+                if (_databaseService != null && !string.IsNullOrWhiteSpace(_username))
                 {
-                    return;
+                    var pcName = _clientWindow?.GetClientName() ?? Environment.MachineName;
+                    await _databaseService.RecordStudentLogoutAsync(_username, pcName);
+                    await _databaseService.LogStudentActivityAsync(_username, pcName,
+                        "Auto Logout", "Session ended - usage limit reached");
                 }
 
-                LogMessage("Usage limit reached - locking system");
-                var result = await LockSystem();
-                await SendResponse(result);
+                // I-lock muna bago mag-shutdown
+                await LockSystem();
+                await SendResponse("Session time expired - system will shut down");
+
+                // Mag-shutdown after 30 seconds
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show(
+                        "Your session has ended.\n\nThis computer will shut down in 30 seconds.",
+                        "Session Ended",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                });
+
+                await Task.Run(() =>
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "shutdown",
+                        Arguments = "/s /t 30 /c \"Lab session ended\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    });
+                });
 
                 ResetUsageLimitState(false);
             }
-            catch (TaskCanceledException)
-            {
-                // Expected when limit is cleared or updated
-            }
+            catch (TaskCanceledException) { }
             catch (Exception ex)
             {
-                LogMessage($"Usage limit monitor error: {ex.Message}");
+                LogMessage($"[TIMER] Monitor error: {ex.Message}");
             }
         }
 
