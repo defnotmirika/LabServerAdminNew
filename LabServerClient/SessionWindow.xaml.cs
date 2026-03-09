@@ -117,7 +117,6 @@ namespace LabServerClient
             Closing += SessionWindow_Closing;
 
             // Set automatic timer based on schedule
-            _ = Task.Run(async () => await InitializeScheduleBasedTimerAsync());
         }
 
         /// <summary>
@@ -135,6 +134,8 @@ namespace LabServerClient
 
                 // ← Gamitin ang studNo, hindi Environment.UserName
                 var studNo = _username;
+
+
                 if (string.IsNullOrWhiteSpace(studNo))
                 {
                     LogMessage("[TIMER] No studNo set - skipping schedule-based timer");
@@ -315,6 +316,7 @@ namespace LabServerClient
         {
             _username = username;
             Dispatcher.Invoke(() => UsernameText.Text = _username ?? string.Empty);
+            Dispatcher.BeginInvoke(async () => await InitializeScheduleBasedTimerAsync()); 
         }
 
         public void InitializeTcpListening()
