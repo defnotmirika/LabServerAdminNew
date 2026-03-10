@@ -1173,6 +1173,33 @@
                     </Border>
                 </Grid>
             </TabItem>
+
+            <TabItem x:Name="ScreenMonitorTab" Header="🖥️ Screen Monitor">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                        <Button x:Name="RefreshScreensButton" Content="🔄 Refresh" 
+                        Style="{StaticResource GoldButton}" 
+                        Click="RefreshScreensButton_Click" Height="35"/>
+                        <Button x:Name="StopAllStreamsButton" Content="⏹️ Stop All" 
+                        Style="{StaticResource DangerButton}" 
+                        Click="StopAllStreamsButton_Click" Height="35"/>
+                        <TextBlock x:Name="ScreenMonitorStatusText" 
+                           Text="0 screens active" 
+                           FontSize="13" FontWeight="SemiBold" 
+                           Foreground="#050d60" 
+                           VerticalAlignment="Center" Margin="20,0,0,0"/>
+                    </StackPanel>
+
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <WrapPanel x:Name="ScreensWrapPanel" Orientation="Horizontal"/>
+                    </ScrollViewer>
+                </Grid>
+            </TabItem>
         </TabControl>
 
         <!-- Status Bar -->

@@ -1,22 +1,23 @@
+    using LabServerAdmin.Models;
+    using LabServerAdmin.Services;
+    using Microsoft.Extensions.Configuration;
+    using Microsoft.Extensions.DependencyInjection;
+    using Microsoft.Extensions.Hosting;
+    using Microsoft.Win32;
     using System.Collections.Generic;
     using System.Collections.ObjectModel;
     using System.ComponentModel;
-    using System.Linq;
     using System.Globalization;
     using System.IO;
+    using System.Linq;
     using System.Text;
     using System.Text.Json;
     using System.Windows;
     using System.Windows.Controls;
     using System.Windows.Input;
     using System.Windows.Media;
+using System.Windows.Media.Imaging;
     using System.Windows.Threading;
-    using Microsoft.Extensions.Configuration;
-    using Microsoft.Extensions.DependencyInjection;
-    using Microsoft.Extensions.Hosting;
-    using LabServerAdmin.Models;
-    using LabServerAdmin.Services;
-    using Microsoft.Win32;
 
     namespace LabServerAdmin
     {
@@ -55,8 +56,11 @@
             private readonly string? _currentAdminUsername;
             private readonly string? _currentAdminRole;
             private readonly string? _adminPassword; // Store password for lock screen
+            private readonly Dictionary<string, System.Windows.Controls.Image> _screenThumbnails = new();
+            private readonly Dictionary<string, DispatcherTimer> _screenTimers = new();
 
-            private DateTime? _attendanceStartDate = null;
+
+        private DateTime? _attendanceStartDate = null;
             private DateTime? _attendanceEndDate = null;
             private bool _showAbsentStudents = false;
 
@@ -2210,10 +2214,172 @@
                 UpdateStatus("Session cleared");
             }
 
-            #endregion
+        #endregion
 
 
-            protected override void OnClosed(EventArgs e)
+        #region Screen Monitor
+        private void RefreshScreensButton_Click(object sender, RoutedEventArgs e)
+        {
+            StartScreenMonitor();
+        }
+
+        private void StopAllStreamsButton_Click(object sender, RoutedEventArgs e)
+        {
+            StopScreenMonitor();
+        }
+
+        private void StartScreenMonitor()
+        {
+            if (!_isServerRunning)
+            {
+                MessageBox.Show("Start the server first.", "Server Not Running",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            ScreensWrapPanel.Children.Clear();
+            _screenThumbnails.Clear();
+
+            var clients = _tcpServerService.GetConnectedClients();
+
+            if (clients.Count == 0)
+            {
+                ScreenMonitorStatusText.Text = "No connected clients";
+                return;
+            }
+
+            foreach (var client in clients.Values)
+            {
+                AddScreenThumbnail(client.Name);
+                _ = _tcpServerService.StartScreenStreamAsync(client.Name, 1000); // 1 FPS for thumbnails
+            }
+
+            _tcpServerService.ScreenDataReceived += ScreenMonitor_ScreenDataReceived;
+            ScreenMonitorStatusText.Text = $"{clients.Count} screen(s) active";
+        }
+
+        private void StopScreenMonitor()
+        {
+            _tcpServerService.ScreenDataReceived -= ScreenMonitor_ScreenDataReceived;
+
+            var clients = _tcpServerService.GetConnectedClients();
+            foreach (var client in clients.Values)
+            {
+                _ = _tcpServerService.StopScreenStreamAsync(client.Name);
+            }
+
+            ScreenMonitorStatusText.Text = "0 screens active";
+        }
+
+        private void AddScreenThumbnail(string clientName)
+        {
+            // Container card
+            var card = new Border
+            {
+                Width = 320,
+                Height = 230,
+                Margin = new Thickness(8),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(5, 13, 96)),
+                BorderThickness = new Thickness(2),
+                CornerRadius = new CornerRadius(6),
+                Background = Brushes.Black,
+                Cursor = Cursors.Hand
+            };
+
+            var grid = new Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            // Screen image
+            var image = new System.Windows.Controls.Image
+            {
+                Stretch = Stretch.Uniform,
+                VerticalAlignment = VerticalAlignment.Stretch
+            };
+            Grid.SetRow(image, 0);
+            _screenThumbnails[clientName] = image;
+
+            // Label
+            var label = new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(5, 13, 96)),
+                Padding = new Thickness(8, 4, 8, 4)
+            };
+            var labelText = new TextBlock
+            {
+                Text = clientName,
+                Foreground = Brushes.White,
+                FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            label.Child = labelText;
+            Grid.SetRow(label, 1);
+
+            grid.Children.Add(image);
+            grid.Children.Add(label);
+            card.Child = grid;
+
+            // Click to open full remote window
+            card.MouseLeftButtonUp += (s, e) =>
+            {
+                // Stop thumbnail stream first
+                _ = _tcpServerService.StopScreenStreamAsync(clientName);
+                _tcpServerService.ScreenDataReceived -= ScreenMonitor_ScreenDataReceived;
+
+                // Open full remote window
+                if (_remoteWindows.TryGetValue(clientName, out var existing))
+                {
+                    existing.Activate();
+                }
+                else
+                {
+                    var remoteWindow = new RemoteControlWindow(_tcpServerService, clientName)
+                    {
+                        Owner = this
+                    };
+                    remoteWindow.Closed += (_, _) =>
+                    {
+                        _remoteWindows.Remove(clientName);
+                        // Resume thumbnail stream
+                        _tcpServerService.ScreenDataReceived += ScreenMonitor_ScreenDataReceived;
+                        _ = _tcpServerService.StartScreenStreamAsync(clientName, 1000);
+                    };
+                    _remoteWindows[clientName] = remoteWindow;
+                    remoteWindow.Show();
+                }
+            };
+
+            ScreensWrapPanel.Children.Add(card);
+        }
+
+        private void ScreenMonitor_ScreenDataReceived(object? sender, ScreenDataReceivedEventArgs e)
+        {
+            if (!_screenThumbnails.ContainsKey(e.ClientName)) return;
+
+            try
+            {
+                var bitmap = new BitmapImage();
+                using (var ms = new System.IO.MemoryStream(e.ImageBytes))
+                {
+                    bitmap.BeginInit();
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmap.StreamSource = ms;
+                    bitmap.EndInit();
+                    bitmap.Freeze();
+                }
+
+                Dispatcher.Invoke(() =>
+                {
+                    if (_screenThumbnails.TryGetValue(e.ClientName, out var img))
+                        img.Source = bitmap;
+                });
+            }
+            catch { }
+        }
+
+        #endregion
+
+        protected override void OnClosed(EventArgs e)
             {
                 if (_isServerRunning)
                 {
@@ -2707,7 +2873,18 @@
                 ClearSearchBox(ClassListSearchBox);
                 ClearSearchBox(ComputersSearchBox);
                 ClearSearchBox(AttendanceSearchBox);
+
+            if (MainTabControl.SelectedItem == ScreenMonitorTab)
+            {
+                StartScreenMonitor();
             }
+            else
+            {
+                StopScreenMonitor();
+            }
+
+
+        }
 
             /// <summary>
             /// Helper method to reset a search box to its placeholder state
