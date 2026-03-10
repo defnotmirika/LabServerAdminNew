@@ -746,13 +746,20 @@ namespace LabServerClient
             }
         }
 
-        // ✅ FIX: SystemParameters must be accessed on the UI thread
+        // AFTER (fixed - get screen dimensions on UI thread first):
         private (byte[] ImageBytes, int Width, int Height)? CaptureScreenFrame()
         {
             try
             {
-                var screenWidth = (int)SystemParameters.PrimaryScreenWidth;
-                var screenHeight = (int)SystemParameters.PrimaryScreenHeight;
+                // Get screen dimensions on UI thread
+                int screenWidth = 0;
+                int screenHeight = 0;
+
+                Dispatcher.Invoke(() =>
+                {
+                    screenWidth = (int)SystemParameters.PrimaryScreenWidth;
+                    screenHeight = (int)SystemParameters.PrimaryScreenHeight;
+                });
 
                 if (screenWidth <= 0 || screenHeight <= 0)
                 {
@@ -760,14 +767,32 @@ namespace LabServerClient
                     return null;
                 }
 
-                using var bitmap = new Bitmap(screenWidth, screenHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-                using (var graphics = Graphics.FromImage(bitmap))
+                using var bitmap = new System.Drawing.Bitmap(screenWidth, screenHeight,
+                    System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
                 {
-                    graphics.CopyFromScreen(0, 0, 0, 0, bitmap.Size, CopyPixelOperation.SourceCopy);
+                    graphics.CopyFromScreen(0, 0, 0, 0, bitmap.Size,
+                        System.Drawing.CopyPixelOperation.SourceCopy);
                 }
 
                 using var ms = new MemoryStream();
-                bitmap.Save(ms, ImageFormat.Jpeg);
+
+                // Use lower quality JPEG to reduce size and improve speed
+                var jpegEncoder = System.Drawing.Imaging.ImageCodecInfo
+                    .GetImageEncoders()
+                    .FirstOrDefault(e => e.FormatID == System.Drawing.Imaging.ImageFormat.Jpeg.Guid);
+
+                if (jpegEncoder != null)
+                {
+                    var encoderParams = new System.Drawing.Imaging.EncoderParameters(1);
+                    encoderParams.Param[0] = new System.Drawing.Imaging.EncoderParameter(
+                        System.Drawing.Imaging.Encoder.Quality, 50L); // 50% quality = smaller size
+                    bitmap.Save(ms, jpegEncoder, encoderParams);
+                }
+                else
+                {
+                    bitmap.Save(ms, System.Drawing.Imaging.ImageFormat.Jpeg);
+                }
 
                 var imageBytes = ms.ToArray();
 
