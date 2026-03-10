@@ -211,7 +211,9 @@
                     {
                         services.AddSingleton<DatabaseService>();
                         services.AddSingleton<TcpServerService>();
+                        services.AddSingleton<WakeOnLanService>();
                         services.AddSingleton<VoiceRecognitionService>();
+                        services.AddSingleton<VoiceSpeakerService>();
                     });
 
             private void SetupEventHandlers()
@@ -338,7 +340,35 @@
                 }
             }
 
-            private void SettingsButton_Click(object sender, RoutedEventArgs e)
+        private void VoiceEnrollButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new VoiceEnrollmentDialog(
+                _host.Services.GetRequiredService<VoiceSpeakerService>(),
+                _currentAdminUsername ?? "professor")
+            {
+                Owner = this
+            };
+
+            var result = dialog.ShowDialog();
+
+            if (result == true && dialog.WasEnrolled)
+            {
+                // Activate speaker verification with the newly saved profile
+                _voiceRecognitionService.SetCurrentUser(_currentAdminUsername);
+                UpdateStatus($"✅ Voice profile enrolled — verification active for {_currentAdminUsername}");
+
+                MessageBox.Show(
+                    "Voice profile saved!\n\n" +
+                    "✅ Speaker verification is now ACTIVE.\n\n" +
+                    "Only your voice will be accepted when Voice Commands are ON.\n" +
+                    "If commands are rejected, re-enroll from the Enroll Voice button.",
+                    "Enrollment Complete",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+        }
+
+        private void SettingsButton_Click(object sender, RoutedEventArgs e)
             {
                 var settingsDialog = new SessionSettingsDialog(_sessionTimeoutMinutes, _warningBeforeMinutes)
                 {

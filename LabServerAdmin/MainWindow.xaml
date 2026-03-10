@@ -269,6 +269,12 @@
                     <Button x:Name="VoiceToggleButton" Content="🎤 Voice Commands: OFF" Style="{StaticResource ModernButton}" 
                             BorderBrush="Black" BorderThickness="2" Click="VoiceToggleButton_Click" Margin="10,0,0,0"
                             Width="210"/>
+                    <Button x:Name="VoiceEnrollButton" 
+                            Content="🎙️ Enroll Voice" 
+                            Style="{StaticResource GoldButton}" 
+                            Click="VoiceEnrollButton_Click" 
+                            Margin="10,0,0,0"
+                            ToolTip="Enroll or re-enroll your voice profile for voice command verification"/>           
                     <Button x:Name="ServerToggleButton" Content="▶️ Start Server" Style="{StaticResource SuccessButton}" Click="ServerToggleButton_Click" Margin="10,0,0,0"/>
                     <Button x:Name="LogoutButton" Content="🚪 Logout" Style="{StaticResource GoldButton}" Click="LogoutButton_Click" Margin="10,0,0,0"/>
                 </StackPanel>

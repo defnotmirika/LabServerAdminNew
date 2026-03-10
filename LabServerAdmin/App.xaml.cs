@@ -102,8 +102,7 @@ namespace LabServerAdmin
                 .ConfigureServices((context, services) =>
                 {
                     services.AddSingleton<DatabaseService>();
-                    services.AddSingleton<TcpServerService>();
-                    services.AddSingleton<VoiceRecognitionService>();
+                    
                 });
 
         protected override void OnExit(ExitEventArgs e)
