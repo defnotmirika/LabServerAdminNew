@@ -563,35 +563,53 @@ namespace LabServerClient
         {
             try
             {
+
+
+                LogMessage($"[StartScreenShare] Called with parameters: {parameters ?? "null"}");
                 int interval = _screenShareIntervalMs;
 
                 if (!string.IsNullOrWhiteSpace(parameters))
                 {
+                    LogMessage($"[StartScreenShare] Deserializing parameters: {parameters}");
                     var request = JsonSerializer.Deserialize<ScreenStreamRequest>(parameters);
                     if (request?.Interval > 0)
                     {
                         interval = request.Interval;
+                        LogMessage($"[StartScreenShare] Interval set from parameters: {interval}");
                     }
                 }
 
                 interval = Math.Clamp(interval, 100, 2000);
+                LogMessage($"[StartScreenShare] Final interval: {interval}ms");
 
                 ResetScreenShareState();
 
-                if (_clientWindow == null || !_clientWindow.IsConnected())
+                if (_clientWindow == null)
                 {
+                    LogMessage("[StartScreenShare] ERROR: _clientWindow is null");
+                    return Task.FromResult<string?>("Screen streaming unavailable: client window is null");
+                }
+
+                if (!_clientWindow.IsConnected())
+                {
+                    LogMessage("[StartScreenShare] ERROR: ClientWindow is not connected");
                     return Task.FromResult<string?>("Screen streaming unavailable: client not connected");
                 }
+
+                LogMessage("[StartScreenShare] ClientWindow check passed, starting capture loop");
 
                 _screenShareIntervalMs = interval;
                 _screenShareCts = new CancellationTokenSource();
 
                 _ = Task.Run(() => CaptureScreenLoopAsync(_screenShareIntervalMs, _screenShareCts.Token));
 
-                return Task.FromResult<string?>($"Screen streaming started ({_screenShareIntervalMs} ms interval)");
+                var successMessage = $"Screen streaming started ({_screenShareIntervalMs} ms interval)";
+                LogMessage($"[StartScreenShare] {successMessage}");
+                return Task.FromResult<string?>(successMessage);
             }
             catch (Exception ex)
             {
+                LogMessage($"[StartScreenShare] EXCEPTION: {ex.Message}\nStack: {ex.StackTrace}");
                 return Task.FromResult<string?>($"Screen streaming error: {ex.Message}");
             }
         }
@@ -619,6 +637,9 @@ namespace LabServerClient
 
         private async Task CaptureScreenLoopAsync(int intervalMs, CancellationToken token)
         {
+            LogMessage($"[CaptureScreenLoop] Started with interval {intervalMs}ms");
+            int frameCount = 0;
+
             while (!token.IsCancellationRequested)
             {
                 try
@@ -626,19 +647,32 @@ namespace LabServerClient
                     var frame = CaptureScreenFrame();
                     if (frame != null)
                     {
+                        frameCount++;
+                        if (frameCount % 10 == 0) // Log every 10 frames to avoid spam
+                        {
+                            LogMessage($"[CaptureScreenLoop] Captured frame #{frameCount}, size: {frame.Value.ImageBytes.Length} bytes");
+                        }
+
                         var success = await SendScreenFrameAsync(frame.Value.ImageBytes, frame.Value.Width, frame.Value.Height, token);
                         if (!success)
                         {
+                            LogMessage("[CaptureScreenLoop] SendScreenFrameAsync returned false, stopping loop");
                             break;
                         }
+                    }
+                    else
+                    {
+                        LogMessage("[CaptureScreenLoop] CaptureScreenFrame returned null");
                     }
                 }
                 catch (OperationCanceledException)
                 {
+                    LogMessage("[CaptureScreenLoop] Cancelled");
                     break;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    LogMessage($"[CaptureScreenLoop] Exception: {ex.Message}");
                     try
                     {
                         await Task.Delay(TimeSpan.FromSeconds(1), token);
@@ -655,21 +689,25 @@ namespace LabServerClient
                 }
                 catch (TaskCanceledException)
                 {
+                    LogMessage("[CaptureScreenLoop] Task cancelled during delay");
                     break;
                 }
             }
+            LogMessage($"[CaptureScreenLoop] Stopped after {frameCount} frames");
         }
 
         private async Task<bool> SendScreenFrameAsync(byte[] imageBytes, int width, int height, CancellationToken token)
         {
             if (_clientWindow == null || !_clientWindow.IsConnected())
             {
+                LogMessage("[SendScreenFrame] ClientWindow is null or not connected");
                 return false;
             }
 
             var stream = _clientWindow.GetNetworkStream();
             if (stream == null)
             {
+                LogMessage("[SendScreenFrame] Network stream is null");
                 return false;
             }
 
@@ -697,10 +735,12 @@ namespace LabServerClient
             }
             catch (OperationCanceledException)
             {
+                LogMessage("[SendScreenFrame] Operation cancelled");
                 return false;
             }
-            catch
+            catch (Exception ex)
             {
+                LogMessage($"[SendScreenFrame] Exception: {ex.Message}");
                 return false;
             }
         }
@@ -1025,42 +1065,68 @@ namespace LabServerClient
 
         private async Task<string?> ExecuteCommand(string command, string? parameters)
         {
-            if (string.IsNullOrWhiteSpace(command))
-                return "Invalid command";
+            LogMessage($"[ExecuteCommand] Command: '{command}', Parameters: '{parameters ?? "null"}'");
 
+            if (string.IsNullOrWhiteSpace(command))
+            {
+                LogMessage("[ExecuteCommand] Invalid command - empty or null");
+                return "Invalid command";
+            }
+
+            var result = string.Empty;
             switch (command.Trim().ToLowerInvariant())
             {
                 case "lock":
-                    return await LockSystem();
+                    result = await LockSystem();
+                    break;
                 case "unlock":
-                    return await UnlockSystem();
+                    result = await UnlockSystem();
+                    break;
                 case "maintenance_lock":
-                    return await MaintenanceLockSystem(parameters);
+                    result = await MaintenanceLockSystem(parameters);
+                    break;
                 case "shutdown":
-                    return await ShutdownSystem();
+                    result = await ShutdownSystem();
+                    break;
                 case "restart":
-                    return await RestartSystem();
+                    result = await RestartSystem();
+                    break;
                 case "sleep":
-                    return await SleepSystem();
+                    result = await SleepSystem();
+                    break;
                 case "status":
-                    return await GetSystemStatus();
+                    result = await GetSystemStatus();
+                    break;
                 case "set_usage_limit":
-                    return await SetUsageLimit(parameters);
+                    result = await SetUsageLimit(parameters);
+                    break;
                 case "start_screen_stream":
-                    return await StartScreenShare(parameters);
+                    LogMessage("[ExecuteCommand] Calling StartScreenShare...");
+                    result = await StartScreenShare(parameters);
+                    LogMessage($"[ExecuteCommand] StartScreenShare returned: {result}");
+                    break;
                 case "stop_screen_stream":
-                    return await StopScreenShare();
+                    result = await StopScreenShare();
+                    break;
                 case "remote_input":
-                    return await HandleRemoteInput(parameters);
+                    result = await HandleRemoteInput(parameters);
+                    break;
                 case "force_logout":
-                    return await ForceLogout();
+                    result = await ForceLogout();
+                    break;
                 case "server_shutdown":
-                    return await HandleServerShutdown();
+                    result = await HandleServerShutdown();
+                    break;
                 case "update_config":
-                    return await UpdateConfiguration(parameters);
+                    result = await UpdateConfiguration(parameters);
+                    break;
                 default:
-                    return $"Unknown command: {command}";
+                    result = $"Unknown command: {command}";
+                    LogMessage($"[ExecuteCommand] Unknown command: {command}");
+                    break;
             }
+            LogMessage($"[ExecuteCommand] Result for '{command}': {result}");
+            return result;
         }
 
         private async Task<string> ForceLogout()

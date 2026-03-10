@@ -204,7 +204,6 @@ namespace LabServerClient.ViewModels
                 {
                     System.Diagnostics.Debug.WriteLine($"[LOGIN] PC mismatch detected");
                     PcMismatchDetected?.Invoke(Username, verificationResult.AssignedPcName);
-                    LoginCancelled?.Invoke();
                 }
                 else if (!string.IsNullOrWhiteSpace(verificationResult.ErrorMessage))
                 {
@@ -241,27 +240,37 @@ namespace LabServerClient.ViewModels
                     return false;
                 }
 
+                // Resolve actual studNo first
+                string studNo = Username;
+                try
+                {
+                    var resolved = await ResolveStudNoAsync(Username);
+                    if (!string.IsNullOrWhiteSpace(resolved))
+                        studNo = resolved;
+                }
+                catch { /* fallback to Username */ }
+
+                var message = $"Student '{studNo}' requesting login access from PC '{CurrentPcName}'";
+
                 var requestId = await _databaseService.CreateLoginRequestAsync(
-                    studNo: Username,
+                    studNo: studNo,
                     clientName: CurrentPcName,
                     ipAddress: null,
-                    requestMessage: $"Student '{Username}' requesting access from PC '{CurrentPcName}'"
+                    requestMessage: message
                 );
 
                 if (requestId.HasValue)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[LOGIN_REQUEST] Request created with ID: {requestId.Value}");
+                    System.Diagnostics.Debug.WriteLine($"[LOGIN_REQUEST] Request created: ID={requestId.Value}, studNo={studNo}, PC={CurrentPcName}");
                     return true;
                 }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine("[LOGIN_REQUEST] Failed to create request");
-                    return false;
-                }
+
+                System.Diagnostics.Debug.WriteLine("[LOGIN_REQUEST] CreateLoginRequestAsync returned null");
+                return false;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[LOGIN_REQUEST] Error sending login request: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[LOGIN_REQUEST] Exception: {ex.Message}");
                 return false;
             }
         }

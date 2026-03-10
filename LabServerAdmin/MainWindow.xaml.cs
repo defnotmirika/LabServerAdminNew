@@ -43,6 +43,7 @@
             private readonly DispatcherTimer _uptimeTimer;
             private readonly DispatcherTimer _scheduleEndTimer;
             private readonly DispatcherTimer _inactivityTimer;
+            private readonly DispatcherTimer _loginRequestsRefreshTimer;
             private DateTime _lastActivityTime;
             private int _sessionTimeoutMinutes = 15;
             private int _warningBeforeMinutes = 1;
