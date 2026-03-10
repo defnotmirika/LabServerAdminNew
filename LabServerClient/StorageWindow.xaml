@@ -5,23 +5,26 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="My Storage"
-        Height="520"
-        Width="720"
+        Height="650"
+        Width="900"
         WindowStartupLocation="CenterOwner"
-        Background="#050d60"
+        ResizeMode="NoResize"
+        Background="#F5F7FA"
         AllowDrop="True"
         DragOver="Window_DragOver"
         Drop="Window_Drop">
     <Window.Resources>
         <SolidColorBrush x:Key="PrimaryBrush" Color="#050d60" />
         <SolidColorBrush x:Key="AccentBrush" Color="#f8b800" />
+
         <Style x:Key="AccentButton" TargetType="Button">
             <Setter Property="Background" Value="{StaticResource AccentBrush}" />
-            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
+            <Setter Property="Foreground" Value="White" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Height" Value="32" />
-            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="Padding" Value="16,8" />
+            <Setter Property="FontSize" Value="14" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -47,54 +50,289 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="IconButton" TargetType="Button">
+            <Setter Property="Background" Value="#E8EAF0" />
+            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Width" Value="40" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#D4D7E0" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#C0C4D0" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ActionButton" TargetType="Button">
+            <Setter Property="Background" Value="#050d60" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontWeight" Value="Medium" />
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#0a1580" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DeleteButton" TargetType="Button" BasedOn="{StaticResource ActionButton}">
+            <Setter Property="Background" Value="#E53935" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#C62828" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
-    <Grid Margin="12">
-        <Border Background="White" CornerRadius="10" Padding="14">
+
+    <Grid Margin="25">
+        <Border Background="White" 
+                CornerRadius="16" 
+                Padding="0">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="20" 
+                                  ShadowDepth="0" 
+                                  Opacity="0.1" 
+                                  Color="#000000"/>
+            </Border.Effect>
+
             <Grid>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <Grid Grid.Row="0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="My Storage" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" />
-                    <TextBlock x:Name="OwnerText" Grid.Column="1" FontSize="12" Foreground="{StaticResource PrimaryBrush}" Margin="10,0,0,0" HorizontalAlignment="Right"/>
-                </Grid>
+                <!-- Header Section -->
+                <Border Grid.Row="0" 
+                        Background="{StaticResource PrimaryBrush}" 
+                        CornerRadius="16,16,0,0"
+                        Padding="30,25">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
 
-                <StackPanel Orientation="Horizontal" Grid.Row="1" Margin="0,10,0,10" HorizontalAlignment="Left">
-                    <Button Content="Upload Files" Width="120" Style="{StaticResource AccentButton}" Margin="0,0,12,0" Click="UploadButton_Click"/>
-                    <Button Content="🔄" Width="40" Style="{StaticResource AccentButton}" Margin="0,0,12,0" Click="RefreshButton_Click" ToolTip="Refresh"/>
-                    <TextBlock Text="Drag and drop files to upload" VerticalAlignment="Center" Foreground="{StaticResource PrimaryBrush}" Margin="12,0,0,0"/>
-                </StackPanel>
+                        <!-- Storage Icon -->
+                        <Border Background="#0a1580"
+                                Width="50"
+                                Height="50"
+                                CornerRadius="12"
+                                Margin="0,0,15,0">
+                            <TextBlock Text="📁"
+                                      FontSize="28"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"/>
+                        </Border>
 
-                <DataGrid x:Name="FilesGrid" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False"
-                          ItemsSource="{Binding Files}" IsReadOnly="True" HeadersVisibility="Column"
-                          SelectionMode="Single" Margin="0,0,0,0">
+                        <!-- Title -->
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Text="My Storage" 
+                                      FontSize="26" 
+                                      FontWeight="Bold" 
+                                      Foreground="White" />
+                            <TextBlock Text="Manage your files and documents" 
+                                      FontSize="13" 
+                                      Foreground="#B0C4DE" 
+                                      Margin="0,3,0,0"/>
+                        </StackPanel>
+
+                        <!-- Owner Info -->
+                        <Border Grid.Column="2" 
+                                Background="#0a1580"
+                                CornerRadius="8"
+                                Padding="12,8">
+                            <TextBlock x:Name="OwnerText" 
+                                      FontSize="12" 
+                                      Foreground="White" 
+                                      FontWeight="SemiBold"/>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- Action Bar -->
+                <Border Grid.Row="1" 
+                        Background="#F8F9FA"
+                        Padding="30,20">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="📤 Upload Files" 
+                                   Width="150" 
+                                   Style="{StaticResource AccentButton}" 
+                                   Margin="0,0,12,0" 
+                                   Click="UploadButton_Click"/>
+                            <Button Content="🔄" 
+                                   Style="{StaticResource IconButton}" 
+                                   Margin="0,0,12,0" 
+                                   Click="RefreshButton_Click" 
+                                   ToolTip="Refresh file list"/>
+                        </StackPanel>
+
+                        <!-- Drag & Drop Info -->
+                        <Border Grid.Column="1" 
+                                Background="White"
+                                BorderBrush="#E0E0E0"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="15,10"
+                                HorizontalAlignment="Right">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="💡" 
+                                          FontSize="16" 
+                                          Margin="0,0,8,0"/>
+                                <TextBlock Text="Drag and drop files here to upload" 
+                                          VerticalAlignment="Center" 
+                                          Foreground="#666666"
+                                          FontSize="13"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- Divider -->
+                <Border Grid.Row="2" 
+                        Height="1" 
+                        Background="#E0E0E0" 
+                        Margin="30,0"/>
+
+                <!-- File List -->
+                <DataGrid x:Name="FilesGrid" 
+                         Grid.Row="3" 
+                         AutoGenerateColumns="False" 
+                         CanUserAddRows="False"
+                         ItemsSource="{Binding Files}" 
+                         IsReadOnly="True" 
+                         HeadersVisibility="Column"
+                         SelectionMode="Single" 
+                         Margin="30,20,30,30"
+                         BorderThickness="0"
+                         Background="White"
+                         RowBackground="White"
+                         AlternatingRowBackground="#FAFAFA"
+                         GridLinesVisibility="None"
+                         CanUserResizeRows="False"
+                         FontSize="13">
+                    <DataGrid.Resources>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#F8F9FA"/>
+                            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="FontSize" Value="13"/>
+                            <Setter Property="Padding" Value="15,12"/>
+                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                            <Setter Property="BorderBrush" Value="#E0E0E0"/>
+                        </Style>
+                        <Style TargetType="DataGridCell">
+                            <Setter Property="Padding" Value="15,10"/>
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="DataGridCell">
+                                        <Border Padding="{TemplateBinding Padding}" 
+                                               Background="{TemplateBinding Background}">
+                                            <ContentPresenter VerticalAlignment="Center"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                        <Style TargetType="DataGridRow">
+                            <Setter Property="Height" Value="50"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#F0F4FF"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.Resources>
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="Filename" Binding="{Binding FileName}" Width="2*"/>
-                        <DataGridTextColumn Header="Type" Binding="{Binding FileType}" Width="*"/>
-                        <DataGridTextColumn Header="Size" Binding="{Binding FormattedSize}" Width="*"/>
-                        <DataGridTextColumn Header="Uploaded" Binding="{Binding UploadDate, StringFormat=MM/dd/yyyy HH:mm}" Width="*"/>
-                        <DataGridTemplateColumn Header="Actions" Width="180">
-                            <DataGridTemplateColumn.HeaderTemplate>
-                                <DataTemplate/>
-                            </DataGridTemplateColumn.HeaderTemplate>
+                        <DataGridTextColumn Header="📄 Filename" Binding="{Binding FileName}" Width="2.5*">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="FontWeight" Value="Medium"/>
+                                    <Setter Property="Foreground" Value="#2C3E50"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="📋 Type" Binding="{Binding FileType}" Width="1*">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="#7F8C8D"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="📊 Size" Binding="{Binding FormattedSize}" Width="1*">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="#7F8C8D"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="📅 Uploaded" Binding="{Binding UploadDate, StringFormat=MM/dd/yyyy HH:mm}" Width="1.5*">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="#7F8C8D"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTemplateColumn Header="⚙️ Actions" Width="220">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal">
-                                        <StackPanel.Resources>
-                                            <Style TargetType="Button">
-                                                <Setter Property="Margin" Value="0,0,6,0" />
-                                            </Style>
-                                        </StackPanel.Resources>
-                                        <Button Content="Download" Padding="6,2" Click="DownloadButton_Click" Tag="{Binding}" />
-                                        <Button Content="Rename" Padding="6,2" Click="RenameButton_Click" Tag="{Binding}" />
-                                        <Button Content="Delete" Padding="6,2" Background="#E53935" Foreground="White" BorderThickness="0" Click="DeleteButton_Click" Tag="{Binding}"/>
+                                        <Button Content="⬇ Download" 
+                                               Style="{StaticResource ActionButton}"
+                                               Click="DownloadButton_Click" 
+                                               Tag="{Binding}" />
+                                        <Button Content="✏️ Rename" 
+                                               Style="{StaticResource ActionButton}"
+                                               Click="RenameButton_Click" 
+                                               Tag="{Binding}" />
+                                        <Button Content="🗑️ Delete" 
+                                               Style="{StaticResource DeleteButton}"
+                                               Click="DeleteButton_Click" 
+                                               Tag="{Binding}"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>

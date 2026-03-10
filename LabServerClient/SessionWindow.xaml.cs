@@ -691,7 +691,7 @@ namespace LabServerClient
 
             try
             {
-                await stream.WriteAsync(data.AsMemory(0, data.Length), token);
+                await stream.WriteAsync(data.AsMemory(), token);
                 await stream.FlushAsync(token);
                 return true;
             }
@@ -708,15 +708,8 @@ namespace LabServerClient
         // ✅ FIX: SystemParameters must be accessed on the UI thread
         private (byte[] ImageBytes, int Width, int Height)? CaptureScreenFrame()
         {
-            int screenWidth = 0, screenHeight = 0;
-
-            Dispatcher.Invoke(() =>
-            {
-                screenWidth = (int)SystemParameters.PrimaryScreenWidth;
-                screenHeight = (int)SystemParameters.PrimaryScreenHeight;
-            });
-
-            if (screenWidth == 0 || screenHeight == 0) return null;
+            var screenWidth = (int)SystemParameters.PrimaryScreenWidth;
+            var screenHeight = (int)SystemParameters.PrimaryScreenHeight;
 
             using var bitmap = new Bitmap(screenWidth, screenHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             using (var graphics = Graphics.FromImage(bitmap))
@@ -887,14 +880,14 @@ namespace LabServerClient
 
         private async Task ListenForCommands()
         {
-            var buffer = new byte[4096];
+            var buffer = new byte[8192];
             var messageBuilder = new StringBuilder();
 
             while (_isConnected && _stream != null)
             {
                 try
                 {
-                    var bytesRead = await _stream.ReadAsync(buffer, 0, buffer.Length);
+                    var bytesRead = await _stream.ReadAsync(buffer.AsMemory());
                     if (bytesRead == 0) break;
 
                     var message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
@@ -1430,7 +1423,7 @@ namespace LabServerClient
 
                 if (_stream != null)
                 {
-                    await _stream.WriteAsync(data, 0, data.Length);
+                    await _stream.WriteAsync(data.AsMemory());
                     await _stream.FlushAsync();
                 }
 

@@ -88,13 +88,19 @@ namespace LabServerAdmin.Services
             string? clientName = null;
             try
             {
+
+                client.NoDelay = true;
+                client.SendBufferSize = 8192;
+                client.ReceiveBufferSize = 8192;
+                client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+
                 var stream = client.GetStream();
-                var buffer = new byte[65536];
+                var buffer = new byte[8192];
                 var messageBuilder = new StringBuilder();
 
                 while (client.Connected)
                 {
-                    var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
+                    var bytesRead = await stream.ReadAsync(buffer.AsMemory());
                     if (bytesRead == 0) break;
 
                     var message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
@@ -350,7 +356,7 @@ namespace LabServerAdmin.Services
                 var message = JsonSerializer.Serialize(commandMessage);
                 var data = Encoding.UTF8.GetBytes(message + "\n");
 
-                await stream.WriteAsync(data, 0, data.Length);
+                await stream.WriteAsync(data.AsMemory());
                 await stream.FlushAsync();
 
                 await _databaseService.LogSystemActionAsync($"Command Sent: {command}", clientName, "Success", parameters);
