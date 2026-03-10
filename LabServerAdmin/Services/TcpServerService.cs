@@ -88,81 +88,67 @@ namespace LabServerAdmin.Services
             string? clientName = null;
             try
             {
-
                 client.NoDelay = true;
-                client.SendBufferSize = 4 * 1024 * 1024;  
-                client.ReceiveBufferSize = 4 * 1024 * 1024; 
+                client.SendBufferSize = 4 * 1024 * 1024;
+                client.ReceiveBufferSize = 4 * 1024 * 1024;
                 client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
 
                 var stream = client.GetStream();
-                var buffer = new byte[4 *1024 * 1024];
                 var messageBuilder = new StringBuilder();
+                var buffer = new byte[4 * 1024 * 1024]; // 4MB buffer
 
                 while (client.Connected)
                 {
                     var bytesRead = await stream.ReadAsync(buffer.AsMemory());
                     if (bytesRead == 0) break;
 
-                    var message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                    messageBuilder.Append(message);
+                    messageBuilder.Append(Encoding.UTF8.GetString(buffer, 0, bytesRead));
 
-                    // Process complete messages (assuming they end with newline)
+                    // Process all complete newline-terminated messages
                     var fullMessage = messageBuilder.ToString();
-                    var lines = fullMessage.Split('\n');
+                    var startIndex = 0;
 
-                    // Process all complete lines (those that end with \n)
-                    // Keep the last line in the builder if it doesn't end with \n (partial message)
-                    for (int i = 0; i < lines.Length - 1; i++)
+                    while (true)
                     {
-                        var line = lines[i].Trim();
-                        if (!string.IsNullOrWhiteSpace(line))
+                        var newlineIndex = fullMessage.IndexOf('\n', startIndex);
+                        if (newlineIndex == -1) break;
+
+                        var lineLength = newlineIndex - startIndex;
+                        if (lineLength > 0)
                         {
-                            // Extract clientName from registration messages for tracking
-                            if (clientName == null && (line.Contains("\"type\":\"register\"", StringComparison.OrdinalIgnoreCase) || 
-                                                       line.Contains("\"type\":\"register\"", StringComparison.OrdinalIgnoreCase)))
+                            var line = fullMessage.Substring(startIndex, lineLength).Trim();
+                            if (!string.IsNullOrWhiteSpace(line))
                             {
-                                try
+                                // Extract clientName early for tracking
+                                if (clientName == null && line.Contains("\"type\":\"register\"",
+                                    StringComparison.OrdinalIgnoreCase))
                                 {
-                                    var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                                    var msg = JsonSerializer.Deserialize<ClientMessage>(line, options);
-                                    if (msg != null)
+                                    try
                                     {
-                                        if (!string.IsNullOrWhiteSpace(msg.ClientName))
-                                        {
-                                            clientName = msg.ClientName;
-                                        }
-                                        else
-                                        {
-                                            // Try to extract from JSON directly
-                                            using var doc = JsonDocument.Parse(line);
-                                            if (doc.RootElement.TryGetProperty("clientName", out var clientNameElement))
-                                            {
-                                                clientName = clientNameElement.GetString();
-                                            }
-                                        }
+                                        using var doc = JsonDocument.Parse(line);
+                                        if (doc.RootElement.TryGetProperty("clientName", out var cn))
+                                            clientName = cn.GetString();
                                     }
+                                    catch { }
                                 }
-                                catch
-                                {
-                                    // Ignore parsing errors here - ProcessMessageAsync will handle it
-                                }
+
+                                await ProcessMessageAsync(line, client);
                             }
-                            
-                            await ProcessMessageAsync(line, client);
                         }
+
+                        startIndex = newlineIndex + 1;
                     }
 
-                    // Keep the last line (which might be partial) in the builder
+                    // Keep partial message for next read
                     messageBuilder.Clear();
-                    if (lines.Length > 0 && !fullMessage.EndsWith('\n'))
-                    {
-                        messageBuilder.Append(lines[lines.Length - 1]);
-                    }
+                    if (startIndex < fullMessage.Length)
+                        messageBuilder.Append(fullMessage.AsSpan(startIndex));
                 }
             }
             catch (Exception ex)
             {
-                await _databaseService.LogSystemActionAsync("Client Communication Error", clientName ?? "Unknown", "Error", ex.Message);
+                await _databaseService.LogSystemActionAsync("Client Communication Error",
+                    clientName ?? "Unknown", "Error", ex.Message);
             }
             finally
             {

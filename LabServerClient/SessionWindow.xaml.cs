@@ -43,6 +43,8 @@ namespace LabServerClient
         private bool _hasPendingLogoutRequest = false;
         private readonly DispatcherTimer _serverStartCheckTimer;
         private bool _isWaitingForServerStart = false;
+        private DispatcherTimer? _screenShareTimer;
+
 
         public event EventHandler<string>? CurrentCommandChanged;
 
@@ -564,76 +566,90 @@ namespace LabServerClient
         {
             try
             {
-
-
                 LogMessage($"[StartScreenShare] Called with parameters: {parameters ?? "null"}");
                 int interval = _screenShareIntervalMs;
 
                 if (!string.IsNullOrWhiteSpace(parameters))
                 {
-                    LogMessage($"[StartScreenShare] Deserializing parameters: {parameters}");
                     var request = JsonSerializer.Deserialize<ScreenStreamRequest>(parameters);
                     if (request?.Interval > 0)
-                    {
                         interval = request.Interval;
-                        LogMessage($"[StartScreenShare] Interval set from parameters: {interval}");
-                    }
                 }
 
                 interval = Math.Clamp(interval, 100, 2000);
-                LogMessage($"[StartScreenShare] Final interval: {interval}ms");
-
-                ResetScreenShareState();
-
-                if (_clientWindow == null)
-                {
-                    LogMessage("[StartScreenShare] ERROR: _clientWindow is null");
-                    return Task.FromResult<string?>("Screen streaming unavailable: client window is null");
-                }
-
-                if (!_clientWindow.IsConnected())
-                {
-                    LogMessage("[StartScreenShare] ERROR: ClientWindow is not connected");
-                    return Task.FromResult<string?>("Screen streaming unavailable: client not connected");
-                }
-
-                LogMessage("[StartScreenShare] ClientWindow check passed, starting capture loop");
-
                 _screenShareIntervalMs = interval;
+
+                // Stop existing timer if any
+                _screenShareTimer?.Stop();
+                _screenShareTimer = null;
+                _screenShareCts?.Cancel();
+                _screenShareCts?.Dispose();
                 _screenShareCts = new CancellationTokenSource();
 
-                _ = Task.Run(() => CaptureScreenLoopAsync(_screenShareIntervalMs, _screenShareCts.Token));
+                if (_clientWindow == null || !_clientWindow.IsConnected())
+                    return Task.FromResult<string?>("Screen streaming unavailable: client not connected");
 
-                var successMessage = $"Screen streaming started ({_screenShareIntervalMs} ms interval)";
-                LogMessage($"[StartScreenShare] {successMessage}");
-                return Task.FromResult<string?>(successMessage);
+                // Use DispatcherTimer — runs on UI thread, no cross-thread issues
+                _screenShareTimer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(interval)
+                };
+
+                int frameCount = 0;
+                _screenShareTimer.Tick += async (s, e) =>
+                {
+                    if (_screenShareCts == null || _screenShareCts.IsCancellationRequested)
+                    {
+                        _screenShareTimer?.Stop();
+                        return;
+                    }
+
+                    try
+                    {
+                        // Already on UI thread — no Dispatcher needed
+                        var frame = CaptureScreenFrame();
+                        if (frame != null)
+                        {
+                            frameCount++;
+                            if (frameCount % 10 == 0)
+                                LogMessage($"[ScreenShare] Frame #{frameCount}, size: {frame.Value.ImageBytes.Length} bytes");
+
+                            await SendScreenFrameAsync(frame.Value.ImageBytes, frame.Value.Width, frame.Value.Height, _screenShareCts.Token);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LogMessage($"[ScreenShare] Tick error: {ex.Message}");
+                    }
+                };
+
+                _screenShareTimer.Start();
+                LogMessage($"[StartScreenShare] DispatcherTimer started ({interval}ms interval)");
+                return Task.FromResult<string?>("Screen streaming started");
             }
             catch (Exception ex)
             {
-                LogMessage($"[StartScreenShare] EXCEPTION: {ex.Message}\nStack: {ex.StackTrace}");
+                LogMessage($"[StartScreenShare] EXCEPTION: {ex.Message}");
                 return Task.FromResult<string?>($"Screen streaming error: {ex.Message}");
             }
         }
 
         public Task<string?> StopScreenShare()
         {
-            if (_screenShareCts == null)
-            {
-                return Task.FromResult<string?>("Screen streaming already stopped");
-            }
-
+            _screenShareTimer?.Stop();
+            _screenShareTimer = null;
             ResetScreenShareState();
+            LogMessage("[StopScreenShare] Stopped");
             return Task.FromResult<string?>("Screen streaming stopped");
         }
 
         private void ResetScreenShareState()
         {
-            if (_screenShareCts != null)
-            {
-                _screenShareCts.Cancel();
-                _screenShareCts.Dispose();
-                _screenShareCts = null;
-            }
+            _screenShareTimer?.Stop();
+            _screenShareTimer = null;
+            _screenShareCts?.Cancel();
+            _screenShareCts?.Dispose();
+            _screenShareCts = null;
         }
 
         private async Task CaptureScreenLoopAsync(int intervalMs, CancellationToken token)
@@ -695,55 +711,6 @@ namespace LabServerClient
                 }
             }
             LogMessage($"[CaptureScreenLoop] Stopped after {frameCount} frames");
-        }
-
-        private async Task<bool> SendScreenFrameAsync(byte[] imageBytes, int width, int height, CancellationToken token)
-        {
-            if (_clientWindow == null || !_clientWindow.IsConnected())
-            {
-                LogMessage("[SendScreenFrame] ClientWindow is null or not connected");
-                return false;
-            }
-
-            var stream = _clientWindow.GetNetworkStream();
-            if (stream == null)
-            {
-                LogMessage("[SendScreenFrame] Network stream is null");
-                return false;
-            }
-
-            var message = new
-            {
-                type = "screen",
-                clientName = _clientWindow.GetClientName(),
-                data = Convert.ToBase64String(imageBytes),
-                timestamp = DateTime.UtcNow,
-                metadata = new Dictionary<string, string>
-                {
-                    ["width"] = width.ToString(CultureInfo.InvariantCulture),
-                    ["height"] = height.ToString(CultureInfo.InvariantCulture)
-                }
-            };
-
-            var json = JsonSerializer.Serialize(message);
-            var data = Encoding.UTF8.GetBytes(json + "\n");
-
-            try
-            {
-                await stream.WriteAsync(data.AsMemory(), token);
-                await stream.FlushAsync(token);
-                return true;
-            }
-            catch (OperationCanceledException)
-            {
-                LogMessage("[SendScreenFrame] Operation cancelled");
-                return false;
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"[SendScreenFrame] Exception: {ex.Message}");
-                return false;
-            }
         }
 
         // AFTER (fixed - get screen dimensions on UI thread first):
@@ -811,6 +778,58 @@ namespace LabServerClient
             }
         }
 
+
+
+        private async Task<bool> SendScreenFrameAsync(byte[] imageBytes, int width, int height, CancellationToken token)
+        {
+            if (_clientWindow == null || !_clientWindow.IsConnected())
+            {
+                LogMessage("[SendScreenFrame] ClientWindow is null or not connected");
+                return false;
+            }
+
+            var stream = _clientWindow.GetNetworkStream();
+            if (stream == null)
+            {
+                LogMessage("[SendScreenFrame] Network stream is null");
+                return false;
+            }
+
+            var message = new
+            {
+                type = "screen",
+                clientName = _clientWindow.GetClientName(),
+                data = Convert.ToBase64String(imageBytes),
+                timestamp = DateTime.UtcNow,
+                metadata = new Dictionary<string, string>
+                {
+                    ["width"] = width.ToString(CultureInfo.InvariantCulture),
+                    ["height"] = height.ToString(CultureInfo.InvariantCulture)
+                }
+            };
+
+            var json = JsonSerializer.Serialize(message);
+            var data = Encoding.UTF8.GetBytes(json + "\n");
+
+            try
+            {
+                await stream.WriteAsync(data.AsMemory(), token);
+                await stream.FlushAsync(token);
+                return true;
+            }
+            catch (OperationCanceledException)
+            {
+                LogMessage("[SendScreenFrame] Operation cancelled");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"[SendScreenFrame] Exception: {ex.Message}");
+                return false;
+            }
+        }
+
+       
         public Task<string?> HandleRemoteInput(string? parameters)
         {
             if (string.IsNullOrWhiteSpace(parameters))
