@@ -327,16 +327,17 @@ namespace LabServerClient
                 return;
             }
 
+            // Store stream reference for SENDING screen data only
+            // ClientWindow already handles receiving commands and forwards to SessionWindow
             _stream = _clientWindow.GetNetworkStream();
             if (_stream != null)
             {
                 _isConnected = true;
-                LogMessage("TCP listening initialized - starting command listener");
-                _ = Task.Run(() => ListenForCommands());
+                LogMessage("TCP initialized - screen sending ready (ClientWindow handles receiving)");
             }
             else
             {
-                LogMessage("TCP listening failed - network stream is null");
+                LogMessage("TCP stream is null - screen sharing unavailable");
             }
         }
 
@@ -942,7 +943,7 @@ namespace LabServerClient
 
         private async Task ListenForCommands()
         {
-            var buffer = new byte[8192];
+            var buffer = new byte[4 * 1024 * 1024];
             var messageBuilder = new StringBuilder();
 
             while (_isConnected && _stream != null)
