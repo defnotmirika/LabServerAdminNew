@@ -32,7 +32,7 @@ namespace LabServerAdmin.Services
         private const int Channels = 1;      // Mono
         private const int RecordingSeconds = 3;      // Duration per sample
         private const int MfccCoefficients = 13;     // Standard MFCC count
-        private const double VerifyThreshold = 0.60; // 60% similarity required
+        private const double VerifyThreshold = 0.82; // 60% similarity required
 
         // ── Enrollment phrases — short to match actual command length ────────
         public static readonly string[] EnrollmentPhrases = new[]

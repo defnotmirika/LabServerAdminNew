@@ -188,7 +188,12 @@ using System.Windows.Media.Imaging;
                     await RefreshLoginRequests();
                     // Load class list when application starts
                     await RefreshClassList();
+
+                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                {
+                    _voiceRecognitionService.SetCurrentUser(_currentAdminUsername);
                 }
+            }
                 catch (Exception ex)
                 {
                     MessageBox.Show($"Initialization error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -229,11 +234,13 @@ using System.Windows.Media.Imaging;
             
                 _voiceRecognitionService.VoiceCommandRecognized += OnVoiceCommandRecognized;
                 _voiceRecognitionService.RecognitionError += OnRecognitionError;
-            }
+                _voiceRecognitionService.VoiceRejected += OnVoiceRejected;
 
-            #region Server Control Events
+        }
 
-            private async void ServerToggleButton_Click(object sender, RoutedEventArgs e)
+        #region Server Control Events
+
+        private async void ServerToggleButton_Click(object sender, RoutedEventArgs e)
             {
                 try
                 {
@@ -1098,11 +1105,34 @@ using System.Windows.Media.Imaging;
                 });
             }
 
-            #endregion
 
-            #region Helper Methods
+        private void OnVoiceRejected(object? sender, string message)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                VoiceRejectionText.Text = message;
+                VoiceRejectionBanner.Visibility = Visibility.Visible;
+                UpdateStatus(message);
 
-            private Task RefreshConnectedClients()
+                // Auto-hide banner after 4 seconds
+                var timer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromSeconds(4)
+                };
+                timer.Tick += (s, e) =>
+                {
+                    VoiceRejectionBanner.Visibility = Visibility.Collapsed;
+                    timer.Stop();
+                };
+                timer.Start();
+            });
+        }
+
+        #endregion
+
+        #region Helper Methods
+
+        private Task RefreshConnectedClients()
             {
                 try
                 {

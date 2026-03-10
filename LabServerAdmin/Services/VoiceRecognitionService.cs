@@ -24,6 +24,7 @@ namespace LabServerAdmin.Services
 
         public event EventHandler<VoiceCommandEventArgs>? VoiceCommandRecognized;
         public event EventHandler<string>? RecognitionError;
+        public event EventHandler<string>? VoiceRejected;
 
         private static readonly Dictionary<string, int> _wordNumbers = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -243,7 +244,7 @@ namespace LabServerAdmin.Services
                 }
 
                 // ── SPEAKER VERIFICATION ─────────────────────────────────────────
-                if (false && _verificationEnabled && !string.IsNullOrWhiteSpace(_currentUser))
+                if (_verificationEnabled && !string.IsNullOrWhiteSpace(_currentUser))
                 {
                     try
                     {
@@ -264,6 +265,7 @@ namespace LabServerAdmin.Services
                         if (!isMatch)
                         {
                             RecognitionError?.Invoke(this, "🚫 Command rejected — voice not recognized.");
+                            VoiceRejected?.Invoke(this, $"❌ Unknown voice detected! (score: {score:P0}) — Command blocked.");
                             return;
                         }
                     }
