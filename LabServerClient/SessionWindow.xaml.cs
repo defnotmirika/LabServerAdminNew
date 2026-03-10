@@ -708,19 +708,53 @@ namespace LabServerClient
         // ✅ FIX: SystemParameters must be accessed on the UI thread
         private (byte[] ImageBytes, int Width, int Height)? CaptureScreenFrame()
         {
-            var screenWidth = (int)SystemParameters.PrimaryScreenWidth;
-            var screenHeight = (int)SystemParameters.PrimaryScreenHeight;
+            int screenWidth = 0;
+            int screenHeight = 0;
 
-            using var bitmap = new Bitmap(screenWidth, screenHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-            using (var graphics = Graphics.FromImage(bitmap))
+            // SystemParameters must be accessed on UI thread
+            Dispatcher.Invoke(() =>
             {
-                graphics.CopyFromScreen(0, 0, 0, 0, bitmap.Size, CopyPixelOperation.SourceCopy);
+                screenWidth = (int)SystemParameters.PrimaryScreenWidth;
+                screenHeight = (int)SystemParameters.PrimaryScreenHeight;
+            });
+
+            if (screenWidth == 0 || screenHeight == 0)
+                return null;
+
+            try
+            {
+                using var bitmap = new Bitmap(screenWidth, screenHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                using (var graphics = Graphics.FromImage(bitmap))
+                {
+                    graphics.CopyFromScreen(0, 0, 0, 0, bitmap.Size, CopyPixelOperation.SourceCopy);
+                }
+
+                using var ms = new MemoryStream();
+
+                // Use JPEG with reduced quality to keep frame size small and fast
+                var jpegEncoder = System.Drawing.Imaging.ImageCodecInfo
+                    .GetImageEncoders()
+                    .FirstOrDefault(e => e.FormatID == ImageFormat.Jpeg.Guid);
+
+                if (jpegEncoder != null)
+                {
+                    var encoderParams = new System.Drawing.Imaging.EncoderParameters(1);
+                    encoderParams.Param[0] = new System.Drawing.Imaging.EncoderParameter(
+                        System.Drawing.Imaging.Encoder.Quality, 40L); // 40% — visible but small
+                    bitmap.Save(ms, jpegEncoder, encoderParams);
+                }
+                else
+                {
+                    bitmap.Save(ms, ImageFormat.Jpeg); // fallback
+                }
+
+                return (ms.ToArray(), screenWidth, screenHeight);
             }
-
-            using var ms = new MemoryStream();
-            bitmap.Save(ms, ImageFormat.Jpeg);
-
-            return (ms.ToArray(), screenWidth, screenHeight);
+            catch (Exception ex)
+            {
+                LogMessage($"Screen capture error: {ex.Message}");
+                return null;
+            }
         }
 
         public Task<string?> HandleRemoteInput(string? parameters)

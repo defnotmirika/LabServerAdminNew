@@ -90,12 +90,12 @@ namespace LabServerAdmin.Services
             {
 
                 client.NoDelay = true;
-                client.SendBufferSize = 8192;
-                client.ReceiveBufferSize = 8192;
+                client.SendBufferSize = 1024 * 1024;  
+                client.ReceiveBufferSize = 1024 * 1024; 
                 client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
 
                 var stream = client.GetStream();
-                var buffer = new byte[8192];
+                var buffer = new byte[1024 * 1024];
                 var messageBuilder = new StringBuilder();
 
                 while (client.Connected)

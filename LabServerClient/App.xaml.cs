@@ -39,7 +39,6 @@ namespace LabServerClient
                 var sessionWindow = new SessionWindow(clientWindow, clientId, _databaseService);
                 sessionWindow.SetUsername(username ?? string.Empty);
                 clientWindow.SetSessionWindow(sessionWindow); // Set reference for remote viewing
-                sessionWindow.InitializeTcpListening(); // Initialize TCP command listening
                 sessionWindow.Show();
                 sessionWindow.Activate();
                 sessionWindow.Focus();
@@ -113,7 +112,6 @@ namespace LabServerClient
                             var sessionWindow = new SessionWindow(clientWindow, clientId, _databaseService);
                             sessionWindow.SetUsername(username ?? string.Empty);
                             clientWindow.SetSessionWindow(sessionWindow); // Set reference for remote viewing
-                            sessionWindow.InitializeTcpListening(); // Initialize TCP command listening
                             sessionWindow.Show();
                             sessionWindow.Activate();
                             sessionWindow.Focus();
