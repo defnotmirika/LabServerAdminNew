@@ -454,14 +454,14 @@ namespace LabServerClient
         {
             if (string.IsNullOrEmpty(command)) return;
 
-            LogMessage($"Executing command: {command} | Parameters: {parameters ?? "null"}");
+            LogMessage($"Executing command: {command}" + (parameters != null ? $" with parameters: {parameters}" : ""));
 
             try
             {
                 // If SessionWindow exists, forward command to it (the visible student window)
                 if (_sessionWindow != null)
                 {
-                    LogMessage($"Forwarding command '{command}' to SessionWindow");
+                    LogMessage($"Forwarding command '{command}' to SessionWindow with parameters");
                     await Dispatcher.InvokeAsync(async () =>
                     {
                         try
