@@ -748,21 +748,17 @@ namespace LabServerClient
         // ✅ FIX: SystemParameters must be accessed on the UI thread
         private (byte[] ImageBytes, int Width, int Height)? CaptureScreenFrame()
         {
-            int screenWidth = 0;
-            int screenHeight = 0;
-
-            // SystemParameters must be accessed on UI thread
-            Dispatcher.Invoke(() =>
-            {
-                screenWidth = (int)SystemParameters.PrimaryScreenWidth;
-                screenHeight = (int)SystemParameters.PrimaryScreenHeight;
-            });
-
-            if (screenWidth == 0 || screenHeight == 0)
-                return null;
-
             try
             {
+                var screenWidth = (int)SystemParameters.PrimaryScreenWidth;
+                var screenHeight = (int)SystemParameters.PrimaryScreenHeight;
+
+                if (screenWidth <= 0 || screenHeight <= 0)
+                {
+                    LogMessage($"[CaptureScreenFrame] Invalid screen dimensions: {screenWidth}x{screenHeight}");
+                    return null;
+                }
+
                 using var bitmap = new Bitmap(screenWidth, screenHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
                 using (var graphics = Graphics.FromImage(bitmap))
                 {
@@ -770,29 +766,21 @@ namespace LabServerClient
                 }
 
                 using var ms = new MemoryStream();
+                bitmap.Save(ms, ImageFormat.Jpeg);
 
-                // Use JPEG with reduced quality to keep frame size small and fast
-                var jpegEncoder = System.Drawing.Imaging.ImageCodecInfo
-                    .GetImageEncoders()
-                    .FirstOrDefault(e => e.FormatID == ImageFormat.Jpeg.Guid);
+                var imageBytes = ms.ToArray();
 
-                if (jpegEncoder != null)
+                if (imageBytes.Length == 0)
                 {
-                    var encoderParams = new System.Drawing.Imaging.EncoderParameters(1);
-                    encoderParams.Param[0] = new System.Drawing.Imaging.EncoderParameter(
-                        System.Drawing.Imaging.Encoder.Quality, 40L); // 40% — visible but small
-                    bitmap.Save(ms, jpegEncoder, encoderParams);
-                }
-                else
-                {
-                    bitmap.Save(ms, ImageFormat.Jpeg); // fallback
+                    LogMessage("[CaptureScreenFrame] WARNING: Image bytes is empty");
+                    return null;
                 }
 
-                return (ms.ToArray(), screenWidth, screenHeight);
+                return (imageBytes, screenWidth, screenHeight);
             }
             catch (Exception ex)
             {
-                LogMessage($"Screen capture error: {ex.Message}");
+                LogMessage($"[CaptureScreenFrame] ERROR: {ex.Message}");
                 return null;
             }
         }

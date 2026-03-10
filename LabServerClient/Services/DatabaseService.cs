@@ -16,7 +16,7 @@ namespace LabServerClient.Services
                 ?? configuration["Supabase:ConnectionString"];
 
             var defaultConnection = configuration.GetConnectionString("DefaultConnection")
-                ?? "Host=192.168.0.11;Port=5432;Database=learniqDB;Username=postgres;Password=mynewpass";
+                ?? "Host=192.168.1.11;Port=5432;Database=learniqDB;Username=postgres;Password=mynewpass";
 
             _connectionString = !string.IsNullOrWhiteSpace(supabaseConnection)
                 ? supabaseConnection
@@ -233,8 +233,6 @@ namespace LabServerClient.Services
                         }
 
                         // PC matches - validate schedule (only for STUDENT role)
-                        // FIX: pass _connectionString instead of connection to avoid
-                        // "A command is already in progress" Npgsql error
                         if (role.Equals("STUDENT", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(studNo))
                         {
                             var scheduleResult = await ValidateScheduleAsync(_connectionString, studNo, currentPcName);
@@ -272,11 +270,6 @@ namespace LabServerClient.Services
             }
         }
 
-        /// <summary>
-        /// Validates if student can login based on schedule constraints.
-        /// FIX: Uses its own NpgsqlConnection (via connectionString) instead of a shared one
-        /// to avoid "A command is already in progress" errors from Npgsql.
-        /// </summary>
         private async Task<ScheduleValidationResult> ValidateScheduleAsync(string connectionString, string studNo, string clientName)
         {
             try
@@ -385,10 +378,6 @@ namespace LabServerClient.Services
             return Regex.IsMatch(hash, @"^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$");
         }
 
-        /// <summary>
-        /// Gets schedule information for a student.
-        /// FIX: Uses lab_sessions instead of server_sessions.
-        /// </summary>
         public async Task<(DateTime? scheduleStart, DateTime? scheduleEnd, DateTime? serverStart)?> GetStudentScheduleAsync(string studNo, string clientName)
         {
             try
@@ -408,7 +397,6 @@ namespace LabServerClient.Services
 
                 int labId = Convert.ToInt32(labIdResult);
 
-                // FIX: lab_sessions instead of server_sessions
                 var getScheduleQuery = @"
                     SELECT cs.time_in, cs.time_out, ls.actual_start
                     FROM us_geninfo ug
@@ -453,10 +441,6 @@ namespace LabServerClient.Services
             }
         }
 
-        /// <summary>
-        /// Records student login attendance in attendance_logs table.
-        /// FIX: studno (lowercase), lab_sessions instead of server_sessions.
-        /// </summary>
         public async Task<int?> RecordStudentLoginAsync(string studNo, string clientName)
         {
             try
@@ -489,7 +473,6 @@ namespace LabServerClient.Services
                 DateTime? scheduleStartTime = null;
                 DateTime? serverStartTime = null;
 
-                // FIX: lab_sessions instead of server_sessions
                 var getScheduleQuery = @"
                     SELECT cs.time_in, ls.actual_start
                     FROM us_geninfo ug
@@ -518,7 +501,6 @@ namespace LabServerClient.Services
                     }
                 }
 
-                // FIX: studno (lowercase) matches actual DB column
                 var insertQuery = @"
                     INSERT INTO attendance_logs 
                     (studno, computer_id, login_time, status, schedule_start_time, server_start_time)
@@ -556,10 +538,6 @@ namespace LabServerClient.Services
             }
         }
 
-        /// <summary>
-        /// Records student logout attendance in attendance_logs table.
-        /// FIX: studno (lowercase) in WHERE clause.
-        /// </summary>
         public async Task<bool> RecordStudentLogoutAsync(string studNo, string clientName)
         {
             try
@@ -580,7 +558,6 @@ namespace LabServerClient.Services
 
                 var computerId = Convert.ToInt32(computerIdResult);
 
-                // FIX: studno (lowercase)
                 var updateQuery = @"
                     UPDATE attendance_logs
                     SET logout_time = CURRENT_TIMESTAMP,
@@ -633,10 +610,6 @@ namespace LabServerClient.Services
             }
         }
 
-        /// <summary>
-        /// Records student activity in activity_logs table.
-        /// FIX: Uses user_id (from us_credentials) and created_at instead of studNo and timestamp.
-        /// </summary>
         public async Task<int?> LogStudentActivityAsync(string studNo, string clientName, string action, string? description = null)
         {
             try
@@ -657,7 +630,6 @@ namespace LabServerClient.Services
 
                 var computerId = Convert.ToInt32(computerIdResult);
 
-                // FIX: activity_logs uses user_id (FK to us_credentials.id), not studNo
                 var getUserIdQuery = "SELECT id FROM us_credentials WHERE studNo = @studNo LIMIT 1";
                 using var getUserCmd = new NpgsqlCommand(getUserIdQuery, connection);
                 getUserCmd.Parameters.AddWithValue("@studNo", studNo);
@@ -666,7 +638,6 @@ namespace LabServerClient.Services
                     ? Convert.ToInt32(userIdResult)
                     : (object)DBNull.Value;
 
-                // FIX: user_id and created_at are the correct column names
                 var insertQuery = @"
                     INSERT INTO activity_logs (user_id, computer_id, action, description, created_at)
                     VALUES (@userId, @computerId, @action, @description, CURRENT_TIMESTAMP)
@@ -689,10 +660,6 @@ namespace LabServerClient.Services
             }
         }
 
-        /// <summary>
-        /// Creates a login request when student tries to login from non-assigned PC.
-        /// FIX: studno (lowercase) in insert.
-        /// </summary>
         public async Task<int?> CreateLoginRequestAsync(string studNo, string clientName, string? ipAddress = null, string? requestMessage = null)
         {
             try
@@ -713,7 +680,6 @@ namespace LabServerClient.Services
 
                 var computerId = Convert.ToInt32(computerIdResult);
 
-                // FIX: studno (lowercase)
                 var insertQuery = @"
                     INSERT INTO login_requests (studno, computer_id, request_type, request_message, request_timestamp, status)
                     VALUES (@studNo, @computerId, 'Login', @requestMessage, CURRENT_TIMESTAMP, 'Pending')
@@ -735,10 +701,6 @@ namespace LabServerClient.Services
             }
         }
 
-        /// <summary>
-        /// Creates a logout request when student tries to logout during active schedule.
-        /// FIX: studno (lowercase) in insert.
-        /// </summary>
         public async Task<int?> CreateLogoutRequestAsync(string studNo, string clientName, string? requestMessage = null)
         {
             try
@@ -759,7 +721,6 @@ namespace LabServerClient.Services
 
                 var computerId = Convert.ToInt32(computerIdResult);
 
-                // FIX: studno (lowercase)
                 var insertQuery = @"
                     INSERT INTO login_requests (studno, computer_id, request_type, request_message, request_timestamp, status)
                     VALUES (@studNo, @computerId, 'Logout', @requestMessage, CURRENT_TIMESTAMP, 'Pending')
@@ -781,9 +742,6 @@ namespace LabServerClient.Services
             }
         }
 
-        /// <summary>
-        /// Checks if student is currently in an active schedule.
-        /// </summary>
         public async Task<bool> IsStudentInActiveScheduleAsync(string studNo, string clientName)
         {
             try
@@ -847,6 +805,54 @@ namespace LabServerClient.Services
         }
 
         /// <summary>
+        /// Checks if an admin has approved a Login request for this student on the current PC.
+        /// Used to bypass PC mismatch check after admin approval.
+        /// </summary>
+        public async Task<bool> CheckApprovedLoginRequestAsync(string studNo, string clientName)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var getComputerIdQuery = "SELECT id FROM computers WHERE client_name = @clientName LIMIT 1";
+                using var getComputerCmd = new NpgsqlCommand(getComputerIdQuery, connection);
+                getComputerCmd.Parameters.AddWithValue("@clientName", clientName);
+                var computerIdResult = await getComputerCmd.ExecuteScalarAsync();
+
+                if (computerIdResult == null || computerIdResult == DBNull.Value)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[APPROVED_CHECK] Computer not found: {clientName}");
+                    return false;
+                }
+
+                var computerId = Convert.ToInt32(computerIdResult);
+
+                var checkQuery = @"
+                    SELECT COUNT(*) FROM login_requests
+                    WHERE studno = @studNo
+                      AND computer_id = @computerId
+                      AND request_type = 'Login'
+                      AND status = 'Approved'
+                      AND request_timestamp >= NOW() - INTERVAL '1 hour'";
+
+                using var checkCmd = new NpgsqlCommand(checkQuery, connection);
+                checkCmd.Parameters.AddWithValue("@studNo", studNo);
+                checkCmd.Parameters.AddWithValue("@computerId", computerId);
+
+                var count = await checkCmd.ExecuteScalarAsync();
+                bool hasApproved = count != null && Convert.ToInt32(count) > 0;
+                System.Diagnostics.Debug.WriteLine($"[APPROVED_CHECK] studNo={studNo}, PC={clientName}, approved={hasApproved}");
+                return hasApproved;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[APPROVED_CHECK] Error: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Checks if a logout request for this student has been approved.
         /// FIX: studno (lowercase) in WHERE clause.
         /// </summary>
@@ -867,7 +873,6 @@ namespace LabServerClient.Services
 
                 var computerId = Convert.ToInt32(computerIdResult);
 
-                // FIX: studno (lowercase)
                 var checkQuery = @"
                     SELECT COUNT(*)
                     FROM login_requests

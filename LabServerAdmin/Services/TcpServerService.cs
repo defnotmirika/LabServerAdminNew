@@ -311,8 +311,11 @@ namespace LabServerAdmin.Services
         private void HandleScreenData(string clientName, ClientMessage messageData)
         {
             if (string.IsNullOrWhiteSpace(messageData.Data))
-                return;
 
+            {
+                System.Diagnostics.Debug.WriteLine($"[TcpServer] Empty screen data received from {clientName}");
+                return;
+            }
             try
             {
                 // Validate base64 length (must be multiple of 4)
@@ -322,20 +325,30 @@ namespace LabServerAdmin.Services
                 if (imageBytes.Length == 0)
                     return;
 
-                ScreenDataReceived?.Invoke(this, new ScreenDataReceivedEventArgs(
-                    clientName, imageBytes, messageData.Metadata ?? new Dictionary<string, string>()));
+                System.Diagnostics.Debug.WriteLine($"[TcpServer] Screen data received from {clientName}: {imageBytes.Length} bytes");
+
+                if (ScreenDataReceived != null)
+                {
+                    ScreenDataReceived.Invoke(this, new ScreenDataReceivedEventArgs(clientName, imageBytes, messageData.Metadata ?? new Dictionary<string, string>()));
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"[TcpServer] WARNING: No ScreenDataReceived event handlers for {clientName}");
+                }
             }
-            catch (FormatException)
+            catch (Exception ex)
             {
-                // Base64 was incomplete — frame was split across TCP packets
-                // This should no longer happen after fixing the buffer
+                System.Diagnostics.Debug.WriteLine($"[TcpServer] Error handling screen data from {clientName}: {ex.Message}");
             }
         }
 
         public async Task SendCommandAsync(string clientName, string command, string? parameters = null)
         {
+            System.Diagnostics.Debug.WriteLine($"[TcpServer] SendCommandAsync: {command} to {clientName} with params: {parameters ?? "null"}");
+
             if (!_connectedClients.ContainsKey(clientName))
             {
+                System.Diagnostics.Debug.WriteLine($"[TcpServer] ERROR: Client {clientName} not found in connected clients");
                 await _databaseService.LogSystemActionAsync("Command Failed", clientName, "Error", "Client not connected");
                 return;
             }
@@ -343,6 +356,13 @@ namespace LabServerAdmin.Services
             try
             {
                 var client = _connectedClients[clientName];
+                if (client == null || !client.Connected)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[TcpServer] ERROR: Client {clientName} TcpClient is null or disconnected");
+                    _connectedClients.Remove(clientName);
+                    return;
+                }
+
                 var stream = client.GetStream();
 
                 var commandMessage = new ServerMessage
@@ -354,15 +374,19 @@ namespace LabServerAdmin.Services
                 };
 
                 var message = JsonSerializer.Serialize(commandMessage);
+                System.Diagnostics.Debug.WriteLine($"[TcpServer] Sending JSON: {message}");
                 var data = Encoding.UTF8.GetBytes(message + "\n");
 
                 await stream.WriteAsync(data.AsMemory());
                 await stream.FlushAsync();
 
+
+                System.Diagnostics.Debug.WriteLine($"[TcpServer] Command sent successfully to {clientName}");
                 await _databaseService.LogSystemActionAsync($"Command Sent: {command}", clientName, "Success", parameters);
             }
             catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"[TcpServer] ERROR sending command to {clientName}: {ex.Message}");
                 await _databaseService.LogSystemActionAsync($"Command Failed: {command}", clientName, "Error", ex.Message);
             }
         }
@@ -380,7 +404,39 @@ namespace LabServerAdmin.Services
 
         public bool IsClientConnected(string clientName)
         {
-            return _connectedClients.ContainsKey(clientName) && _connectedClients[clientName].Connected;
+            var isConnected = _connectedClients.ContainsKey(clientName) && _connectedClients[clientName].Connected;
+            System.Diagnostics.Debug.WriteLine($"[TcpServer] IsClientConnected({clientName}): {isConnected}");
+            return isConnected;
+        }
+
+        public string GetClientDiagnostics(string clientName)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Client Diagnostics for: {clientName}");
+            sb.AppendLine($"In Connected Clients Dictionary: {_connectedClients.ContainsKey(clientName)}");
+
+            if (_connectedClients.ContainsKey(clientName))
+            {
+                var tcpClient = _connectedClients[clientName];
+                sb.AppendLine($"TcpClient.Connected: {tcpClient?.Connected}");
+            }
+
+            sb.AppendLine($"In Client Info Dictionary: {_clientInfo.ContainsKey(clientName)}");
+
+            if (_clientInfo.ContainsKey(clientName))
+            {
+                var info = _clientInfo[clientName];
+                sb.AppendLine($"IP Address: {info.IpAddress}");
+                sb.AppendLine($"Is Connected: {info.IsConnected}");
+                sb.AppendLine($"Status: {info.Status}");
+                sb.AppendLine($"Last Response: {info.LastResponse:yyyy-MM-dd HH:mm:ss}");
+                sb.AppendLine($"Time Since Last Response: {(DateTime.UtcNow - info.LastResponse).TotalSeconds:F1}s");
+            }
+
+            sb.AppendLine($"Total Connected Clients: {_connectedClients.Count}");
+            sb.AppendLine($"Client List: {string.Join(", ", _connectedClients.Keys)}");
+
+            return sb.ToString();
         }
 
         public Task StartScreenStreamAsync(string clientName, int intervalMs = 1000)

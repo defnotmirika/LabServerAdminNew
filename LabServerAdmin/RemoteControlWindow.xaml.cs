@@ -46,13 +46,54 @@ namespace LabServerAdmin
         {
             try
             {
-                StatusText.Text = "Requesting stream...";
+                System.Diagnostics.Debug.WriteLine($"[RemoteControl] Window loaded for {_clientName}");
+                StatusText.Text = $"Requesting stream from {_clientName}...";
                 await _tcpServerService.StartScreenStreamAsync(_clientName, _refreshIntervalMs);
+
+                System.Diagnostics.Debug.WriteLine($"[RemoteControl] Start stream command sent to {_clientName}");
+
+                // Wait for first frame with timeout
+                await WaitForFirstFrameAsync();
             }
             catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"[RemoteControl] Error: {ex.Message}");
                 StatusText.Text = $"Stream error: {ex.Message}";
             }
+        }
+
+        private async Task WaitForFirstFrameAsync()
+        {
+            var timeout = TimeSpan.FromSeconds(10);
+            var startTime = DateTime.UtcNow;
+            var hasReceivedFrame = false;
+
+            while (DateTime.UtcNow - startTime < timeout)
+            {
+                await Task.Delay(500);
+
+                // Check if we've received a frame (ScreenImage.Source will be set)
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    if (ScreenImage.Source != null)
+                    {
+                        hasReceivedFrame = true;
+                    }
+                });
+
+                if (hasReceivedFrame)
+                {
+                    System.Diagnostics.Debug.WriteLine("[RemoteControl] First frame received successfully");
+                    return;
+                }
+            }
+
+            // Timeout - show diagnostic info
+            await Dispatcher.InvokeAsync(() =>
+            {
+                StatusText.Text = $"Waiting for stream... (Client may need to be logged in as student)";
+                System.Diagnostics.Debug.WriteLine($"[RemoteControl] Timeout waiting for first frame from {_clientName}");
+            });
         }
 
         private async void RemoteControlWindow_Closed(object? sender, EventArgs e)
@@ -71,16 +112,11 @@ namespace LabServerAdmin
 
         private void TcpServerService_ScreenDataReceived(object? sender, ScreenDataReceivedEventArgs e)
         {
+            System.Diagnostics.Debug.WriteLine($"[RemoteControl] ScreenDataReceived: ClientName={e.ClientName}, Expected={_clientName}, Size={e.ImageBytes?.Length ?? 0}");
+
             if (!string.Equals(e.ClientName, _clientName, StringComparison.OrdinalIgnoreCase))
             {
-                // Debug: log when we receive data for a different client
-                Dispatcher.Invoke(() =>
-                {
-                    if (StatusText.Text.Contains("Requesting") || StatusText.Text.Contains("Error"))
-                    {
-                        StatusText.Text = $"Received data for {e.ClientName}, expecting {_clientName}";
-                    }
-                });
+                System.Diagnostics.Debug.WriteLine($"[RemoteControl] Ignoring data from {e.ClientName}, expecting {_clientName}");
                 return;
             }
 
@@ -88,6 +124,7 @@ namespace LabServerAdmin
             {
                 if (e.ImageBytes == null || e.ImageBytes.Length == 0)
                 {
+                    System.Diagnostics.Debug.WriteLine("[RemoteControl] ERROR: Received empty image data");
                     Dispatcher.Invoke(() =>
                     {
                         StatusText.Text = "Error: Received empty image data";
@@ -106,6 +143,8 @@ namespace LabServerAdmin
                     _remoteScreenHeight = height;
                 }
 
+                System.Diagnostics.Debug.WriteLine($"[RemoteControl] Decoding image: {e.ImageBytes.Length} bytes, {_remoteScreenWidth}x{_remoteScreenHeight}");
+
                 BitmapImage bitmap;
                 using (var ms = new MemoryStream(e.ImageBytes))
                 {
@@ -117,14 +156,17 @@ namespace LabServerAdmin
                     bitmap.Freeze();
                 }
 
+                System.Diagnostics.Debug.WriteLine($"[RemoteControl] Image decoded successfully, updating UI");
                 Dispatcher.Invoke(() =>
                 {
                     ScreenImage.Source = bitmap;
-                    StatusText.Text = $"Last frame: {DateTime.Now:T} ({e.ImageBytes.Length} bytes)";
+                    var fps = _refreshIntervalMs > 0 ? (1000.0 / _refreshIntervalMs).ToString("F1") : "N/A";
+                    StatusText.Text = $"Streaming at {fps} FPS ({e.ImageBytes.Length / 1024} KB/frame) - {DateTime.Now:T}";
                 });
             }
             catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"[RemoteControl] ERROR decoding image: {ex.Message}\nStack: {ex.StackTrace}");
                 Dispatcher.Invoke(() =>
                 {
                     StatusText.Text = $"Error decoding image: {ex.Message}";
@@ -340,6 +382,64 @@ namespace LabServerAdmin
 
             ScreenImage_MouseWheel(ScreenImage, e);
             e.Handled = true;
+        }
+
+        private async void RetryButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"[RemoteControl] Retry button clicked for {_clientName}");
+
+                // Get diagnostic information
+                var diagnostics = _tcpServerService.GetClientDiagnostics(_clientName);
+                System.Diagnostics.Debug.WriteLine(diagnostics);
+
+                // Check if client is connected
+                if (!_tcpServerService.IsClientConnected(_clientName))
+                {
+                    StatusText.Text = $"Error: {_clientName} is not connected";
+                    MessageBox.Show(
+                        $"Cannot start stream: {_clientName} is not connected to the server.\n\n" +
+                        "Please ensure the client:\n" +
+                        "1. Is powered on and running\n" +
+                        "2. Has network connectivity\n" +
+                        "3. Has LabServerClient application running\n" +
+                        "4. Shows 'Connected' status\n\n" +
+                        "Diagnostics:\n" + diagnostics,
+                        "Client Not Connected",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    return;
+                }
+
+                StatusText.Text = "Retrying stream request...";
+
+                // Stop existing stream first
+                await _tcpServerService.StopScreenStreamAsync(_clientName);
+                await Task.Delay(500);
+
+                // Request new stream
+                await _tcpServerService.StartScreenStreamAsync(_clientName, _refreshIntervalMs);
+                StatusText.Text = "Stream request sent, waiting for response...";
+
+                // Wait for first frame
+                await WaitForFirstFrameAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[RemoteControl] Retry error: {ex.Message}\nStack: {ex.StackTrace}");
+                StatusText.Text = $"Retry failed: {ex.Message}";
+                MessageBox.Show(
+                    $"Failed to retry stream:\n\n{ex.Message}\n\nMake sure the client:\n" +
+                    "1. Is connected to the server (check status in client list)\n" +
+                    "2. Is logged in as a STUDENT (not admin)\n" +
+                    "3. Has the SessionWindow open and visible\n" +
+                    "4. Is not in locked/kiosk mode\n\n" +
+                    "Check the Output window for detailed logs.",
+                    "Stream Retry Failed",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
         }
     }
 }

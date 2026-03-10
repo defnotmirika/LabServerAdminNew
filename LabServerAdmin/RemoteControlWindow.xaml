@@ -126,6 +126,10 @@
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                    <Button x:Name="RetryButton" Content="? Retry Stream" Style="{StaticResource FlatButton}" 
+                            Click="RetryButton_Click" ToolTip="Retry screen stream request"
+                            Background="#dc3545" Margin="0,0,10,0"/>
+                    
                     <StackPanel Orientation="Horizontal" Margin="0,0,15,0" VerticalAlignment="Center">
                         <TextBlock Text="Refresh rate:" FontSize="12" Foreground="White" VerticalAlignment="Center" Margin="0,0,8,0" FontWeight="SemiBold"/>
                         <ComboBox x:Name="RefreshRateComboBox" Height="26" Width="100" SelectionChanged="RefreshRateComboBox_SelectionChanged"

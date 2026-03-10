@@ -338,7 +338,32 @@ namespace LabServerClient.ViewModels
                         }
                         else
                         {
-                            System.Diagnostics.Debug.WriteLine($"[VERIFY] PC Name mismatch detected - Current: {CurrentPcName}, Assigned: {loginResult.AssignedPcName}");
+                            System.Diagnostics.Debug.WriteLine($"[VERIFY] PC Name mismatch - Current: {CurrentPcName}, Assigned: {loginResult.AssignedPcName}");
+
+                            // Check if admin already approved a Login request for this student on this PC
+                            string studNoToCheck = Username;
+                            try
+                            {
+                                var resolved = await ResolveStudNoAsync(Username);
+                                if (!string.IsNullOrWhiteSpace(resolved))
+                                    studNoToCheck = resolved;
+                            }
+                            catch { }
+
+                            bool hasApproved = await _databaseService.CheckApprovedLoginRequestAsync(
+                                studNoToCheck, CurrentPcName);
+
+                            if (hasApproved)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[VERIFY] Approved login request found — allowing login");
+                                return new LoginRequestService.LoginVerificationResult
+                                {
+                                    IsSuccessful = true,
+                                    IsPcNameMatch = true,
+                                    UserRole = loginResult.UserRole ?? "Student"
+                                };
+                            }
+
                             return new LoginRequestService.LoginVerificationResult
                             {
                                 IsSuccessful = false,
