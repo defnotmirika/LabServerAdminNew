@@ -394,7 +394,31 @@ namespace LabServerClient
         private void LearniqButton_Click(object sender, RoutedEventArgs e)
         {
             const string Secret = "LSA-Learniq-Secret-2026";
-            var url = $"http://localhost:5219/Account/AutoLogin" +
+            const int LearniqPort = 5219;
+
+            // Kunin ang Server IP mula sa Registry
+            // (same IP ng LabServerAdmin = same PC ng LearniqLearningToolApp)
+            string serverIp = "localhost"; // fallback
+            try
+            {
+                var regKey = Microsoft.Win32.Registry.CurrentUser
+                    .OpenSubKey(@"Software\LabServerClient");
+                if (regKey != null)
+                {
+                    string? savedIp = regKey.GetValue("ServerIP")?.ToString();
+                    if (!string.IsNullOrWhiteSpace(savedIp))
+                    {
+                        serverIp = savedIp;
+                    }
+                    regKey.Close();
+                }
+            }
+            catch
+            {
+                // Kung hindi makuha sa registry, localhost ang gagamitin
+            }
+
+            var url = $"http://{serverIp}:{LearniqPort}/Account/AutoLogin" +
                       $"?token={Secret}" +
                       $"&username={Uri.EscapeDataString(_username ?? "")}";
 
