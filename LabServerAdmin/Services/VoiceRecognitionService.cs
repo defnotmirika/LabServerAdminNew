@@ -305,13 +305,18 @@ namespace LabServerAdmin.Services
             // Normalize everything to lowercase and trim
             text = text.Trim().ToLowerInvariant();
 
-            // ── Step 1: Normalize aliases ────────────────────────────────────
             foreach (var alias in _commandAliases.OrderByDescending(k => k.Key.Length))
             {
+                // Ensure the alias matches a whole word, not a prefix of another word
                 if (text.StartsWith(alias.Key, StringComparison.OrdinalIgnoreCase))
                 {
-                    text = alias.Value + text.Substring(alias.Key.Length);
-                    break;
+                    var afterAlias = text.Substring(alias.Key.Length);
+                    // Only replace if followed by whitespace, end of string, or punctuation
+                    if (afterAlias.Length == 0 || char.IsWhiteSpace(afterAlias[0]))
+                    {
+                        text = alias.Value + afterAlias;
+                        break;
+                    }
                 }
             }
 

@@ -424,7 +424,13 @@ using System.Windows.Media.Imaging;
                 }
             }
 
-            private async void LogoutButton_Click(object sender, RoutedEventArgs e)
+        private void LearniqButton_Click(object sender, RoutedEventArgs e)
+        {
+            var win = new LearniqWindow(_currentAdminUsername ?? "");
+            win.Show();
+        }
+
+        private async void LogoutButton_Click(object sender, RoutedEventArgs e)
             {
                 var confirm = MessageBox.Show(
                     "Are you sure you want to log out?",

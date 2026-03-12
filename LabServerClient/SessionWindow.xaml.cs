@@ -44,9 +44,8 @@ namespace LabServerClient
         private readonly DispatcherTimer _serverStartCheckTimer;
         private bool _isWaitingForServerStart = false;
         private DispatcherTimer? _screenShareTimer;
+        private const string LearniqBaseUrl = "http://localhost:5219";
 
-
-        public event EventHandler<string>? CurrentCommandChanged;
 
         // Remote viewing (screen sharing) fields
         private CancellationTokenSource? _screenShareCts;
@@ -391,6 +390,21 @@ namespace LabServerClient
         {
             UpdateDisplay();
         }
+
+        private void LearniqButton_Click(object sender, RoutedEventArgs e)
+        {
+            const string Secret = "LSA-Learniq-Secret-2026";
+            var url = $"http://localhost:5219/Account/AutoLogin" +
+                      $"?token={Secret}" +
+                      $"&username={Uri.EscapeDataString(_username ?? "")}";
+
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+
 
         private async void LogoutButton_Click(object sender, RoutedEventArgs e)
         {
@@ -1072,7 +1086,6 @@ namespace LabServerClient
                     LogMessage($"Received command: {command.Command}");
                 });
 
-                CurrentCommandChanged?.Invoke(this, commandDisplay);
 
                 var result = await ExecuteCommand(command.Command, command.Parameters);
 
