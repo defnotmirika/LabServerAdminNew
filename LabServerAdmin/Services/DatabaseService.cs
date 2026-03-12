@@ -20,7 +20,7 @@ namespace LabServerAdmin.Services
                 ?? _configuration["Supabase:ConnectionString"];
 
             var defaultConnection = _configuration.GetConnectionString("DefaultConnection")
-                ?? "Host=localhost;Port=5432;Database=learniqDB;Username=postgres;Password=mynewpass";
+                ?? "Host=localhost;Port=5432;Database=learniqDBnew;Username=postgres;Password=mynewpass";
 
             _connectionString = !string.IsNullOrWhiteSpace(supabaseConnection)
                 ? supabaseConnection
