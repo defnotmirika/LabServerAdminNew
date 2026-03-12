@@ -10,7 +10,7 @@ namespace LabServerAdmin
         private readonly string _username;
         private const string Secret = "LSA-Learniq-Secret-2026";
         private const string LearniqBaseUrl = "http://localhost:5219";
-        private const string LearniqAppPath = @"C:\Users\QCU\source\repos\LearniqLearningToolApp\publish\LearniqLearningToolApp.exe";
+        private const string LearniqAppPath = @"C:\Users\63930\source\repos\LearniqLearningToolApp\publish\LearniqLearningToolApp.exe";
 
         public LearniqWindow(string username)
         {
@@ -111,6 +111,11 @@ namespace LabServerAdmin
             }
 
             return false;
+        }
+
+        private void WebView_NavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
+        {
+            // Navigation finished — add any post-load logic here if needed
         }
 
         protected override void OnClosed(EventArgs e)
