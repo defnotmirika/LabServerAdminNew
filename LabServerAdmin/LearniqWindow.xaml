@@ -9,7 +9,6 @@
     <Grid>
        
         <!-- WebView2 -->
-        <wv2:WebView2 x:Name="WebView" Grid.Row="1"
-                      NavigationCompleted="WebView_NavigationCompleted"/>
+        <wv2:WebView2 x:Name="WebView"/>
     </Grid>
 </Window>
