@@ -426,7 +426,28 @@ using System.Windows.Media.Imaging;
 
         private void LearniqButton_Click(object sender, RoutedEventArgs e)
         {
-            var win = new LearniqWindow(_currentAdminUsername ?? "");
+            const string Secret = "LSA-Learniq-Secret-2026";
+            // FIX 3: Huwag gamitin ang localhost — kumuha ng server IP sa registry
+            string serverIp = "192.168.1.11"; // default fallback
+            try
+            {
+                var regKey = Microsoft.Win32.Registry.CurrentUser
+                    .OpenSubKey(@"Software\LabServerClient");
+                if (regKey != null)
+                {
+                    string? savedIp = regKey.GetValue("ServerIP")?.ToString();
+                    if (!string.IsNullOrWhiteSpace(savedIp))
+                        serverIp = savedIp;
+                    regKey.Close();
+                }
+            }
+            catch { }
+
+            var url = $"http://{serverIp}:5219/Account/AutoLogin" +
+                      $"?token={Secret}" +
+                      $"&username={Uri.EscapeDataString(_currentAdminUsername ?? "")}";
+
+            var win = new LearniqWindow(url);
             win.Show();
         }
 
