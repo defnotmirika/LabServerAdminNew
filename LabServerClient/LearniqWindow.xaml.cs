@@ -1,9 +1,8 @@
 ﻿using Microsoft.Web.WebView2.Core;
 using System;
-using System.IO;
 using System.Windows;
 
-namespace LabServerClient  // <- LabServerClient, hindi LabServerAdmin
+namespace LabServerClient
 {
     public partial class LearniqWindow : Window
     {
@@ -18,20 +17,9 @@ namespace LabServerClient  // <- LabServerClient, hindi LabServerAdmin
 
         private async void LearniqWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            var userDataFolder = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "LabServer", "WebView2Cache"
-            );
-
-            var env = await CoreWebView2Environment.CreateAsync(
-                browserExecutableFolder: null,
-                userDataFolder: userDataFolder
-            );
-
-            await WebView.EnsureCoreWebView2Async(env);
-
-            WebView.CoreWebView2.Settings.IsScriptEnabled = true;
-
+            await WebView.EnsureCoreWebView2Async(null);
+            WebView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+            WebView.CoreWebView2.Settings.AreDevToolsEnabled = false;
             WebView.Source = new Uri(_url);
         }
     }

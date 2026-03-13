@@ -1,44 +1,33 @@
 ﻿using Microsoft.Web.WebView2.Core;
 using System;
-using System.IO;
 using System.Windows;
-using Microsoft.Win32;
 
-namespace LabServerAdmin  // o LabServerClient — pareho ang fix
+namespace LabServerAdmin
 {
     public partial class LearniqWindow : Window
     {
-        private readonly string _url;
+        private readonly string _username;
         private const string Secret = "LSA-Learniq-Secret-2026";
+        private const string LearniqBaseUrl = "http://localhost:5219";
 
-        // FIX 1: Accept full URL na (para magamit ng both admin at student)
-        public LearniqWindow(string url)
+        public LearniqWindow(string username)
         {
-            _url = url;
+            _username = username;
             InitializeComponent();
             Loaded += LearniqWindow_Loaded;
         }
 
         private async void LearniqWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            // FIX 2: Explicit UserDataFolder para hindi mag-temp folder
-            var userDataFolder = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "LabServer", "WebView2Cache"
-            );
+            await WebView.EnsureCoreWebView2Async(null);
 
-            var env = await CoreWebView2Environment.CreateAsync(
-                browserExecutableFolder: null,
-                userDataFolder: userDataFolder
-            );
+            // Navigate to AutoLogin endpoint — no need to type password again
+            var url = $"{LearniqBaseUrl}/Account/AutoLogin" +
+                      $"?token={Secret}" +
+                      $"&username={Uri.EscapeDataString(_username)}";
 
-            await WebView.EnsureCoreWebView2Async(env);
-
-            // Optional: disable unnecessary restrictions
-            WebView.CoreWebView2.Settings.IsScriptEnabled = true;
-            WebView.CoreWebView2.Settings.AreDefaultScriptDialogsEnabled = true;
-
-            WebView.Source = new Uri(_url);
+            WebView.Source = new Uri(url);
         }
+
     }
 }
