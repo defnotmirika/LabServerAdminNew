@@ -93,6 +93,7 @@ Background="White">
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
             <!-- Title -->
@@ -182,8 +183,18 @@ Background="White">
                 </StackPanel>
             </GroupBox>
 
+            <!-- Voice Enrollment -->
+            <GroupBox Grid.Row="6" Header="Voice Enrollment" BorderBrush="#050d60" BorderThickness="2" Padding="12" Margin="0,0,0,12">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <Button x:Name="EnrollVoiceButton" Content="🎙️ Enroll Voice"
+                            Style="{StaticResource ModernButton}" Click="EnrollVoiceButton_Click"
+                            ToolTip="Enroll or re-enroll your voice profile for voice command verification"
+                            Width="170" Height="38"/>
+                </StackPanel>
+            </GroupBox>
+
             <!-- Current Settings Display -->
-            <Border Grid.Row="6" Background="#F0F0F0" BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="3" Padding="10" Margin="0,0,0,0">
+            <Border Grid.Row="7" Background="#F0F0F0" BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="3" Padding="10" Margin="0,0,0,0">
                 <StackPanel>
                     <TextBlock Text="📊 Current Settings:" FontWeight="Bold" Foreground="#050d60" Margin="0,0,0,6"/>
                     <TextBlock x:Name="CurrentSettingsTextBlock" Text="Timeout: 15 min, Warning: 1 min" 
@@ -196,10 +207,10 @@ Background="White">
     <!-- Action Buttons (Fixed at bottom) -->
     <Border Grid.Row="1" BorderBrush="#CCCCCC" BorderThickness="0,1,0,0" Background="#F9F9F9" Padding="20,12">
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button x:Name="SaveButton" Content="💾 Save" Width="110" Height="38" 
-                    Style="{StaticResource SuccessButton}" Click="SaveButton_Click"/>
-            <Button x:Name="CancelButton" Content="❌ Cancel" Width="110" Height="38" 
-                    Style="{StaticResource ModernButton}" Click="CancelButton_Click" Margin="10,0,0,0"/>
+                <Button x:Name="SaveButton" Content="💾 Save" Width="110" Height="38" 
+                        Style="{StaticResource SuccessButton}" Click="SaveButton_Click"/>
+                <Button x:Name="CancelButton" Content="❌ Cancel" Width="110" Height="38" 
+                        Style="{StaticResource ModernButton}" Click="CancelButton_Click" Margin="10,0,0,0"/>
         </StackPanel>
     </Border>
 </Grid>

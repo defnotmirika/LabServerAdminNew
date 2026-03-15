@@ -6,6 +6,7 @@ namespace LabServerAdmin
 {
     public partial class SessionSettingsDialog : Window
     {
+        private readonly Action? _openVoiceEnrollmentAction;
         private int _originalTimeoutMinutes;
         private int _originalWarningMinutes;
         public bool WasSaved { get; set; }
@@ -13,9 +14,10 @@ namespace LabServerAdmin
         public int TimeoutMinutes { get; set; }
         public int WarningMinutes { get; set; }
 
-        public SessionSettingsDialog(int currentTimeoutMinutes = 15, int currentWarningMinutes = 1)
+        public SessionSettingsDialog(int currentTimeoutMinutes = 15, int currentWarningMinutes = 1, Action? openVoiceEnrollmentAction = null)
         {
             InitializeComponent();
+            _openVoiceEnrollmentAction = openVoiceEnrollmentAction;
             
             _originalTimeoutMinutes = currentTimeoutMinutes;
             _originalWarningMinutes = currentWarningMinutes;
@@ -119,6 +121,11 @@ namespace LabServerAdmin
         {
             AdminTimeoutMinutesTextBox.Text = "30";
             AdminWarningMinutesTextBox.Text = "2";
+        }
+
+        private void EnrollVoiceButton_Click(object sender, RoutedEventArgs e)
+        {
+            _openVoiceEnrollmentAction?.Invoke();
         }
 
         private bool ValidateInputs()

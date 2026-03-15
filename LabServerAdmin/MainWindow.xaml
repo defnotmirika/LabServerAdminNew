@@ -109,6 +109,21 @@
             </Setter>
         </Style>
 
+        <Style x:Key="VoiceCommandButtonStyle" TargetType="Button" BasedOn="{StaticResource ModernButton}">
+            <Setter Property="Background" Value="#dc3545"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="#8b1c28"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Style.Triggers>
+                <Trigger Property="Tag" Value="On">
+                    <Setter Property="Background" Value="#1e7e34"/>
+                    <Setter Property="Foreground" Value="White"/>
+                    <Setter Property="BorderBrush" Value="#155724"/>
+                    <Setter Property="BorderThickness" Value="2"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <Style x:Key="GoldButton" TargetType="Button">
             <Setter Property="Background" Value="#f8b800"/>
             <Setter Property="Foreground" Value="#050d60"/>
@@ -265,20 +280,17 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <Button x:Name="SettingsButton" Content="⚙️ Settings" Style="{StaticResource ModernButton}" 
-                            Click="SettingsButton_Click" ToolTip="Configure screen lock settings"/>
-                    <Button x:Name="VoiceToggleButton" Content="🎤 Voice Commands: OFF" Style="{StaticResource ModernButton}" 
-                            BorderBrush="Black" BorderThickness="2" Click="VoiceToggleButton_Click" Margin="10,0,0,0"
-                            Width="210"/>
-                    <Button x:Name="VoiceEnrollButton" 
-                            Content="🎙️ Enroll Voice" 
-                            Style="{StaticResource GoldButton}" 
-                            Click="VoiceEnrollButton_Click" 
-                            Margin="10,0,0,0"
-                            ToolTip="Enroll or re-enroll your voice profile for voice command verification"/>           
                     <Button x:Name="ServerToggleButton" Content="▶️ Start Server" Style="{StaticResource SuccessButton}" Click="ServerToggleButton_Click" Margin="10,0,0,0"/>
-                    <Button x:Name="LearniqButton" Content="📚 Learniq" Style="{StaticResource ModernButton}" Click="LearniqButton_Click" Margin="10,0,0,0" ToolTip="Open Learniq Learning Tool"/>
-                    <Button x:Name="LogoutButton" Content="🚪 Logout" Style="{StaticResource GoldButton}" Click="LogoutButton_Click" Margin="10,0,0,0"/>
+                    <Button x:Name="VoiceToggleButton" Content="Voice: OFF" Style="{StaticResource VoiceCommandButtonStyle}" 
+                            Tag="Off" Click="VoiceToggleButton_Click" Margin="10,0,0,0"
+                            Width="130"/>
+                    <Button x:Name="LearniqButton" Content="🕮 Learniq" Style="{StaticResource ModernButton}" 
+                            BorderBrush="#808080" BorderThickness="2"
+                            Click="LearniqButton_Click" Margin="10,0,40,0" ToolTip="Open Learniq Learning Tool"/>
+                    <Button x:Name="LogoutButton" Content="➜]" Style="{StaticResource GoldButton}" Click="LogoutButton_Click" Margin="10,0,0,0"/>
+                    <Button x:Name="SettingsButton" Content="🛠" Style="{StaticResource ModernButton}" 
+                            Background="#f8b800" Foreground="#050d60"
+                            Click="SettingsButton_Click" ToolTip="Configure screen lock settings" Margin="10,0,0,0"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -340,14 +352,6 @@
                             </DataGrid.RowStyle>
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="PC Name" Binding="{Binding Name}" Width="150">
-                                    <DataGridTextColumn.ElementStyle>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="VerticalAlignment" Value="Center"/>
-                                            <Setter Property="HorizontalAlignment" Value="Center"/>
-                                        </Style>
-                                    </DataGridTextColumn.ElementStyle>
-                                </DataGridTextColumn>
-                                <DataGridTextColumn Header="IP Address" Binding="{Binding IpAddress}" Width="120">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="VerticalAlignment" Value="Center"/>
@@ -1209,9 +1213,16 @@
                            VerticalAlignment="Center" Margin="20,0,0,0"/>
                     </StackPanel>
 
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                        <WrapPanel x:Name="ScreensWrapPanel" Orientation="Horizontal"/>
-                    </ScrollViewer>
+                    <GroupBox Grid.Row="1" Header="Screen Feeds" BorderBrush="#050d60" BorderThickness="2">
+                        <GroupBox.HeaderTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" FontWeight="Bold" FontSize="14" Foreground="#050d60"/>
+                            </DataTemplate>
+                        </GroupBox.HeaderTemplate>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <WrapPanel x:Name="ScreensWrapPanel" Orientation="Horizontal"/>
+                        </ScrollViewer>
+                    </GroupBox>
                 </Grid>
             </TabItem>
         </TabControl>

@@ -384,6 +384,59 @@ namespace LabServerAdmin
             e.Handled = true;
         }
 
+        private async Task ExecuteClientActionAsync(string command, string statusMessage)
+        {
+            if (!_tcpServerService.IsClientConnected(_clientName))
+            {
+                StatusText.Text = $"Error: {_clientName} is not connected";
+                return;
+            }
+
+            await _tcpServerService.SendCommandAsync(_clientName, command);
+            StatusText.Text = statusMessage;
+        }
+
+        private async void LockClientActionButton_Click(object sender, RoutedEventArgs e)
+        {
+            await ExecuteClientActionAsync("lock", $"Lock command sent to {_clientName}");
+        }
+
+        private async void UnlockClientActionButton_Click(object sender, RoutedEventArgs e)
+        {
+            await ExecuteClientActionAsync("unlock", $"Unlock command sent to {_clientName}");
+        }
+
+        private async void ShutdownClientActionButton_Click(object sender, RoutedEventArgs e)
+        {
+            var result = MessageBox.Show($"Are you sure you want to shutdown {_clientName}?",
+                "Confirm Shutdown", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+            if (result != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            await ExecuteClientActionAsync("shutdown", $"Shutdown command sent to {_clientName}");
+        }
+
+        private async void RestartClientActionButton_Click(object sender, RoutedEventArgs e)
+        {
+            var result = MessageBox.Show($"Are you sure you want to restart {_clientName}?",
+                "Confirm Restart", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+            if (result != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            await ExecuteClientActionAsync("restart", $"Restart command sent to {_clientName}");
+        }
+
+        private async void SleepClientActionButton_Click(object sender, RoutedEventArgs e)
+        {
+            await ExecuteClientActionAsync("sleep", $"Sleep command sent to {_clientName}");
+        }
+
         private async void RetryButton_Click(object sender, RoutedEventArgs e)
         {
             try
