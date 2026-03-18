@@ -78,7 +78,7 @@
 
         <!-- Title -->
         <StackPanel Grid.Row="0" Margin="0,0,0,20">
-            <TextBlock Text="🎤 Voice Enrollment" FontSize="22" FontWeight="Bold" Foreground="#050d60"/>
+            <TextBlock Text="Voice Enrollment" FontSize="22" FontWeight="Bold" Foreground="#050d60"/>
             <TextBlock x:Name="UsernameLabel" Text="Professor: " FontSize="13" Foreground="#555555" Margin="0,4,0,0"/>
             <TextBlock Text="Record 3 sample phrases so the system can recognize your voice."
                        FontSize="13" Foreground="#555555" Margin="0,4,0,0" TextWrapping="Wrap"/>
@@ -135,7 +135,7 @@
 
         <!-- Buttons -->
         <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
-            <Button x:Name="RecordButton" Content="🎤 Start Recording" Style="{StaticResource RecordButton}"
+            <Button x:Name="RecordButton" Content="Start Recording" Style="{StaticResource RecordButton}"
                     Click="RecordButton_Click" Width="160"/>
             <Button x:Name="SaveButton" Content="✅ Save Profile" Style="{StaticResource EnrollButton}"
                     Click="SaveButton_Click" Width="140" Margin="12,0,0,0" IsEnabled="False"/>

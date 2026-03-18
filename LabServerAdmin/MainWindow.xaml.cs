@@ -44,6 +44,8 @@ namespace LabServerAdmin
         private readonly DispatcherTimer _uptimeTimer;
         private readonly DispatcherTimer _scheduleEndTimer;
         private readonly DispatcherTimer _inactivityTimer;
+        private DispatcherTimer? _footerNotificationTimer;
+        private bool _isFooterNotificationActive;
         private DateTime _lastActivityTime;
         private int _sessionTimeoutMinutes = 15;
         private int _warningBeforeMinutes = 1;
@@ -88,6 +90,30 @@ namespace LabServerAdmin
         private int _computersPageSize = 10;
         private int _computersTotalPages = 1;
         private List<Computer> _allComputers = new();
+
+        // Pagination for Login Requests
+        private int _loginRequestsCurrentPage = 1;
+        private int _loginRequestsPageSize = 10;
+        private int _loginRequestsTotalPages = 1;
+        private List<LoginRequest> _allLoginRequests = new();
+
+        // Pagination for Class List
+        private int _classListCurrentPage = 1;
+        private int _classListPageSize = 10;
+        private int _classListTotalPages = 1;
+        private List<InstructorClassListItem> _allClassList = new();
+
+        // Pagination for Attendance Logs
+        private int _attendanceCurrentPage = 1;
+        private int _attendancePageSize = 10;
+        private int _attendanceTotalPages = 1;
+        private List<AttendanceLog> _allAttendanceLogs = new();
+
+        // Pagination for Activity Logs
+        private int _activityCurrentPage = 1;
+        private int _activityPageSize = 10;
+        private int _activityTotalPages = 1;
+        private List<ActivityLog> _allActivityLogs = new();
 
         public MainWindow(string? adminUsername = null, string? adminRole = null, string? password = null)
         {
@@ -329,9 +355,15 @@ namespace LabServerAdmin
             {
                 if (!_isVoiceEnabled)
                 {
-                    await _voiceRecognitionService.StartListeningAsync();
+                    var started = await _voiceRecognitionService.StartListeningAsync();
+                    if (!started)
+                    {
+                        UpdateStatus("Voice recognition failed to start");
+                        return;
+                    }
+
                     _isVoiceEnabled = true;
-                    VoiceToggleButton.Content = "🎙️ Voice: ON";
+                    VoiceToggleButton.Content = "Voice: ON";
                     VoiceToggleButton.Tag = "On";
                     UpdateStatus("Voice recognition enabled");
                 }
@@ -339,7 +371,7 @@ namespace LabServerAdmin
                 {
                     _voiceRecognitionService.StopListening();
                     _isVoiceEnabled = false;
-                    VoiceToggleButton.Content = "🎙️🚫 Voice: OFF";
+                    VoiceToggleButton.Content = "Voice: OFF";
                     VoiceToggleButton.Tag = "Off";
                     UpdateStatus("Voice recognition disabled");
                 }
@@ -355,6 +387,7 @@ namespace LabServerAdmin
     {
         var dialog = new VoiceEnrollmentDialog(
             _host.Services.GetRequiredService<VoiceSpeakerService>(),
+            _host.Services.GetRequiredService<IConfiguration>(),
             _currentAdminUsername ?? "professor")
         {
             Owner = this
@@ -464,6 +497,11 @@ namespace LabServerAdmin
 
             await _tcpServerService.SendCommandToAllAsync("lock");
             UpdateStatus("Lock command sent to all clients");
+
+            foreach (var client in _allClients)
+            {
+                await _databaseService.UpdateComputerLockStatusAsync(client.Name, true);
+            }
         
             // Log admin action (skip if database unavailable)
             if (!string.IsNullOrWhiteSpace(_currentAdminUsername) && _databaseService != null)
@@ -475,6 +513,7 @@ namespace LabServerAdmin
             if (_databaseService != null)
             {
                 await RefreshSystemLogs();
+                await RefreshComputers();
             }
         }
 
@@ -488,6 +527,11 @@ namespace LabServerAdmin
 
             await _tcpServerService.SendCommandToAllAsync("unlock");
             UpdateStatus("Unlock command sent to all clients");
+
+            foreach (var client in _allClients)
+            {
+                await _databaseService.UpdateComputerLockStatusAsync(client.Name, false);
+            }
         
             // Log admin action (skip if database unavailable)
             if (!string.IsNullOrWhiteSpace(_currentAdminUsername) && _databaseService != null)
@@ -499,6 +543,7 @@ namespace LabServerAdmin
             if (_databaseService != null)
             {
                 await RefreshSystemLogs();
+                await RefreshComputers();
             }
         }
 
@@ -522,6 +567,7 @@ namespace LabServerAdmin
                 if (_databaseService != null)
                 {
                     await RefreshSystemLogs();
+                    await RefreshComputers();
                 }
             }
         }
@@ -546,6 +592,7 @@ namespace LabServerAdmin
                 if (_databaseService != null)
                 {
                     await RefreshSystemLogs();
+                    await RefreshComputers();
                 }
             }
         }
@@ -590,6 +637,8 @@ namespace LabServerAdmin
             {
                 await _tcpServerService.SendCommandAsync(clientName, "lock");
                 UpdateStatus($"Lock command sent to {clientName}");
+
+                await _databaseService.UpdateComputerLockStatusAsync(clientName, true);
             
                 // Log admin action (skip if database unavailable)
                 if (!string.IsNullOrWhiteSpace(_currentAdminUsername) && _databaseService != null)
@@ -611,6 +660,8 @@ namespace LabServerAdmin
             {
                 await _tcpServerService.SendCommandAsync(clientName, "unlock");
                 UpdateStatus($"Unlock command sent to {clientName}");
+
+                await _databaseService.UpdateComputerLockStatusAsync(clientName, false);
             
                 // Log admin action (skip if database unavailable)
                 if (!string.IsNullOrWhiteSpace(_currentAdminUsername) && _databaseService != null)
@@ -1120,22 +1171,54 @@ namespace LabServerAdmin
     {
         Dispatcher.Invoke(() =>
         {
+            if (message.Contains("no_speakers_enrolled", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("no speaker", StringComparison.OrdinalIgnoreCase))
+            {
+                ShowFooterNotification("No speaker registered", TimeSpan.FromSeconds(6));
+                UpdateStatus(message);
+                return;
+            }
+
             VoiceRejectionText.Text = message;
-            VoiceRejectionBanner.Visibility = Visibility.Visible;
+            VoiceRejectionStatusItem.Visibility = Visibility.Visible;
             UpdateStatus(message);
 
-            // Auto-hide banner after 4 seconds
+            // Auto-hide status item after 4 seconds
             var timer = new DispatcherTimer
             {
                 Interval = TimeSpan.FromSeconds(4)
             };
             timer.Tick += (s, e) =>
             {
-                VoiceRejectionBanner.Visibility = Visibility.Collapsed;
+                VoiceRejectionStatusItem.Visibility = Visibility.Collapsed;
                 timer.Stop();
             };
             timer.Start();
         });
+    }
+
+    private void ShowFooterNotification(string message, TimeSpan? duration = null)
+    {
+        _isFooterNotificationActive = true;
+        ServerUptimeText.Text = message;
+
+        _footerNotificationTimer?.Stop();
+        _footerNotificationTimer = null;
+
+        if (duration.HasValue)
+        {
+            _footerNotificationTimer = new DispatcherTimer
+            {
+                Interval = duration.Value
+            };
+            _footerNotificationTimer.Tick += (_, _) =>
+            {
+                _footerNotificationTimer?.Stop();
+                _footerNotificationTimer = null;
+                _isFooterNotificationActive = false;
+            };
+            _footerNotificationTimer.Start();
+        }
     }
 
     #endregion
@@ -1287,6 +1370,282 @@ namespace LabServerAdmin
             UpdateStatus($"Error loading page: {ex.Message}");
         }
         return Task.CompletedTask;
+    }
+
+    // Login Requests Pagination Methods
+    private void UpdateLoginRequestsPagination()
+    {
+        if (LoginRequestsPaginationPanel == null) return;
+
+        Dispatcher.Invoke(() =>
+        {
+            LoginRequestsPageInfoText.Text = $"Page {_loginRequestsCurrentPage} of {_loginRequestsTotalPages} ({_allLoginRequests.Count} requests)";
+            LoginRequestsPrevButton.IsEnabled = _loginRequestsCurrentPage > 1;
+            LoginRequestsNextButton.IsEnabled = _loginRequestsCurrentPage < _loginRequestsTotalPages;
+            LoginRequestsFirstButton.IsEnabled = _loginRequestsCurrentPage > 1;
+            LoginRequestsLastButton.IsEnabled = _loginRequestsCurrentPage < _loginRequestsTotalPages;
+        });
+    }
+
+    private void LoginRequestsFirstButton_Click(object sender, RoutedEventArgs e)
+    {
+        _loginRequestsCurrentPage = 1;
+        ApplyLoginRequestsPagination();
+    }
+
+    private void LoginRequestsPrevButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_loginRequestsCurrentPage > 1)
+        {
+            _loginRequestsCurrentPage--;
+            ApplyLoginRequestsPagination();
+        }
+    }
+
+    private void LoginRequestsNextButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_loginRequestsCurrentPage < _loginRequestsTotalPages)
+        {
+            _loginRequestsCurrentPage++;
+            ApplyLoginRequestsPagination();
+        }
+    }
+
+    private void LoginRequestsLastButton_Click(object sender, RoutedEventArgs e)
+    {
+        _loginRequestsCurrentPage = _loginRequestsTotalPages;
+        ApplyLoginRequestsPagination();
+    }
+
+    private void ApplyLoginRequestsPagination()
+    {
+        _loginRequestsTotalPages = (int)Math.Ceiling((double)_allLoginRequests.Count / _loginRequestsPageSize);
+        if (_loginRequestsTotalPages == 0) _loginRequestsTotalPages = 1;
+
+        if (_loginRequestsCurrentPage > _loginRequestsTotalPages)
+        {
+            _loginRequestsCurrentPage = _loginRequestsTotalPages;
+        }
+
+        var pagedLogs = _allLoginRequests
+            .Skip((_loginRequestsCurrentPage - 1) * _loginRequestsPageSize)
+            .Take(_loginRequestsPageSize)
+            .ToList();
+
+        _loginRequests.Clear();
+        foreach (var log in pagedLogs)
+        {
+            _loginRequests.Add(log);
+        }
+
+        UpdateLoginRequestsPagination();
+    }
+
+    // Class List Pagination Methods
+    private void UpdateClassListPagination()
+    {
+        if (ClassListPaginationPanel == null) return;
+
+        Dispatcher.Invoke(() =>
+        {
+            ClassListPageInfoText.Text = $"Page {_classListCurrentPage} of {_classListTotalPages} ({_allClassList.Count} records)";
+            ClassListPrevButton.IsEnabled = _classListCurrentPage > 1;
+            ClassListNextButton.IsEnabled = _classListCurrentPage < _classListTotalPages;
+            ClassListFirstButton.IsEnabled = _classListCurrentPage > 1;
+            ClassListLastButton.IsEnabled = _classListCurrentPage < _classListTotalPages;
+        });
+    }
+
+    private void ClassListFirstButton_Click(object sender, RoutedEventArgs e)
+    {
+        _classListCurrentPage = 1;
+        ApplyClassListPagination();
+    }
+
+    private void ClassListPrevButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_classListCurrentPage > 1)
+        {
+            _classListCurrentPage--;
+            ApplyClassListPagination();
+        }
+    }
+
+    private void ClassListNextButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_classListCurrentPage < _classListTotalPages)
+        {
+            _classListCurrentPage++;
+            ApplyClassListPagination();
+        }
+    }
+
+    private void ClassListLastButton_Click(object sender, RoutedEventArgs e)
+    {
+        _classListCurrentPage = _classListTotalPages;
+        ApplyClassListPagination();
+    }
+
+    private void ApplyClassListPagination()
+    {
+        _classListTotalPages = (int)Math.Ceiling((double)_allClassList.Count / _classListPageSize);
+        if (_classListTotalPages == 0) _classListTotalPages = 1;
+
+        if (_classListCurrentPage > _classListTotalPages)
+        {
+            _classListCurrentPage = _classListTotalPages;
+        }
+
+        var pagedList = _allClassList
+            .Skip((_classListCurrentPage - 1) * _classListPageSize)
+            .Take(_classListPageSize)
+            .ToList();
+
+        _classList.Clear();
+        foreach (var item in pagedList)
+        {
+            _classList.Add(item);
+        }
+
+        UpdateClassListPagination();
+    }
+
+    // Attendance Pagination Methods
+    private void UpdateAttendancePagination()
+    {
+        if (AttendancePaginationPanel == null) return;
+
+        Dispatcher.Invoke(() =>
+        {
+            AttendancePageInfoText.Text = $"Page {_attendanceCurrentPage} of {_attendanceTotalPages} ({_allAttendanceLogs.Count} records)";
+            AttendancePrevButton.IsEnabled = _attendanceCurrentPage > 1;
+            AttendanceNextButton.IsEnabled = _attendanceCurrentPage < _attendanceTotalPages;
+            AttendanceFirstButton.IsEnabled = _attendanceCurrentPage > 1;
+            AttendanceLastButton.IsEnabled = _attendanceCurrentPage < _attendanceTotalPages;
+        });
+    }
+
+    private void AttendanceFirstButton_Click(object sender, RoutedEventArgs e)
+    {
+        _attendanceCurrentPage = 1;
+        ApplyAttendancePagination();
+    }
+
+    private void AttendancePrevButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_attendanceCurrentPage > 1)
+        {
+            _attendanceCurrentPage--;
+            ApplyAttendancePagination();
+        }
+    }
+
+    private void AttendanceNextButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_attendanceCurrentPage < _attendanceTotalPages)
+        {
+            _attendanceCurrentPage++;
+            ApplyAttendancePagination();
+        }
+    }
+
+    private void AttendanceLastButton_Click(object sender, RoutedEventArgs e)
+    {
+        _attendanceCurrentPage = _attendanceTotalPages;
+        ApplyAttendancePagination();
+    }
+
+    private void ApplyAttendancePagination()
+    {
+        _attendanceTotalPages = (int)Math.Ceiling((double)_allAttendanceLogs.Count / _attendancePageSize);
+        if (_attendanceTotalPages == 0) _attendanceTotalPages = 1;
+
+        if (_attendanceCurrentPage > _attendanceTotalPages)
+        {
+            _attendanceCurrentPage = _attendanceTotalPages;
+        }
+
+        var pagedLogs = _allAttendanceLogs
+            .Skip((_attendanceCurrentPage - 1) * _attendancePageSize)
+            .Take(_attendancePageSize)
+            .ToList();
+
+        _attendanceLogs.Clear();
+        foreach (var log in pagedLogs)
+        {
+            _attendanceLogs.Add(log);
+        }
+
+        UpdateAttendancePagination();
+    }
+
+    // Activity Pagination Methods
+    private void UpdateActivityPagination()
+    {
+        if (ActivityPaginationPanel == null) return;
+
+        Dispatcher.Invoke(() =>
+        {
+            ActivityPageInfoText.Text = $"Page {_activityCurrentPage} of {_activityTotalPages} ({_allActivityLogs.Count} records)";
+            ActivityPrevButton.IsEnabled = _activityCurrentPage > 1;
+            ActivityNextButton.IsEnabled = _activityCurrentPage < _activityTotalPages;
+            ActivityFirstButton.IsEnabled = _activityCurrentPage > 1;
+            ActivityLastButton.IsEnabled = _activityCurrentPage < _activityTotalPages;
+        });
+    }
+
+    private void ActivityFirstButton_Click(object sender, RoutedEventArgs e)
+    {
+        _activityCurrentPage = 1;
+        ApplyActivityPagination();
+    }
+
+    private void ActivityPrevButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activityCurrentPage > 1)
+        {
+            _activityCurrentPage--;
+            ApplyActivityPagination();
+        }
+    }
+
+    private void ActivityNextButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activityCurrentPage < _activityTotalPages)
+        {
+            _activityCurrentPage++;
+            ApplyActivityPagination();
+        }
+    }
+
+    private void ActivityLastButton_Click(object sender, RoutedEventArgs e)
+    {
+        _activityCurrentPage = _activityTotalPages;
+        ApplyActivityPagination();
+    }
+
+    private void ApplyActivityPagination()
+    {
+        _activityTotalPages = (int)Math.Ceiling((double)_allActivityLogs.Count / _activityPageSize);
+        if (_activityTotalPages == 0) _activityTotalPages = 1;
+
+        if (_activityCurrentPage > _activityTotalPages)
+        {
+            _activityCurrentPage = _activityTotalPages;
+        }
+
+        var pagedLogs = _allActivityLogs
+            .Skip((_activityCurrentPage - 1) * _activityPageSize)
+            .Take(_activityPageSize)
+            .ToList();
+
+        _activityLogs.Clear();
+        foreach (var log in pagedLogs)
+        {
+            _activityLogs.Add(log);
+        }
+
+        UpdateActivityPagination();
     }
 
     // Clients Pagination Methods
@@ -1505,17 +1864,16 @@ namespace LabServerAdmin
     {
         try
         {
+            _attendanceCurrentPage = 1;
+
             if (_showAbsentStudents)
             {
                 // Get combined list of present and absent students
                 var allLogs = await _databaseService.GetAttendanceWithAbsentStudentsAsync(_attendanceStartDate, _attendanceEndDate);
-                _attendanceLogs.Clear();
-            
-                foreach (var log in allLogs)
-                {
-                    _attendanceLogs.Add(log);
-                }
-            
+                _allAttendanceLogs = allLogs.ToList();
+
+                ApplyAttendancePagination();
+
                 var presentCount = allLogs.Count(l => l.Status != "Absent");
                 var absentCount = allLogs.Count(l => l.Status == "Absent");
                 UpdateStatus($"Loaded {presentCount} present, {absentCount} absent - Total: {allLogs.Count} record(s)");
@@ -1524,13 +1882,10 @@ namespace LabServerAdmin
             {
                 // Get only present students (logged in)
                 var logs = await _databaseService.GetAttendanceLogsAsync(_attendanceStartDate, _attendanceEndDate);
-                _attendanceLogs.Clear();
-            
-                foreach (var log in logs)
-                {
-                    _attendanceLogs.Add(log);
-                }
-            
+                _allAttendanceLogs = logs.ToList();
+
+                ApplyAttendancePagination();
+
                 UpdateStatus($"Loaded {logs.Count} attendance record(s)");
             }
         }
@@ -1545,13 +1900,11 @@ namespace LabServerAdmin
         try
         {
             var logs = await _databaseService.GetActivityLogsAsync(_activityStartDate, _activityEndDate);
-            _activityLogs.Clear();
-        
-            foreach (var log in logs)
-            {
-                _activityLogs.Add(log);
-            }
-        
+            _activityCurrentPage = 1;
+            _allActivityLogs = logs.ToList();
+
+            ApplyActivityPagination();
+
             UpdateStatus($"Loaded {logs.Count} activity record(s)");
         }
         catch (Exception ex)
@@ -1565,13 +1918,10 @@ namespace LabServerAdmin
         try
         {
             var logs = await _databaseService.GetPendingLoginRequestsAsync();
-            _loginRequests.Clear();
-        
-            foreach (var log in logs)
-            {
-                _loginRequests.Add(log);
-            }
-        
+            _loginRequestsCurrentPage = 1;
+            _allLoginRequests = logs.ToList();
+
+            ApplyLoginRequestsPagination();
             UpdatePendingRequestsCount();
             UpdateStatus($"Loaded {logs.Count} login request(s)");
         }
@@ -1592,11 +1942,10 @@ namespace LabServerAdmin
             }
 
             var list = await _databaseService.GetInstructorClassListAsync(_currentAdminUsername, _classListDate);
-            _classList.Clear();
-            foreach (var item in list)
-            {
-                _classList.Add(item);
-            }
+            _classListCurrentPage = 1;
+            _allClassList = list.ToList();
+
+            ApplyClassListPagination();
 
             UpdateStatus($"Loaded {list.Count} class record(s)");
         }
@@ -1608,7 +1957,7 @@ namespace LabServerAdmin
 
     private void UpdatePendingRequestsCount()
     {
-        var pendingCount = _loginRequests.Count(r => r.Status == "Pending");
+        var pendingCount = _allLoginRequests.Count(r => r.Status == "Pending");
         PendingRequestsCountText.Text = $"Pending: {pendingCount}";
     }
 
@@ -1619,6 +1968,7 @@ namespace LabServerAdmin
         EndDatePicker.SelectedDate = today;
         _attendanceStartDate = today;
         _attendanceEndDate = today;
+        _attendanceCurrentPage = 1;
         _ = RefreshAttendanceLogs();
     }
 
@@ -1628,6 +1978,7 @@ namespace LabServerAdmin
         EndDatePicker.SelectedDate = null;
         _attendanceStartDate = null;
         _attendanceEndDate = null;
+        _attendanceCurrentPage = 1;
         _ = RefreshAttendanceLogs();
     }
 
@@ -1646,6 +1997,7 @@ namespace LabServerAdmin
             ShowAbsentButton.Style = (Style)FindResource("DangerButton");
         }
     
+        _attendanceCurrentPage = 1;
         _ = RefreshAttendanceLogs();
     }
 
@@ -1653,6 +2005,7 @@ namespace LabServerAdmin
     {
         _attendanceStartDate = StartDatePicker.SelectedDate;
         _attendanceEndDate = EndDatePicker.SelectedDate;
+        _attendanceCurrentPage = 1;
         _ = RefreshAttendanceLogs();
     }
 
@@ -1663,6 +2016,7 @@ namespace LabServerAdmin
         {
             _attendanceStartDate = StartDatePicker.SelectedDate;
             _attendanceEndDate = EndDatePicker.SelectedDate;
+            _attendanceCurrentPage = 1;
             _ = RefreshAttendanceLogs();
         }
     }
@@ -1688,6 +2042,7 @@ namespace LabServerAdmin
         ActivityEndDatePicker.SelectedDate = null;
         _activityStartDate = null;
         _activityEndDate = null;
+        _activityCurrentPage = 1;
     
         await RefreshActivityLogs();
         UpdateStatus("Activity logs refreshed");
@@ -1722,6 +2077,7 @@ namespace LabServerAdmin
         ActivityEndDatePicker.SelectedDate = today;
         _activityStartDate = today;
         _activityEndDate = today;
+        _activityCurrentPage = 1;
         _ = RefreshActivityLogs();
     }
 
@@ -1731,6 +2087,7 @@ namespace LabServerAdmin
         ActivityEndDatePicker.SelectedDate = null;
         _activityStartDate = null;
         _activityEndDate = null;
+        _activityCurrentPage = 1;
         _ = RefreshActivityLogs();
     }
 
@@ -1738,6 +2095,7 @@ namespace LabServerAdmin
     {
         _activityStartDate = ActivityStartDatePicker.SelectedDate;
         _activityEndDate = ActivityEndDatePicker.SelectedDate;
+        _activityCurrentPage = 1;
         _ = RefreshActivityLogs();
     }
 
@@ -1747,6 +2105,7 @@ namespace LabServerAdmin
         {
             _activityStartDate = ActivityStartDatePicker.SelectedDate;
             _activityEndDate = ActivityEndDatePicker.SelectedDate;
+            _activityCurrentPage = 1;
             _ = RefreshActivityLogs();
         }
     }
@@ -1937,6 +2296,7 @@ namespace LabServerAdmin
         var today = DateTime.Today;
         ClassListDatePicker.SelectedDate = today;
         _classListDate = today;
+        _classListCurrentPage = 1;
         _ = RefreshClassList();
     }
  
@@ -1944,12 +2304,14 @@ namespace LabServerAdmin
      {
          ClassListDatePicker.SelectedDate = null;
          _classListDate = null;
+         _classListCurrentPage = 1;
          _ = RefreshClassList();
      }
  
      private void ClassListApplyButton_Click(object sender, RoutedEventArgs e)
      {
          _classListDate = ClassListDatePicker.SelectedDate;
+         _classListCurrentPage = 1;
          _ = RefreshClassList();
      }
  
@@ -2443,6 +2805,11 @@ namespace LabServerAdmin
         {
             if (_serverStartTime.HasValue)
             {
+                if (_isFooterNotificationActive)
+                {
+                    return;
+                }
+
                 var uptime = DateTime.Now - _serverStartTime.Value;
                 ServerUptimeText.Text = $"Uptime: {uptime.Hours:D2}:{uptime.Minutes:D2}:{uptime.Seconds:D2}";
             }
@@ -2779,13 +3146,6 @@ namespace LabServerAdmin
                 return;
             }
 
-            if (ClassListSearchBox.Text == "Search..." || ClassListSearchBox.Foreground == Brushes.Gray)
-            {
-                var view = System.Windows.Data.CollectionViewSource.GetDefaultView(ClassListDataGrid.ItemsSource);
-                view.Filter = null;
-                return;
-            }
-
             var searchText = ClassListSearchBox.Text.ToLower();
             var view2 = System.Windows.Data.CollectionViewSource.GetDefaultView(ClassListDataGrid.ItemsSource);
         
@@ -2817,13 +3177,6 @@ namespace LabServerAdmin
                 return;
             }
 
-            if (ComputersSearchBox.Text == "Search..." || ComputersSearchBox.Foreground == Brushes.Gray)
-            {
-                var view = System.Windows.Data.CollectionViewSource.GetDefaultView(ComputersDataGrid.ItemsSource);
-                view.Filter = null;
-                return;
-            }
-
             var searchText = ComputersSearchBox.Text.ToLower();
             var view2 = System.Windows.Data.CollectionViewSource.GetDefaultView(ComputersDataGrid.ItemsSource);
         
@@ -2850,13 +3203,6 @@ namespace LabServerAdmin
             // Guard against initialization - DataGrid may not exist yet
             if (AttendanceLogsDataGrid == null || AttendanceLogsDataGrid.ItemsSource == null)
             {
-                return;
-            }
-
-            if (AttendanceSearchBox.Text == "Search..." || AttendanceSearchBox.Foreground == Brushes.Gray)
-            {
-                var view = System.Windows.Data.CollectionViewSource.GetDefaultView(AttendanceLogsDataGrid.ItemsSource);
-                view.Filter = null;
                 return;
             }
 
@@ -2931,10 +3277,9 @@ namespace LabServerAdmin
         /// </summary>
         private void ClearSearchBox(TextBox searchBox)
         {
-            if (searchBox != null && searchBox.Text != "Search...")
+            if (searchBox != null && !string.IsNullOrWhiteSpace(searchBox.Text))
             {
-                searchBox.Text = "Search...";
-                searchBox.Foreground = Brushes.Gray;
+                searchBox.Text = string.Empty;
             }
         }
 

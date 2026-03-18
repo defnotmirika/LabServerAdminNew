@@ -192,10 +192,10 @@ namespace LabServerAdmin.Models
             {
                 return TimelinessStatus switch
                 {
-                    "Late" => $"?? Late ({MinutesLate} min)",
-                    "Excused" => "?? Excused",
-                    "On Time" => "?? On Time",
-                    _ => "?? On Time"
+                    "Late" => $"Late ({MinutesLate} min)",
+                    "Excused" => "Excused",
+                    "On Time" => "On Time",
+                    _ => "On Time"
                 };
             }
         }

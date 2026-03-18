@@ -20,7 +20,7 @@ namespace LabServerAdmin.Services
                 ?? _configuration["Supabase:ConnectionString"];
 
             var defaultConnection = _configuration.GetConnectionString("DefaultConnection")
-                ?? "Host=localhost;Port=5432;Database=learniqDBnew;Username=postgres;Password=mynewpass";
+                ?? "Host=localhost;Port=5432;Database=learniqDB1;Username=postgres;Password=abc123";
 
             _connectionString = !string.IsNullOrWhiteSpace(supabaseConnection)
                 ? supabaseConnection
@@ -1045,6 +1045,27 @@ namespace LabServerAdmin.Services
             catch (Exception ex)
             {
                 await LogSystemActionAsync("Update Computer Status Error", $"Computer ID: {computerId}", "Error", $"Failed to update computer status: {ex.Message}");
+                return false;
+            }
+        }
+
+        public async Task<bool> UpdateComputerLockStatusAsync(string clientName, bool isLocked)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+                using var command = new NpgsqlCommand(
+                    "UPDATE computers SET is_locked = @isLocked, updated_at = CURRENT_TIMESTAMP WHERE client_name = @clientName",
+                    connection);
+                command.Parameters.AddWithValue("@clientName", clientName);
+                command.Parameters.AddWithValue("@isLocked", isLocked);
+                var rowsAffected = await command.ExecuteNonQueryAsync();
+                return rowsAffected > 0;
+            }
+            catch (Exception ex)
+            {
+                await LogSystemActionAsync("Update Computer Lock Error", clientName, "Error", $"Failed to update lock state: {ex.Message}");
                 return false;
             }
         }
