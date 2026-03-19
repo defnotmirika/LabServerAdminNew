@@ -322,17 +322,18 @@ namespace LabServerAdmin
 
         private void StopEnrollmentProcess()
         {
-            if (_enrollmentProcess == null)
+            var process = _enrollmentProcess;
+            if (process == null)
             {
                 return;
             }
 
             try
             {
-                if (!_enrollmentProcess.HasExited)
+                if (!process.HasExited)
                 {
-                    _enrollmentProcess.Kill(entireProcessTree: true);
-                    _enrollmentProcess.WaitForExit(2000);
+                    process.Kill(entireProcessTree: true);
+                    process.WaitForExit(2000);
                 }
             }
             catch

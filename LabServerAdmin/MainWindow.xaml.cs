@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -30,6 +31,7 @@ namespace LabServerAdmin
         private readonly DatabaseService _databaseService;
         private readonly TcpServerService _tcpServerService;
         private readonly VoiceRecognitionService _voiceRecognitionService;
+        private readonly IConfiguration _configuration;
     
         private ObservableCollection<ClientInfo> _connectedClients = new();
         private ObservableCollection<SystemLog> _systemLogs = new();
@@ -127,6 +129,7 @@ namespace LabServerAdmin
             _databaseService = _host.Services.GetRequiredService<DatabaseService>();
             _tcpServerService = _host.Services.GetRequiredService<TcpServerService>();
             _voiceRecognitionService = _host.Services.GetRequiredService<VoiceRecognitionService>();
+            _configuration = _host.Services.GetRequiredService<IConfiguration>();
         
             // Setup data binding
             ClientsDataGrid.ItemsSource = _connectedClients;
@@ -1155,7 +1158,39 @@ namespace LabServerAdmin
             Dispatcher.Invoke(() =>
             {
                 UpdateStatus($"Voice command: {e.Command} {e.Target}");
+                TryLaunchVoiceApps();
             });
+        }
+
+        private void TryLaunchVoiceApps()
+        {
+            var apps = _configuration.GetSection("VoiceRecognition:AutoLaunchApps").Get<string[]>();
+            if (apps == null || apps.Length == 0)
+            {
+                return;
+            }
+
+            foreach (var app in apps)
+            {
+                var appName = app?.Trim();
+                if (string.IsNullOrWhiteSpace(appName))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = appName,
+                        UseShellExecute = true
+                    });
+                }
+                catch (Exception ex)
+                {
+                    UpdateStatus($"Failed to launch {appName}: {ex.Message}");
+                }
+            }
         }
 
         private void OnRecognitionError(object? sender, string error)

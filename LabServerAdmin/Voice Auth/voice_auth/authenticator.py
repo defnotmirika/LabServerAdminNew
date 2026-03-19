@@ -15,7 +15,7 @@ from voice_auth.speaker_model import SpeakerModel
 from voice_auth.profile_manager import load_profile, load_all_profiles
 
 
-THRESHOLD = -2.5
+THRESHOLD = -3.5
 
 
 class AuthenticationResult:
