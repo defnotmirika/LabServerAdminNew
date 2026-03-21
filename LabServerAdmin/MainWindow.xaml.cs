@@ -1157,8 +1157,7 @@ namespace LabServerAdmin
         {
             Dispatcher.Invoke(() =>
             {
-                UpdateStatus($"Voice command: {e.Command} {e.Target}");
-                TryLaunchVoiceApps();
+                UpdateStatus($"✅ Voice authenticated: {e.Target}");
             });
         }
 
@@ -1202,37 +1201,35 @@ namespace LabServerAdmin
         }
 
 
-    private void OnVoiceRejected(object? sender, string message)
-    {
-        Dispatcher.Invoke(() =>
+        private void OnVoiceRejected(object? sender, string message)
         {
-            if (message.Contains("no_speakers_enrolled", StringComparison.OrdinalIgnoreCase) ||
-                message.Contains("no speaker", StringComparison.OrdinalIgnoreCase))
+            Dispatcher.Invoke(() =>
             {
-                ShowFooterNotification("No speaker registered", TimeSpan.FromSeconds(6));
-                UpdateStatus(message);
-                return;
-            }
+                // Different message for unauthorized user vs no speaker enrolled
+                if (message.Contains("no_speakers_enrolled", StringComparison.OrdinalIgnoreCase) ||
+                    message.Contains("no speaker", StringComparison.OrdinalIgnoreCase))
+                {
+                    ShowFooterNotification("No speaker registered", TimeSpan.FromSeconds(6));
+                    UpdateStatus("⚠️ No speaker enrolled yet");
+                    return;
+                }
 
-            VoiceRejectionText.Text = message;
-            VoiceRejectionStatusItem.Visibility = Visibility.Visible;
-            UpdateStatus(message);
+                // Unauthorized voice detected
+                UpdateStatus("🚫 Voice rejected - unauthorized user");  // ← different message
+                VoiceRejectionText.Text = "🚫 Unauthorized voice detected";
+                VoiceRejectionStatusItem.Visibility = Visibility.Visible;
 
-            // Auto-hide status item after 4 seconds
-            var timer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(4)
-            };
-            timer.Tick += (s, e) =>
-            {
-                VoiceRejectionStatusItem.Visibility = Visibility.Collapsed;
-                timer.Stop();
-            };
-            timer.Start();
-        });
-    }
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+                timer.Tick += (s, e) =>
+                {
+                    VoiceRejectionStatusItem.Visibility = Visibility.Collapsed;
+                    timer.Stop();
+                };
+                timer.Start();
+            });
+        }
 
-    private void ShowFooterNotification(string message, TimeSpan? duration = null)
+        private void ShowFooterNotification(string message, TimeSpan? duration = null)
     {
         _isFooterNotificationActive = true;
         ServerUptimeText.Text = message;

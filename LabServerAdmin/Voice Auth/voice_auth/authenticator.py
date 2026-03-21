@@ -15,7 +15,10 @@ from voice_auth.speaker_model import SpeakerModel
 from voice_auth.profile_manager import load_profile, load_all_profiles
 
 
-THRESHOLD = -3.5
+# ── FIX: Adjusted threshold to match actual GMM score range (-80 to -120)
+# Scores are negative log-likelihoods — higher (less negative) = better match.
+# Start at -150.0 and tighten gradually after testing.
+THRESHOLD = -120.0
 
 
 class AuthenticationResult:

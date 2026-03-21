@@ -7,6 +7,7 @@ All output is JSON written to stdout — WPF reads it line by line.
 
 Usage:
     python main.py --mode listener
+    python main.py --mode listener --name "Alice"
     python main.py --mode enroll --name "Alice"
     python main.py --mode enroll --name "Alice" --samples 3 --duration 5 --overwrite
     python main.py --mode train  --name "Alice" --folder "C:/Training Voice/Alice"
@@ -51,9 +52,10 @@ def emit(data: dict):
 # Modes
 # ---------------------------------------------------------------------------
 
-def mode_listener():
+def mode_listener(name: str | None = None):
+    # ── FIX: Pass name to listener so it uses authenticate() instead of identify()
     from voice_auth.voice_listener import main as listener_main
-    listener_main()
+    listener_main(name=name)
 
 
 def mode_enroll(name: str, samples: int, duration: float, overwrite: bool):
@@ -208,7 +210,8 @@ def main():
     args = parser.parse_args()
 
     if args.mode == "listener":
-        mode_listener()
+        # ── FIX: Pass --name to listener mode ──
+        mode_listener(name=args.name)
 
     elif args.mode == "enroll":
         if not args.name:

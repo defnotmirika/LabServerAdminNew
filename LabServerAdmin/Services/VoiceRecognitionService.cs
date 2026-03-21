@@ -219,11 +219,16 @@ namespace LabServerAdmin.Services
         {
             var workingDirectory = Path.GetDirectoryName(scriptPath) ?? AppContext.BaseDirectory;
 
+            // ── FIX: Pass current user name to Python listener for targeted authentication ──
+            var nameArg = string.IsNullOrWhiteSpace(_currentUser)
+                ? ""
+                : $" --name \"{_currentUser}\"";
+
             // Try .exe first (compiled voice listener) - FASTEST
             var exePath = Path.ChangeExtension(scriptPath, ".exe");
             if (File.Exists(exePath))
             {
-                var exeProcess = TryStartProcess(exePath, "--mode listener", workingDirectory);
+                var exeProcess = TryStartProcess(exePath, $"--mode listener{nameArg}", workingDirectory);
                 if (exeProcess != null)
                 {
                     return exeProcess;
@@ -236,7 +241,7 @@ namespace LabServerAdmin.Services
             // Try configured Python first (fastest if set)
             if (!string.IsNullOrWhiteSpace(configuredPython))
             {
-                var configuredProcess = TryStartProcess(configuredPython, $"\"{scriptPath}\" --mode listener", workingDirectory);
+                var configuredProcess = TryStartProcess(configuredPython, $"\"{scriptPath}\" --mode listener{nameArg}", workingDirectory);
                 if (configuredProcess != null)
                 {
                     return configuredProcess;
@@ -250,7 +255,7 @@ namespace LabServerAdmin.Services
             foreach (var launcher in launchers)
             {
                 var prefix = prefixes[launcher];
-                var pythonProcess = TryStartProcess(launcher, $"{prefix}\"{scriptPath}\" --mode listener", workingDirectory);
+                var pythonProcess = TryStartProcess(launcher, $"{prefix}\"{scriptPath}\" --mode listener{nameArg}", workingDirectory);
                 if (pythonProcess != null)
                 {
                     return pythonProcess;

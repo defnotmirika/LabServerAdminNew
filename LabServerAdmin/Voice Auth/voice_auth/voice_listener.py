@@ -31,6 +31,7 @@ Output lines:
 import json
 import sys
 import signal
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -52,15 +53,23 @@ SAMPLE_RATE = 16000
 CHUNK_DURATION = 0.03
 CHUNK_SIZE = int(SAMPLE_RATE * CHUNK_DURATION)
 
-ENERGY_THRESHOLD = 0.005
-SILENCE_CHUNKS_TO_STOP = 30
-MIN_SPEECH_CHUNKS = 5
-MAX_SPEECH_SECONDS = 8
+# ── VAD Settings ─────────────────────────────────────────────────────────────
+# Raise ENERGY_THRESHOLD if background noise is triggering false detections.
+# Raise MIN_SPEECH_CHUNKS to require longer utterances before authenticating.
+ENERGY_THRESHOLD = 0.02          # RMS energy level to detect speech
+SILENCE_CHUNKS_TO_STOP = 40      # chunks of silence before ending utterance (~1.2s)
+MIN_SPEECH_CHUNKS = 15           # minimum chunks needed (~450ms of real speech)
+MAX_SPEECH_SECONDS = 8           # max recording length before forced auth
+
 from voice_auth import BASE_DIR
 PROFILE_DIR = BASE_DIR / "speaker_profiles"
 
 _extract_mfcc = None
+_authenticate = None
 _identify = None
+
+# ── Active speaker name (set via --name argument) ────────────────────────────
+_active_speaker: str | None = None
 
 
 def _emit(data: dict):
@@ -73,35 +82,42 @@ def _has_enrolled_profiles() -> bool:
 
 
 def _ensure_recognition_modules():
-    global _extract_mfcc, _identify
+    global _extract_mfcc, _authenticate, _identify
 
     if _extract_mfcc is None or _identify is None:
         from voice_auth.feature_extractor import extract_mfcc
-        from voice_auth.authenticator import identify
+        from voice_auth.authenticator import authenticate, identify
 
         _extract_mfcc = extract_mfcc
+        _authenticate = authenticate
         _identify = identify
 
 
 def _handle_utterance(audio: np.ndarray) -> dict:
-    """
-    Authenticate a captured utterance.
-    Returns a result dict — WPF decides what command to run.
-    """
     _ensure_recognition_modules()
 
     features = _extract_mfcc(audio)
     if features is None or len(features) == 0:
         return {"accepted": False, "speaker": None, "reason": "no_features"}
 
-    result = _identify(features)
+    if _active_speaker:
+        result = _authenticate(_active_speaker, features)
+    else:
+        result = _identify(features)
 
+    # Include score in the result so C# can show it
     if not result.accepted:
-        return {"accepted": False, "speaker": None, "reason": "auth_failed"}
+        return {
+            "accepted": False,
+            "speaker": None,
+            "reason": f"auth_failed (score:{round(result.score,1)} threshold:{round(result.threshold,1)})"
+        }
 
     return {
         "accepted": True,
         "speaker": result.matched_name,
+        "score": round(result.score, 1),
+        "threshold": round(result.threshold, 1),
     }
 
 
@@ -148,7 +164,9 @@ def _listen_sounddevice():
                     if speech_chunks >= MIN_SPEECH_CHUNKS:
                         audio = np.concatenate(buffer)
                         result = _handle_utterance(audio)
-                        _emit(result)
+                        # Only emit accepted/rejected result — not debug lines
+                        if result.get("status") != "debug_score":
+                            _emit(result)
                     recording = False
                     buffer = []
                     silence_count = 0
@@ -205,7 +223,9 @@ def _listen_pyaudio():
                     if speech_chunks >= MIN_SPEECH_CHUNKS:
                         audio = np.concatenate(buffer)
                         result = _handle_utterance(audio)
-                        _emit(result)
+                        # Only emit accepted/rejected result — not debug lines
+                        if result.get("status") != "debug_score":
+                            _emit(result)
                     recording = False
                     buffer = []
                     silence_count = 0
@@ -222,7 +242,18 @@ def _graceful_exit(signum, frame):
     sys.exit(0)
 
 
-def main():
+def main(name: str | None = None):
+    global _active_speaker
+
+    # Accept --name from command line OR from caller
+    if name is None:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--name", default=None, help="Speaker name to authenticate against")
+        args, _ = parser.parse_known_args()
+        name = args.name
+
+    _active_speaker = name.strip().lower() if name else None
+
     signal.signal(signal.SIGTERM, _graceful_exit)
     signal.signal(signal.SIGINT, _graceful_exit)
 

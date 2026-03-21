@@ -29,12 +29,46 @@ CHUNK_SIZE = 1024
 SAMPLE_WIDTH = 2
 
 
-class AudioRecorder:
-    """Records audio from the default microphone."""
+def _find_best_input_device() -> int | None:
+    """
+    Finds the best available input device.
+    Prefers USB microphones over built-in ones for consistency.
+    Returns the device index or None to use system default.
+    """
+    if not SOUNDDEVICE_AVAILABLE:
+        return None
 
-    def __init__(self, sample_rate: int = SAMPLE_RATE, channels: int = CHANNELS):
+    devices = sd.query_devices()
+    usb_device = None
+    default_input = None
+
+    for i, dev in enumerate(devices):
+        if dev["max_input_channels"] < 1:
+            continue
+        name = dev["name"].lower()
+        # Prefer USB microphone for consistency
+        if "usb" in name and usb_device is None:
+            usb_device = i
+        # Track system default input
+        if i == sd.default.device[0]:
+            default_input = i
+
+    # Priority: USB mic → system default → None
+    return usb_device if usb_device is not None else default_input
+
+
+# Cache the best device index at startup for consistency
+_PREFERRED_DEVICE: int | None = _find_best_input_device() if SOUNDDEVICE_AVAILABLE else None
+
+
+class AudioRecorder:
+    """Records audio from the microphone."""
+
+    def __init__(self, sample_rate: int = SAMPLE_RATE, channels: int = CHANNELS, device: int | None = None):
         self.sample_rate = sample_rate
         self.channels = channels
+        # Use provided device, or the cached preferred device
+        self.device = device if device is not None else _PREFERRED_DEVICE
 
     def list_devices(self):
         """Print available audio input devices."""
@@ -43,7 +77,8 @@ class AudioRecorder:
             devices = sd.query_devices()
             for i, dev in enumerate(devices):
                 if dev["max_input_channels"] > 0:
-                    print(f"  [{i}] {dev['name']}")
+                    marker = " ← SELECTED" if i == self.device else ""
+                    print(f"  [{i}] {dev['name']}{marker}")
         elif PYAUDIO_AVAILABLE:
             pa = pyaudio.PyAudio()
             print("\nAvailable audio devices:")
@@ -69,6 +104,7 @@ class AudioRecorder:
                 samplerate=self.sample_rate,
                 channels=self.channels,
                 dtype="float32",
+                device=self.device,   # ← FIX: Always use consistent device
             )
             sd.wait()
             return audio.flatten()
