@@ -12,13 +12,11 @@ namespace LabServerAdmin
     {
         private IHost? _host;
         private DatabaseService? _databaseService;
+        private ShowLearniq? _splashWindow; // ✅ ADDED
 
         private void Application_Startup(object sender, StartupEventArgs e)
         {
-            // Prevent application from shutting down automatically
             this.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            
-            // Run async initialization
             _ = InitializeAsync();
         }
 
@@ -26,65 +24,22 @@ namespace LabServerAdmin
         {
             try
             {
-                // Setup dependency injection
                 _host = CreateHostBuilder().Build();
                 _databaseService = _host.Services.GetRequiredService<DatabaseService>();
 
-                // Initialize database before showing login
-                await _databaseService.InitializeDatabaseAsync();
+                _ = _databaseService.InitializeDatabaseAsync(); // ✅ CHANGED: removed await
 
-                // Show login window first with database service on UI thread
-                LoginWindow? loginWindow = null;
-                bool? dialogResult = null;
-                
-                await Application.Current.Dispatcher.InvokeAsync(() =>
+                // ✅ CHANGED: Shows splash screen instead of login directly
+                await Dispatcher.InvokeAsync(() =>
                 {
-                    loginWindow = new LoginWindow(_databaseService);
-                    loginWindow.ShowDialog();
-                    dialogResult = loginWindow.DialogResult;
+                    _splashWindow = new ShowLearniq();
+                    _splashWindow.AnimationCompleted += async (_, _) => await ShowLoginAndMainAsync();
+                    _splashWindow.Show();
                 });
-
-                // Only show main window if login was successful
-                if (loginWindow != null && loginWindow.IsAuthenticated && dialogResult == true)
-                {
-                    var username = loginWindow.AuthenticatedUsername;
-                    var role = loginWindow.UserRole;
-                    var password = loginWindow.AuthenticatedPassword; // Get password for lock screen
-                    await Application.Current.Dispatcher.InvokeAsync(() =>
-                    {
-                        try
-                        {
-                            var mainWindow = new MainWindow(username, role, password); // Pass password
-                            mainWindow.Show();
-                            mainWindow.Activate();
-                            mainWindow.Focus();
-                            
-                            // Change shutdown mode to normal now that we have a main window
-                            this.ShutdownMode = ShutdownMode.OnMainWindowClose;
-                        }
-                        catch (Exception ex)
-                        {
-                            MessageBox.Show(
-                                $"Error creating main window: {ex.Message}\n\nStack Trace:\n{ex.StackTrace}",
-                                "Error",
-                                MessageBoxButton.OK,
-                                MessageBoxImage.Error);
-                            Shutdown();
-                        }
-                    });
-                }
-                else
-                {
-                    // Exit application if login failed
-                    await Application.Current.Dispatcher.InvokeAsync(() =>
-                    {
-                        Shutdown();
-                    });
-                }
             }
             catch (Exception ex)
             {
-                await Application.Current.Dispatcher.InvokeAsync(() =>
+                await Dispatcher.InvokeAsync(() =>
                 {
                     MessageBox.Show(
                         $"Failed to initialize application: {ex.Message}\n\n" +
@@ -97,12 +52,62 @@ namespace LabServerAdmin
             }
         }
 
+        // ✅ ADDED: New method — handles login + welcome text + main window
+        private async Task ShowLoginAndMainAsync()
+        {
+            _splashWindow?.Close();
+            _splashWindow = null;
+
+            var loginWindow = new LoginWindow(_databaseService);
+            bool? dialogResult = loginWindow.ShowDialog();
+
+            if (loginWindow != null && loginWindow.IsAuthenticated && dialogResult == true)
+            {
+                var username = loginWindow.AuthenticatedUsername;
+                var role = loginWindow.UserRole;
+                var password = loginWindow.AuthenticatedPassword;
+
+                // ✅ ADDED: Show WelcomeText for first-time INSTRUCTOR login
+                if (_databaseService != null &&
+                    !string.IsNullOrWhiteSpace(username) &&
+                    string.Equals(role, "INSTRUCTOR", StringComparison.OrdinalIgnoreCase) &&
+                    await _databaseService.ShouldShowWelcomeTextAsync(username))
+                {
+                    var welcomeWindow = new WelcomeText();
+                    welcomeWindow.AnimationCompleted += (_, _) => welcomeWindow.Close();
+                    welcomeWindow.ShowDialog();
+                    await _databaseService.MarkWelcomeTextShownAsync(username);
+                }
+
+                try
+                {
+                    var mainWindow = new MainWindow(username, role, password);
+                    mainWindow.Show();
+                    mainWindow.Activate();
+                    mainWindow.Focus();
+                    ShutdownMode = ShutdownMode.OnMainWindowClose;
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(
+                        $"Error creating main window: {ex.Message}\n\nStack Trace:\n{ex.StackTrace}",
+                        "Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                    Shutdown();
+                }
+            }
+            else
+            {
+                Shutdown();
+            }
+        }
+
         private static IHostBuilder CreateHostBuilder() =>
             Host.CreateDefaultBuilder()
                 .ConfigureServices((context, services) =>
                 {
                     services.AddSingleton<DatabaseService>();
-                    
                 });
 
         protected override void OnExit(ExitEventArgs e)

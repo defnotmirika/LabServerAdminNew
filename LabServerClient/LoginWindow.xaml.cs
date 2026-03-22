@@ -65,12 +65,12 @@ namespace LabServerClient
         {
             _databaseService = databaseService;
             _requireAuthenticationToClose = requireAuthenticationToClose;
-            
+
             // Initialize ViewModel - separates business logic from UI
             _viewModel = new LoginViewModel(databaseService);
-            
+
             InitializeComponent();
-            
+
             // Set DataContext for MVVM binding
             this.DataContext = _viewModel;
 
@@ -92,14 +92,14 @@ namespace LabServerClient
 
             // Enable kiosk mode - fullscreen with no taskbar
             var hwnd = new WindowInteropHelper(this).Handle;
-            
+
             // Make window fullscreen (borderless)
             this.WindowState = WindowState.Normal;
             this.Top = 0;
             this.Left = 0;
             this.Width = SystemParameters.PrimaryScreenWidth;
             this.Height = SystemParameters.PrimaryScreenHeight;
-            
+
             // Set window to topmost and prevent interactions with other windows
             SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_TOPMOST);
             SetForegroundWindow(hwnd);
@@ -118,7 +118,7 @@ namespace LabServerClient
         private void LoginWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
             System.Diagnostics.Debug.WriteLine($"[LOGIN] LoginWindow_Closing - _requireAuthenticationToClose: {_requireAuthenticationToClose}, IsAuthenticated: {IsAuthenticated}");
-            
+
             // Prevent closing unless authenticated
             if (_requireAuthenticationToClose && !IsAuthenticated)
             {
@@ -127,9 +127,9 @@ namespace LabServerClient
                 MessageBox.Show("You must login to exit the application.", "Login Required", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
-            
+
             System.Diagnostics.Debug.WriteLine($"[LOGIN] Allowing close");
-            
+
             // Unregister hotkeys only if closing is allowed
             var hwnd = new WindowInteropHelper(this).Handle;
             if (hwnd != IntPtr.Zero)
@@ -215,6 +215,22 @@ namespace LabServerClient
             AttemptLogin();
         }
 
+        private void ForgotPasswordButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_databaseService == null)
+            {
+                MessageBox.Show("Database is not available.", "Forgot Password", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var window = new ForgotPasswordWindow(_databaseService)
+            {
+                Owner = this
+            };
+
+            window.ShowDialog();
+        }
+
         private void UsernameTextBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
@@ -241,11 +257,11 @@ namespace LabServerClient
             System.Diagnostics.Debug.WriteLine($"[LOGIN] AttemptLogin called");
             System.Diagnostics.Debug.WriteLine($"[LOGIN] Username from UI: '{UsernameTextBox.Text}'");
             System.Diagnostics.Debug.WriteLine($"[LOGIN] Password length: {PasswordBox.Password?.Length ?? 0}");
-            
+
             _viewModel.Password = PasswordBox.Password ?? string.Empty;
             System.Diagnostics.Debug.WriteLine($"[LOGIN] ViewModel.Password set to: '{_viewModel.Password}'");
             System.Diagnostics.Debug.WriteLine($"[LOGIN] ViewModel.Username: '{_viewModel.Username}'");
-            
+
             await _viewModel.AttemptLoginAsync();
         }
 
@@ -256,7 +272,7 @@ namespace LabServerClient
         private void ViewModel_LoginSuccess()
         {
             System.Diagnostics.Debug.WriteLine($"[LOGIN] ViewModel_LoginSuccess called");
-            
+
             // Set authenticated properties from ViewModel
             IsAuthenticated = _viewModel.IsAuthenticated;
             AuthenticatedUsername = _viewModel.AuthenticatedUsername;
@@ -264,9 +280,9 @@ namespace LabServerClient
             AuthenticatedClientId = _viewModel.AuthenticatedClientId;
 
             System.Diagnostics.Debug.WriteLine($"[LOGIN] Window IsAuthenticated set to: {IsAuthenticated}");
-            
+
             ErrorTextBlock.Visibility = Visibility.Collapsed;
-            
+
             // Set DialogResult and close window
             this.DialogResult = true;
             System.Diagnostics.Debug.WriteLine($"[LOGIN] DialogResult set to true, closing window");
@@ -287,7 +303,7 @@ namespace LabServerClient
             {
                 // User selected "Yes" - send request to admin
                 ShowError("Sending request to administrator...");
-                
+
                 try
                 {
                     bool requestSent = await _viewModel.SendLoginRequestAsync();

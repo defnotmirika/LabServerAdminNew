@@ -852,6 +852,56 @@ namespace LabServerClient.Services
             }
         }
 
+
+        public async Task<bool> ResetStudentPasswordAsync(string usernameOrStudNo, string newPassword)
+        {
+            try
+            {
+                var hashedPassword = BCrypt.Net.BCrypt.HashPassword(newPassword);
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            UPDATE us_credentials
+            SET password_hash = @newHash
+            WHERE (username = @username OR studNo = @username) AND role = 'STUDENT'";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@newHash", hashedPassword);
+                command.Parameters.AddWithValue("@username", usernameOrStudNo);
+
+                return await command.ExecuteNonQueryAsync() > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public async Task<bool> SubmitForgotPasswordFeedbackAsync(string username, string feedbackMessage, string sourceApp)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            INSERT INTO forgot_password_feedback (username, feedback_message, source_app, created_at, status)
+            VALUES (@username, @feedbackMessage, @sourceApp, CURRENT_TIMESTAMP, 'Pending')";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@username", username);
+                command.Parameters.AddWithValue("@feedbackMessage", feedbackMessage);
+                command.Parameters.AddWithValue("@sourceApp", sourceApp);
+
+                return await command.ExecuteNonQueryAsync() > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         /// <summary>
         /// Checks if a logout request for this student has been approved.
         /// FIX: studno (lowercase) in WHERE clause.

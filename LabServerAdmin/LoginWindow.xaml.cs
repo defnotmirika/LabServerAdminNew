@@ -1,9 +1,9 @@
+using LabServerAdmin.Services;
 using System;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
-using LabServerAdmin.Services;
 
 namespace LabServerAdmin
 {
@@ -62,7 +62,7 @@ namespace LabServerAdmin
         {
             // TEMPORARILY DISABLED: Alt+Tab blocking for testing
             // Uncomment when ready to re-enable
-            
+
             /*
             // Prevent alt-tab and make window stay on top
             var hwnd = new WindowInteropHelper(this).Handle;
@@ -91,7 +91,7 @@ namespace LabServerAdmin
         {
             const int WM_CHANGEUISTATE = 0x0127;
             const int UIS_INITIALIZE = 3;
-            
+
             // Disable UI state animations
             SendMessage(hwnd, WM_CHANGEUISTATE, new IntPtr(UIS_INITIALIZE), IntPtr.Zero);
         }
@@ -100,7 +100,7 @@ namespace LabServerAdmin
         {
             // TEMPORARILY DISABLED: Authentication requirement for testing
             // Uncomment when ready to re-enable
-            
+
             /*
             // Prevent closing unless authenticated
             if (_requireAuthenticationToClose && !IsAuthenticated)
@@ -110,7 +110,7 @@ namespace LabServerAdmin
                 return;
             }
             */
-            
+
             // Unregister hotkeys only if closing is allowed
             var hwnd = new WindowInteropHelper(this).Handle;
             if (hwnd != IntPtr.Zero)
@@ -155,7 +155,7 @@ namespace LabServerAdmin
         {
             // TEMPORARILY DISABLED: Key blocking for testing
             // Uncomment when ready to re-enable
-            
+
             /*
             // Block Alt+Tab, Ctrl+Alt+Del, etc.
             if (e.Key == Key.System && (Keyboard.Modifiers & ModifierKeys.Alt) == ModifierKeys.Alt)
@@ -178,6 +178,22 @@ namespace LabServerAdmin
         private void LoginButton_Click(object sender, RoutedEventArgs e)
         {
             AttemptLogin();
+        }
+
+        private void ForgotPasswordButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_databaseService == null)
+            {
+                MessageBox.Show("Database is not available.", "Forgot Password", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var window = new ForgotPasswordWindow(_databaseService)
+            {
+                Owner = this
+            };
+
+            window.ShowDialog();
         }
 
         private void UsernameTextBox_KeyDown(object sender, KeyEventArgs e)
@@ -240,6 +256,34 @@ namespace LabServerAdmin
                         if (isValid)
                         {
                             role = "INSTRUCTOR";
+
+                            var isTempPassword = await _databaseService.IsInstructorTempPasswordAsync(username);
+                            if (isTempPassword)
+                            {
+                                var firstTime = new FirstTimeLoginWindow(_databaseService, username)
+                                {
+                                    Owner = this
+                                };
+
+                                var result = firstTime.ShowDialog();
+                                if (result == true)
+                                {
+                                    ShowError("Password updated. Please login with your new password.");
+                                }
+                                else
+                                {
+                                    ShowError("You must set a new password to continue.");
+                                }
+
+                                IsAuthenticated = false;
+                                AuthenticatedUsername = null;
+                                UserRole = null;
+                                AuthenticatedPassword = null;
+                                PasswordBox.Password = string.Empty;
+                                PasswordBox.Focus();
+                                LoginButton.IsEnabled = true;
+                                return;
+                            }
                         }
                     }
                 }
@@ -258,7 +302,7 @@ namespace LabServerAdmin
                     UserRole = string.IsNullOrWhiteSpace(role) ? "ADMIN" : role;
                     AuthenticatedPassword = password; // Store password for lock screen
                     ErrorTextBlock.Visibility = Visibility.Collapsed;
-                    
+
                     // Log successful login attempt (fire and forget to not delay window close)
                     if (_databaseService != null)
                     {
@@ -279,7 +323,7 @@ namespace LabServerAdmin
                             }
                         });
                     }
-                    
+
                     // Set DialogResult and close window
                     this.DialogResult = true;
                     this.Close();
@@ -303,7 +347,7 @@ namespace LabServerAdmin
                             // Ignore logging errors
                         }
                     }
-                    
+
                     ShowError("Invalid username or password. Please try again.");
                     PasswordBox.Password = "";
                     PasswordBox.Focus();
