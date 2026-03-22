@@ -167,7 +167,10 @@ namespace LabServerAdmin.Services
                         return;
                     }
 
-                    VoiceCommandRecognized?.Invoke(this, new VoiceCommandEventArgs("python", speaker ?? "accepted"));
+                    var command = root.TryGetProperty("command", out var commandElement)
+                        ? commandElement.GetString() ?? ""
+                        : "";
+                    VoiceCommandRecognized?.Invoke(this, new VoiceCommandEventArgs(command, speaker ?? "accepted"));
                     return;
                 }
 

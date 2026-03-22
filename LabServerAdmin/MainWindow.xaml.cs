@@ -1158,7 +1158,205 @@ namespace LabServerAdmin
             Dispatcher.Invoke(() =>
             {
                 UpdateStatus($"✅ Voice authenticated: {e.Target}");
+                ExecuteVoiceCommand(e.Command, e.Target);
             });
+        }
+
+        private async void ExecuteVoiceCommand(string command, string target)
+        {
+            try
+            {
+                var cmd = command?.ToLower().Trim() ?? "";
+                if (string.IsNullOrWhiteSpace(cmd)) return;
+
+                // ── Lock/Unlock All ───────────────────────────────────────
+                if (cmd.Contains("lock all") || cmd == "lock")
+                {
+                    await _tcpServerService.SendCommandToAllAsync("lock");
+                    LogVoiceAction("Lock All", "Voice command: lock all PCs");
+                }
+                else if (cmd.Contains("unlock all") || cmd == "unlock")
+                {
+                    await _tcpServerService.SendCommandToAllAsync("unlock");
+                    LogVoiceAction("Unlock All", "Voice command: unlock all PCs");
+                }
+
+                // ── Shutdown/Restart/Sleep All ────────────────────────────
+                else if ((cmd.Contains("shutdown all") || cmd.Contains("shut down all")))
+                {
+                    await _tcpServerService.SendCommandToAllAsync("shutdown");
+                    LogVoiceAction("Shutdown All", "Voice command: shutdown all PCs");
+                }
+                else if (cmd.Contains("restart all"))
+                {
+                    await _tcpServerService.SendCommandToAllAsync("restart");
+                    LogVoiceAction("Restart All", "Voice command: restart all PCs");
+                }
+                else if (cmd.Contains("sleep all"))
+                {
+                    await _tcpServerService.SendCommandToAllAsync("sleep");
+                    LogVoiceAction("Sleep All", "Voice command: sleep all PCs");
+                }
+
+                // ── Lock/Unlock/Restart/Sleep/Shutdown PC-N ───────────────
+                else if (TryGetPcNumber(cmd, out string pcName))
+                {
+                    if (cmd.Contains("unlock"))
+                    {
+                        await _tcpServerService.SendCommandAsync(pcName, "unlock");
+                        LogVoiceAction($"Unlock {pcName}", $"Voice command: unlock {pcName}");
+                    }
+                    else if (cmd.Contains("lock"))
+                    {
+                        await _tcpServerService.SendCommandAsync(pcName, "lock");
+                        LogVoiceAction($"Lock {pcName}", $"Voice command: lock {pcName}");
+                    }
+                    else if (cmd.Contains("shutdown") || cmd.Contains("shut down"))
+                    {
+                        await _tcpServerService.SendCommandAsync(pcName, "shutdown");
+                        LogVoiceAction($"Shutdown {pcName}", $"Voice command: shutdown {pcName}");
+                    }
+                    else if (cmd.Contains("restart"))
+                    {
+                        await _tcpServerService.SendCommandAsync(pcName, "restart");
+                        LogVoiceAction($"Restart {pcName}", $"Voice command: restart {pcName}");
+                    }
+                    else if (cmd.Contains("sleep"))
+                    {
+                        await _tcpServerService.SendCommandAsync(pcName, "sleep");
+                        LogVoiceAction($"Sleep {pcName}", $"Voice command: sleep {pcName}");
+                    }
+                }
+
+                // ── Open App ──────────────────────────────────────────────
+                else if (cmd.StartsWith("open "))
+                {
+                    var appName = cmd.Replace("open ", "").Trim();
+                    OpenAppLocally(appName);
+                }
+
+                else
+                {
+                    UpdateStatus($"🎙️ Voice: unrecognized command '{command}'");
+                }
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Voice command error: {ex.Message}");
+            }
+        }
+
+        private bool TryGetPcNumber(string cmd, out string pcName)
+        {
+            pcName = "";
+
+            var numberWords = new Dictionary<string, int>
+    {
+        {"one",1},{"won",1},{"wan",1},          // "one" sounds
+        {"two",2},{"to",2},{"too",2},           // "two" sounds
+        {"three",3},{"tree",3},
+        {"four",4},{"for",4},{"fore",4},
+        {"five",5},{"fife",5},
+        {"six",6},{"sicks",6},
+        {"seven",7},
+        {"eight",8},{"ate",8},
+        {"nine",9},{"nine",9},
+        {"ten",10},
+        {"eleven",11},
+        {"twelve",12},
+        {"thirteen",13},
+        {"fourteen",14},
+        {"fifteen",15},
+        {"sixteen",16},
+        {"seventeen",17},
+        {"eighteen",18},
+        {"nineteen",19},
+        {"twenty",20}
+    };
+
+            // Match "pc 1", "pc-1", "pc01", "b c 1", "bc1", "pbc 1"
+            var match = System.Text.RegularExpressions.Regex.Match(
+                cmd, @"(?:pc|b c|bc|pbc|p c)[\s\-]?(\d+)");
+            if (match.Success)
+            {
+                var number = int.Parse(match.Groups[1].Value);
+                pcName = $"PC-{number:D2}";
+                return true;
+            }
+
+            // Match word numbers: "pc one", "b c two", etc.
+            foreach (var kvp in numberWords)
+            {
+                var pattern = $@"(?:pc|b c|bc|pbc|p c)[\s\-]?{kvp.Key}";
+                if (System.Text.RegularExpressions.Regex.IsMatch(cmd, pattern))
+                {
+                    pcName = $"PC-{kvp.Value:D2}";
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        
+
+        private void OpenAppLocally(string appName)
+        {
+            var appMap = new Dictionary<string, string>
+    {
+        { "chrome",         "chrome" },
+        { "notepad",        "notepad" },
+        { "note",           "notepad" },    // "note but" → notepad
+        { "excel",          "excel" },
+        { "word",           "winword" },
+        { "powerpoint",     "powerpnt" },
+        { "power point",    "powerpnt" },
+        { "calculator",     "calc" },
+        { "calculate",      "calc" },
+        { "paint",          "mspaint" },
+        { "explorer",       "explorer" },
+        { "file",           "explorer" },   // "open file" → explorer
+        { "task manager",   "taskmgr" },
+        { "firefox",        "firefox" },
+        { "edge",           "msedge" },
+        { "visual studio",  "devenv" },
+        { "cmd",            "cmd" },
+        { "command",        "cmd" },        // "open command" → cmd
+    };
+
+            // Find first matching key
+            var executable = appMap
+                .FirstOrDefault(k => appName.Contains(k.Key)).Value;
+
+            if (executable == null)
+            {
+                UpdateStatus($"🎙️ Unknown app: '{appName}'");
+                return;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = executable,
+                    UseShellExecute = true
+                });
+                LogVoiceAction($"Open {executable}", $"Voice command: opened {appName} locally");
+                UpdateStatus($"🎙️ Opening {executable} on this PC...");
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"🎙️ Could not open '{appName}': {ex.Message}");
+            }
+        }
+
+
+        private void LogVoiceAction(string action, string details)
+        {
+            UpdateStatus($"🎙️ {action} via voice");
+            if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+            {
+                _ = _databaseService.LogAdminActionAsync(_currentAdminUsername, action, details);
+            }
         }
 
         private void TryLaunchVoiceApps()
