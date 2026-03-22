@@ -1167,82 +1167,264 @@ namespace LabServerAdmin
             try
             {
                 var cmd = command?.ToLower().Trim() ?? "";
-                if (string.IsNullOrWhiteSpace(cmd)) return;
-
-                // ── Lock/Unlock All ───────────────────────────────────────
-                if (cmd.Contains("lock all") || cmd == "lock")
+                if (string.IsNullOrWhiteSpace(cmd))
                 {
-                    await _tcpServerService.SendCommandToAllAsync("lock");
-                    LogVoiceAction("Lock All", "Voice command: lock all PCs");
+                    UpdateStatus("🎙️ Voice: empty command received");
+                    return;
                 }
-                else if (cmd.Contains("unlock all") || cmd == "unlock")
+
+                // Show what was heard immediately
+                UpdateStatus($"🎙️ Heard: \"{cmd}\" — processing...");
+
+                // ── Normalize Vosk mistranscriptions ──────────────────────────
+                cmd = NormalizeCommand(cmd);
+
+                // ── 1. PC-Specific commands (check FIRST) ─────────────────────
+                if (TryGetPcNumber(cmd, out string pcName))
                 {
+                    if (ContainsAny(cmd, "unlock", "un lock"))
+                    {
+                        var sent = await TrySendCommand(pcName, "unlock");
+                        UpdateStatus(sent ? $"✅ Unlock sent → {pcName}" : $"⚠️ {pcName} is not connected");
+                        if (sent) LogVoiceAction($"Unlock {pcName}", $"Voice: unlock {pcName}");
+                    }
+                    else if (ContainsAny(cmd, "lock", "lok", "loch"))
+                    {
+                        var sent = await TrySendCommand(pcName, "lock");
+                        UpdateStatus(sent ? $"✅ Lock sent → {pcName}" : $"⚠️ {pcName} is not connected");
+                        if (sent) LogVoiceAction($"Lock {pcName}", $"Voice: lock {pcName}");
+                    }
+                    else if (ContainsAny(cmd, "shutdown", "shut down", "shut", "power off"))
+                    {
+                        var sent = await TrySendCommand(pcName, "shutdown");
+                        UpdateStatus(sent ? $"✅ Shutdown sent → {pcName}" : $"⚠️ {pcName} is not connected");
+                        if (sent) LogVoiceAction($"Shutdown {pcName}", $"Voice: shutdown {pcName}");
+                    }
+                    else if (ContainsAny(cmd, "restart", "reboot", "re start"))
+                    {
+                        var sent = await TrySendCommand(pcName, "restart");
+                        UpdateStatus(sent ? $"✅ Restart sent → {pcName}" : $"⚠️ {pcName} is not connected");
+                        if (sent) LogVoiceAction($"Restart {pcName}", $"Voice: restart {pcName}");
+                    }
+                    else if (ContainsAny(cmd, "sleep", "slip", "sleet"))
+                    {
+                        var sent = await TrySendCommand(pcName, "sleep");
+                        UpdateStatus(sent ? $"✅ Sleep sent → {pcName}" : $"⚠️ {pcName} is not connected");
+                        if (sent) LogVoiceAction($"Sleep {pcName}", $"Voice: sleep {pcName}");
+                    }
+                    else
+                    {
+                        UpdateStatus($"🎙️ Detected {pcName} but no action found in: \"{cmd}\"");
+                    }
+                    return;
+                }
+
+                // ── 2. Check Open App (before all commands) ────────────────────
+                var appExecutable = TryMatchApp(cmd);
+                if (appExecutable != null)
+                {
+                    OpenAppLocally(appExecutable, cmd);
+                    return;
+                }
+
+                // ── 3. Unlock All ──────────────────────────────────────────────
+                if (ContainsAny(cmd, "unlock", "un lock"))
+                {
+                    var count = _tcpServerService.GetConnectedClients().Count;
+                    if (count == 0) { UpdateStatus("⚠️ Voice: no connected clients to unlock"); return; }
                     await _tcpServerService.SendCommandToAllAsync("unlock");
-                    LogVoiceAction("Unlock All", "Voice command: unlock all PCs");
+                    UpdateStatus($"✅ Unlock All → {count} PC(s)");
+                    LogVoiceAction("Unlock All", $"Voice: unlock all — {count} PCs");
+                    return;
                 }
 
-                // ── Shutdown/Restart/Sleep All ────────────────────────────
-                else if ((cmd.Contains("shutdown all") || cmd.Contains("shut down all")))
+                // ── 4. Lock All ────────────────────────────────────────────────
+                if (ContainsAny(cmd, "lock", "lok", "loch"))
                 {
+                    var count = _tcpServerService.GetConnectedClients().Count;
+                    if (count == 0) { UpdateStatus("⚠️ Voice: no connected clients to lock"); return; }
+                    await _tcpServerService.SendCommandToAllAsync("lock");
+                    UpdateStatus($"✅ Lock All → {count} PC(s)");
+                    LogVoiceAction("Lock All", $"Voice: lock all — {count} PCs");
+                    return;
+                }
+
+                // ── 5. Shutdown All ────────────────────────────────────────────
+                if (ContainsAny(cmd, "shutdown", "shut down", "shut", "power off"))
+                {
+                    var count = _tcpServerService.GetConnectedClients().Count;
+                    if (count == 0) { UpdateStatus("⚠️ Voice: no connected clients to shutdown"); return; }
                     await _tcpServerService.SendCommandToAllAsync("shutdown");
-                    LogVoiceAction("Shutdown All", "Voice command: shutdown all PCs");
+                    UpdateStatus($"✅ Shutdown All → {count} PC(s)");
+                    LogVoiceAction("Shutdown All", $"Voice: shutdown all — {count} PCs");
+                    return;
                 }
-                else if (cmd.Contains("restart all"))
+
+                // ── 6. Restart All ─────────────────────────────────────────────
+                if (ContainsAny(cmd, "restart", "reboot", "re start"))
                 {
+                    var count = _tcpServerService.GetConnectedClients().Count;
+                    if (count == 0) { UpdateStatus("⚠️ Voice: no connected clients to restart"); return; }
                     await _tcpServerService.SendCommandToAllAsync("restart");
-                    LogVoiceAction("Restart All", "Voice command: restart all PCs");
+                    UpdateStatus($"✅ Restart All → {count} PC(s)");
+                    LogVoiceAction("Restart All", $"Voice: restart all — {count} PCs");
+                    return;
                 }
-                else if (cmd.Contains("sleep all"))
+
+                // ── 7. Sleep All ───────────────────────────────────────────────
+                if (ContainsAny(cmd, "sleep", "slip", "sleet"))
                 {
+                    var count = _tcpServerService.GetConnectedClients().Count;
+                    if (count == 0) { UpdateStatus("⚠️ Voice: no connected clients to sleep"); return; }
                     await _tcpServerService.SendCommandToAllAsync("sleep");
-                    LogVoiceAction("Sleep All", "Voice command: sleep all PCs");
+                    UpdateStatus($"✅ Sleep All → {count} PC(s)");
+                    LogVoiceAction("Sleep All", $"Voice: sleep all — {count} PCs");
+                    return;
                 }
 
-                // ── Lock/Unlock/Restart/Sleep/Shutdown PC-N ───────────────
-                else if (TryGetPcNumber(cmd, out string pcName))
-                {
-                    if (cmd.Contains("unlock"))
-                    {
-                        await _tcpServerService.SendCommandAsync(pcName, "unlock");
-                        LogVoiceAction($"Unlock {pcName}", $"Voice command: unlock {pcName}");
-                    }
-                    else if (cmd.Contains("lock"))
-                    {
-                        await _tcpServerService.SendCommandAsync(pcName, "lock");
-                        LogVoiceAction($"Lock {pcName}", $"Voice command: lock {pcName}");
-                    }
-                    else if (cmd.Contains("shutdown") || cmd.Contains("shut down"))
-                    {
-                        await _tcpServerService.SendCommandAsync(pcName, "shutdown");
-                        LogVoiceAction($"Shutdown {pcName}", $"Voice command: shutdown {pcName}");
-                    }
-                    else if (cmd.Contains("restart"))
-                    {
-                        await _tcpServerService.SendCommandAsync(pcName, "restart");
-                        LogVoiceAction($"Restart {pcName}", $"Voice command: restart {pcName}");
-                    }
-                    else if (cmd.Contains("sleep"))
-                    {
-                        await _tcpServerService.SendCommandAsync(pcName, "sleep");
-                        LogVoiceAction($"Sleep {pcName}", $"Voice command: sleep {pcName}");
-                    }
-                }
-
-                // ── Open App ──────────────────────────────────────────────
-                else if (cmd.StartsWith("open "))
-                {
-                    var appName = cmd.Replace("open ", "").Trim();
-                    OpenAppLocally(appName);
-                }
-
-                else
-                {
-                    UpdateStatus($"🎙️ Voice: unrecognized command '{command}'");
-                }
+                // ── 8. Unrecognized ────────────────────────────────────────────
+                UpdateStatus($"🎙️ Voice: unrecognized — \"{cmd}\"");
             }
             catch (Exception ex)
             {
-                UpdateStatus($"Voice command error: {ex.Message}");
+                UpdateStatus($"🎙️ Voice command error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Normalize common Vosk mistranscriptions before processing.
+        /// </summary>
+        private string NormalizeCommand(string cmd)
+        {
+            var replacements = new Dictionary<string, string>
+    {
+        // Lock aliases
+        { "lot ",   "lock " },
+        { "lop ",   "lock " },
+        { "lol ",   "lock " },
+        { "love ",  "lock " },
+        { "block ", "lock " },
+        { "bloc ",  "lock " },
+        // Unlock aliases
+        { "un lot",  "unlock" },
+        { "an lock", "unlock" },
+        { "and lock","unlock" },
+        { "on lock", "unlock" },
+        // PC aliases
+        { "bc ",  "pc " },
+        { "b c ", "pc " },
+        { "pbc ", "pc " },
+        { "p c ", "pc " },
+        // Noise words
+        { "the sea", "" },
+        { "em the",  "" },
+        { "or pen",  "" },
+        { "in love", "" },
+        { "easier",  "" },
+    };
+
+            foreach (var kvp in replacements)
+                cmd = cmd.Replace(kvp.Key, kvp.Value);
+
+            return cmd.Trim();
+        }
+
+        /// <summary>
+        /// Check if cmd contains any of the given keywords.
+        /// </summary>
+        private bool ContainsAny(string cmd, params string[] keywords)
+            => keywords.Any(k => cmd.Contains(k));
+
+        /// <summary>
+        /// Try to match an app name from the command.
+        /// Returns executable name or null.
+        /// </summary>
+        private string? TryMatchApp(string cmd)
+        {
+            var appAliases = new List<(string[] triggers, string executable)>
+    {
+        // Chrome
+        (new[]{ "chrome", "google chrome", "browser" }, "chrome"),
+
+        // Notepad — Vosk often says "note but", "noted", "no pad", "not bad"
+        (new[]{ "notepad", "note pad", "note but", "noted", "no pad", "not bad", "note" }, "notepad"),
+
+        // Calculator
+        (new[]{ "calculator", "calculate", "calc", "cal" }, "calc"),
+
+        // Word
+        (new[]{ "microsoft word", "ms word", "word" }, "winword"),
+
+        // Excel
+        (new[]{ "microsoft excel", "ms excel", "excel" }, "excel"),
+
+        // PowerPoint — Vosk says "power point", "op in power point"
+        (new[]{ "powerpoint", "power point", "power", "presentation", "op in power" }, "powerpnt"),
+
+        // Paint
+        (new[]{ "paint", "ms paint", "microsoft paint" }, "mspaint"),
+
+        // File Explorer
+        (new[]{ "file explorer", "file manager", "explorer", "files" }, "explorer"),
+
+        // Task Manager
+        (new[]{ "task manager", "task manage" }, "taskmgr"),
+
+        // CMD — Vosk says "see em the", "c m d", "command prompt"
+        (new[]{ "cmd", "command prompt", "command", "see em the", "c m d", "terminal", "see em" }, "cmd"),
+
+        // Edge
+        (new[]{ "microsoft edge", "ms edge", "edge" }, "msedge"),
+
+        // Firefox
+        (new[]{ "firefox", "fire fox", "mozilla" }, "firefox"),
+
+        // Visual Studio
+        (new[]{ "visual studio", "vs code" }, "devenv"),
+    };
+
+            // Strip "open " prefix if present
+            var cleanCmd = cmd.StartsWith("open ") ? cmd.Substring(5).Trim() : cmd;
+
+            foreach (var (triggers, executable) in appAliases)
+            {
+                if (triggers.Any(t => cleanCmd.Contains(t)))
+                    return executable;
+            }
+
+            return null;
+        }
+
+        private void OpenAppLocally(string executable, string originalCmd)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = executable,
+                    UseShellExecute = true
+                });
+                UpdateStatus($"✅ Opening {executable}...");
+                LogVoiceAction($"Open {executable}", $"Voice: opened via \"{originalCmd}\"");
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"🎙️ Could not open '{executable}': {ex.Message}");
+            }
+        }
+
+        private async Task<bool> TrySendCommand(string pcName, string command)
+        {
+            try
+            {
+                if (!_tcpServerService.IsClientConnected(pcName))
+                    return false;
+                await _tcpServerService.SendCommandAsync(pcName, command);
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -1252,15 +1434,15 @@ namespace LabServerAdmin
 
             var numberWords = new Dictionary<string, int>
     {
-        {"one",1},{"won",1},{"wan",1},          // "one" sounds
-        {"two",2},{"to",2},{"too",2},           // "two" sounds
-        {"three",3},{"tree",3},
-        {"four",4},{"for",4},{"fore",4},
-        {"five",5},{"fife",5},
-        {"six",6},{"sicks",6},
-        {"seven",7},
-        {"eight",8},{"ate",8},
-        {"nine",9},
+        {"one",1},  {"won",1},  {"wan",1},  {"wine",1},
+        {"two",2},  {"to",2},   {"too",2},  {"tu",2},
+        {"three",3},{"tree",3}, {"free",3},
+        {"four",4}, {"for",4},  {"fore",4}, {"floor",4},
+        {"five",5}, {"fife",5}, {"hive",5},
+        {"six",6},  {"sicks",6},
+        {"seven",7},{"heaven",7},
+        {"eight",8},{"ate",8},  {"gate",8},
+        {"nine",9}, {"nein",9}, {"line",9},
         {"ten",10},
         {"eleven",11},
         {"twelve",12},
@@ -1274,7 +1456,7 @@ namespace LabServerAdmin
         {"twenty",20}
     };
 
-            // Match "pc 1", "pc-1", "pc01", "b c 1", "bc1", "pbc 1"
+            // Match numeric: "pc 4", "pc-4", "pc04"
             var match = System.Text.RegularExpressions.Regex.Match(
                 cmd, @"(?:pc|b c|bc|pbc|p c)[\s\-]?(\d+)");
             if (match.Success)
@@ -1284,10 +1466,10 @@ namespace LabServerAdmin
                 return true;
             }
 
-            // Match word numbers: "pc one", "b c two", etc.
+            // Match word numbers: "pc four", "pc for"
             foreach (var kvp in numberWords)
             {
-                var pattern = $@"(?:pc|b c|bc|pbc|p c)[\s\-]?{kvp.Key}";
+                var pattern = $@"(?:pc|b c|bc|pbc|p c)[\s\-]?{kvp.Key}\b";
                 if (System.Text.RegularExpressions.Regex.IsMatch(cmd, pattern))
                 {
                     pcName = $"PC-{kvp.Value:D2}";
@@ -1297,58 +1479,6 @@ namespace LabServerAdmin
 
             return false;
         }
-        
-
-        private void OpenAppLocally(string appName)
-        {
-            var appMap = new Dictionary<string, string>
-    {
-        { "chrome",         "chrome" },
-        { "notepad",        "notepad" },
-        { "note",           "notepad" },    // "note but" → notepad
-        { "excel",          "excel" },
-        { "word",           "winword" },
-        { "powerpoint",     "powerpnt" },
-        { "power point",    "powerpnt" },
-        { "calculator",     "calc" },
-        { "calculate",      "calc" },
-        { "paint",          "mspaint" },
-        { "explorer",       "explorer" },
-        { "file",           "explorer" },   // "open file" → explorer
-        { "task manager",   "taskmgr" },
-        { "firefox",        "firefox" },
-        { "edge",           "msedge" },
-        { "visual studio",  "devenv" },
-        { "cmd",            "cmd" },
-        { "command",        "cmd" },        // "open command" → cmd
-    };
-
-            // Find first matching key
-            var executable = appMap
-                .FirstOrDefault(k => appName.Contains(k.Key)).Value;
-
-            if (executable == null)
-            {
-                UpdateStatus($"🎙️ Unknown app: '{appName}'");
-                return;
-            }
-
-            try
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = executable,
-                    UseShellExecute = true
-                });
-                LogVoiceAction($"Open {executable}", $"Voice command: opened {appName} locally");
-                UpdateStatus($"🎙️ Opening {executable} on this PC...");
-            }
-            catch (Exception ex)
-            {
-                UpdateStatus($"🎙️ Could not open '{appName}': {ex.Message}");
-            }
-        }
-
 
         private void LogVoiceAction(string action, string details)
         {
