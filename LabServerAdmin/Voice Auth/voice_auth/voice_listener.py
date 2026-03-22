@@ -32,12 +32,12 @@ except ImportError:
 
 
 SAMPLE_RATE = 16000
-CHUNK_SIZE  = 4000          # ~250 ms per chunk — good for Vosk
+CHUNK_SIZE  = 8000          # ~250 ms per chunk — good for Vosk
 
 # VAD / auth settings (same as before)
 ENERGY_THRESHOLD      = 0.02
-SILENCE_CHUNKS_TO_STOP = 40
-MIN_SPEECH_CHUNKS      = 15
+SILENCE_CHUNKS_TO_STOP = 20
+MIN_SPEECH_CHUNKS      = 8
 MAX_SPEECH_SECONDS     = 8
 
 from voice_auth import BASE_DIR
