@@ -462,7 +462,6 @@
                 </Grid>
             </TabItem>
 
-            <!-- Requests Tab -->
             <TabItem Header="🔐 Requests">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
@@ -471,27 +470,32 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Header Controls -->
                     <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
                         <Button x:Name="RefreshLoginRequestsButton" Content="🔄" ToolTip="Refresh Requests" Style="{StaticResource GoldButton}" 
-                                Click="RefreshLoginRequestsButton_Click" Width="40" Height="35" Padding="0"/>
+                    Click="RefreshLoginRequestsButton_Click" Width="40" Height="35" Padding="0"/>
                         <TextBlock x:Name="PendingRequestsCountText" Text="Pending: 0" 
-                                   FontSize="14" FontWeight="SemiBold" Foreground="#050d60" 
-                                   VerticalAlignment="Center" Margin="20,0,0,0"/>
+                       FontSize="14" FontWeight="SemiBold" Foreground="#050d60" 
+                       VerticalAlignment="Center" Margin="20,0,0,0"/>
                     </StackPanel>
 
-                    <!-- Requests DataGrid -->
                     <DataGrid x:Name="LoginRequestsDataGrid" Grid.Row="1" AutoGenerateColumns="False" 
-                              CanUserAddRows="False" CanUserDeleteRows="False"
-                              GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True" RowHeight="35">
+                  CanUserAddRows="False" CanUserDeleteRows="False"
+                  GridLinesVisibility="Horizontal" HeadersVisibility="Column" IsReadOnly="True" 
+                  RowHeight="50" SelectionUnit="FullRow">
+
                         <DataGrid.RowStyle>
                             <Style TargetType="DataGridRow">
                                 <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#F0F2F5"/>
+                                    </Trigger>
+                                </Style.Triggers>
                             </Style>
                         </DataGrid.RowStyle>
+
                         <DataGrid.Columns>
-                            <!-- Request Type -->
-                            <DataGridTextColumn Header="Type" Binding="{Binding RequestType}" Width="80">
+                            <DataGridTextColumn Header="Type" Binding="{Binding RequestType}" Width="100">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="VerticalAlignment" Value="Center"/>
@@ -500,8 +504,7 @@
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
 
-                            <!-- Student No -->
-                            <DataGridTextColumn Header="Student No" Binding="{Binding StudNo}" Width="150">
+                            <DataGridTextColumn Header="Student No" Binding="{Binding StudNo}" Width="*">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="VerticalAlignment" Value="Center"/>
@@ -510,8 +513,7 @@
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
 
-                            <!-- PC Name -->
-                            <DataGridTextColumn Header="PC Name" Binding="{Binding PcName}" Width="180">
+                            <DataGridTextColumn Header="PC Name" Binding="{Binding PcName}" Width="*">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="VerticalAlignment" Value="Center"/>
@@ -520,8 +522,7 @@
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
 
-                            <!-- Request Time -->
-                            <DataGridTextColumn Header="Request Time" Binding="{Binding RequestTimeFormatted}" Width="170">
+                            <DataGridTextColumn Header="Time" Binding="{Binding RequestTimeFormatted}" Width="150">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="VerticalAlignment" Value="Center"/>
@@ -530,7 +531,6 @@
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
 
-                            <!-- Status -->
                             <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="110">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
@@ -554,26 +554,23 @@
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
 
-                            <!-- Actions Column -->
-                            <DataGridTemplateColumn Header="Actions" Width="220" MinWidth="220" IsReadOnly="False">
+                            <DataGridTemplateColumn Header="Actions" Width="240" IsReadOnly="False">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                            <!-- Approve Button - Only visible for Pending requests -->
                                             <Button Content="✓ Approve" 
-                                                    Style="{StaticResource SuccessButton}" 
-                                                    Click="ApproveLoginRequestButton_Click" 
-                                                    Tag="{Binding Id}" 
-                                                    Width="100" Height="30" Padding="8,4"
-                                                    Visibility="{Binding IsPending, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                        Style="{StaticResource SuccessButton}" 
+                                        Click="ApproveLoginRequestButton_Click" 
+                                        Tag="{Binding Id}" 
+                                        Width="105" Height="32" Margin="2"
+                                        Visibility="{Binding IsPending, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
-                                            <!-- Decline Button - Only visible for Pending requests -->
                                             <Button Content="✗ Decline" 
-                                                    Style="{StaticResource DangerButton}" 
-                                                    Click="DeclineLoginRequestButton_Click" 
-                                                    Tag="{Binding Id}" 
-                                                    Width="100" Height="30" Padding="8,4"
-                                                    Visibility="{Binding IsPending, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                        Style="{StaticResource DangerButton}" 
+                                        Click="DeclineLoginRequestButton_Click" 
+                                        Tag="{Binding Id}" 
+                                        Width="105" Height="32" Margin="2"
+                                        Visibility="{Binding IsPending, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                         </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
@@ -581,32 +578,28 @@
                         </DataGrid.Columns>
                     </DataGrid>
 
-                    <!-- Pagination Controls -->
                     <Border Grid.Row="2" BorderBrush="#050d60" BorderThickness="0,2,0,0" Padding="8" Background="#F5F5F5" Margin="0,8,0,0">
                         <StackPanel x:Name="LoginRequestsPaginationPanel" Orientation="Horizontal" HorizontalAlignment="Center">
                             <Button x:Name="LoginRequestsFirstButton" Content="First"
-                                    Style="{StaticResource ModernButton}"
-                                    Click="LoginRequestsFirstButton_Click"
-                                    Width="75" Height="28" Padding="5,3" Margin="2"/>
+                        Style="{StaticResource ModernButton}"
+                        Click="LoginRequestsFirstButton_Click"
+                        Width="75" Height="28" Padding="5,3" Margin="2"/>
                             <Button x:Name="LoginRequestsPrevButton" Content="◀️ Prev"
-                                    Style="{StaticResource ModernButton}"
-                                    Click="LoginRequestsPrevButton_Click"
-                                    Width="75" Height="28" Padding="5,3" Margin="2"/>
+                        Style="{StaticResource ModernButton}"
+                        Click="LoginRequestsPrevButton_Click"
+                        Width="75" Height="28" Padding="5,3" Margin="2"/>
                             <TextBlock x:Name="LoginRequestsPageInfoText"
-                                       Text="Page 1 of 1 (0 requests)"
-                                       FontSize="13"
-                                       FontWeight="SemiBold"
-                                       Foreground="#050d60"
-                                       VerticalAlignment="Center"
-                                       Margin="12,0"/>
+                           Text="Page 1 of 1 (0 requests)"
+                           FontSize="13" FontWeight="SemiBold" Foreground="#050d60"
+                           VerticalAlignment="Center" Margin="12,0"/>
                             <Button x:Name="LoginRequestsNextButton" Content="Next ▶️"
-                                    Style="{StaticResource ModernButton}"
-                                    Click="LoginRequestsNextButton_Click"
-                                    Width="75" Height="28" Padding="5,3" Margin="2"/>
+                        Style="{StaticResource ModernButton}"
+                        Click="LoginRequestsNextButton_Click"
+                        Width="75" Height="28" Padding="5,3" Margin="2"/>
                             <Button x:Name="LoginRequestsLastButton" Content="Last"
-                                    Style="{StaticResource ModernButton}"
-                                    Click="LoginRequestsLastButton_Click"
-                                    Width="75" Height="28" Padding="5,3" Margin="2"/>
+                        Style="{StaticResource ModernButton}"
+                        Click="LoginRequestsLastButton_Click"
+                        Width="75" Height="28" Padding="5,3" Margin="2"/>
                         </StackPanel>
                     </Border>
                 </Grid>
