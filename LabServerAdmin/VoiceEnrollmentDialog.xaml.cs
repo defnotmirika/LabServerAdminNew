@@ -25,9 +25,13 @@ namespace LabServerAdmin
         private readonly List<(Border Border, TextBlock Text)> _sampleIndicators = new();
         private readonly Random _waveRandom = new();
         private DispatcherTimer? _waveTimer;
+
+        // 9-bar wave visualizer
         private System.Windows.Shapes.Rectangle[] _waveBars = Array.Empty<System.Windows.Shapes.Rectangle>();
+
         private int _tutorialStepIndex;
         private const int EnrollmentSampleDurationSeconds = 5;
+
         private static readonly string[] TutorialSteps =
         {
             "This is the voice register button. Click it to begin recording your voice samples.",
@@ -73,6 +77,7 @@ namespace LabServerAdmin
 
         private void Next_Click(object sender, RoutedEventArgs e)
         {
+            // Still stepping through tutorial
             if (_tutorialStepIndex < TutorialSteps.Length - 1)
             {
                 _tutorialStepIndex++;
@@ -80,18 +85,18 @@ namespace LabServerAdmin
                 return;
             }
 
+            // On the last tutorial step — "Done" button
             if (_tutorialStepIndex == TutorialSteps.Length - 1)
             {
-                if (WasEnrolled)
-                {
-                    _tutorialStepIndex = TutorialSteps.Length;
-                    UpdateTutorialStep();
-                }
+                // Always hide the box when Done is clicked
+                TutorialBox.Visibility = Visibility.Collapsed;
                 return;
             }
 
+            // On the congrats step — "Let's go!" button (only reached after WasEnrolled)
             if (_tutorialStepIndex == TutorialSteps.Length)
             {
+                TutorialBox.Visibility = Visibility.Collapsed;
                 DialogResult = true;
                 Close();
             }
@@ -102,14 +107,19 @@ namespace LabServerAdmin
             if (_tutorialStepIndex < TutorialSteps.Length)
             {
                 TutorialText.Text = TutorialSteps[_tutorialStepIndex];
+                TutorialStepBadge.Text = $"Step {_tutorialStepIndex + 1} of {TutorialSteps.Length}";
                 PrevButton.Visibility = _tutorialStepIndex == 0 ? Visibility.Collapsed : Visibility.Visible;
-                NextButton.Content = _tutorialStepIndex == TutorialSteps.Length - 1 ? "Done" : "Next";
+                NextButton.Content = _tutorialStepIndex == TutorialSteps.Length - 1 ? "Done ✓" : "Next →";
+                TutorialBox.Visibility = Visibility.Visible;
                 return;
             }
 
-            TutorialText.Text = "Congratulations! 🎉 Your voice profile is saved and ready. Click Let’s go! to continue.";
+            // Congrats state — after all samples done
+            TutorialText.Text = "🎉 Voice profile saved! Click Let's go! to open your dashboard.";
+            TutorialStepBadge.Text = "Done!";
             PrevButton.Visibility = Visibility.Collapsed;
             NextButton.Content = "Let's go!";
+            TutorialBox.Visibility = Visibility.Visible;
         }
 
         private async void RecordButton_Click(object sender, RoutedEventArgs e)
@@ -130,7 +140,12 @@ namespace LabServerAdmin
                 return;
             }
 
-            var process = await Task.Run(() => StartPythonProcess(scriptPath, _username, _configuration["VoiceRecognition:PythonExecutable"], _totalSamples, EnrollmentSampleDurationSeconds));
+            var process = await Task.Run(() => StartPythonProcess(
+                scriptPath, _username,
+                _configuration["VoiceRecognition:PythonExecutable"],
+                _totalSamples,
+                EnrollmentSampleDurationSeconds));
+
             if (process == null)
             {
                 MessageBox.Show(
@@ -154,11 +169,7 @@ namespace LabServerAdmin
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
-            if (!WasEnrolled)
-            {
-                return;
-            }
-
+            if (!WasEnrolled) return;
             DialogResult = true;
             Close();
         }
@@ -172,73 +183,61 @@ namespace LabServerAdmin
 
         private void EnrollmentProcess_OutputDataReceived(object sender, DataReceivedEventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(e.Data))
-            {
-                return;
-            }
+            if (string.IsNullOrWhiteSpace(e.Data)) return;
 
             try
             {
                 using var document = JsonDocument.Parse(e.Data);
                 var root = document.RootElement;
-                var status = root.TryGetProperty("status", out var statusElement)
-                    ? statusElement.GetString()
-                    : null;
+                var status = root.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
 
                 switch (status)
                 {
                     case "ready":
-                        _totalSamples = root.TryGetProperty("total_samples", out var totalSamplesElement)
-                            ? totalSamplesElement.GetInt32()
-                            : 3;
-                        var readyMessage = root.TryGetProperty("message", out var messageElement)
-                            ? messageElement.GetString() ?? "Starting enrollment..."
-                            : "Starting enrollment...";
+                        _totalSamples = root.TryGetProperty("total_samples", out var totalSamplesEl)
+                            ? totalSamplesEl.GetInt32() : 3;
+                        var readyMsg = root.TryGetProperty("message", out var msgEl)
+                            ? msgEl.GetString() ?? "Starting enrollment..." : "Starting enrollment...";
+
                         Dispatcher.BeginInvoke(() =>
                         {
-                            RecordingStatusText.Text = readyMessage;
+                            RecordingStatusText.Text = readyMsg;
                             RecordingIndicator.Fill = new SolidColorBrush(Colors.Red);
                             RecordingProgress.IsIndeterminate = true;
-                            RecordButton.Content = "🔴 Recording...";
+                            RecordButton.Content = "🔴  Recording...";
                         });
                         break;
 
                     case "sample":
-                        var current = root.TryGetProperty("current", out var currentElement)
-                            ? currentElement.GetInt32()
-                            : 1;
-                        var total = root.TryGetProperty("total", out var totalElement)
-                            ? totalElement.GetInt32()
-                            : _totalSamples;
+                        var current = root.TryGetProperty("current", out var curEl) ? curEl.GetInt32() : 1;
+                        var total = root.TryGetProperty("total", out var totEl) ? totEl.GetInt32() : _totalSamples;
 
                         Dispatcher.BeginInvoke(() =>
                         {
                             _totalSamples = total;
-                            if (current > 1)
-                            {
-                                MarkSampleDone(current - 2);
-                            }
+                            if (current > 1) MarkSampleDone(current - 2);
 
                             MarkSampleRecording(current - 1);
                             _currentPhrase = Math.Max(0, Math.Min(current - 1, VoiceSpeakerService.EnrollmentPhrases.Length - 1));
                             UpdatePhraseDisplay();
-                            RecordingStatusText.Text = $"Recording sample {current} of {total}... speak now!";
+
+                            RecordingStatusText.Text = $"Recording sample {current} of {total}… speak now!";
                             SampleTimerStatusText.Text = $"Timer running: sample {current}/{total} ({EnrollmentSampleDurationSeconds}s)";
                             RecordingIndicator.Fill = new SolidColorBrush(Colors.Red);
                             RecordingProgress.IsIndeterminate = true;
                             RecordingProgress.Value = ((double)(current - 1) / total) * 100;
-                            RecordButton.Content = "🔴 Recording...";
+                            RecordButton.Content = "🔴  Recording...";
                             StartMicAnimation();
                         });
                         break;
 
                     case "warning":
-                        var warningMessage = root.TryGetProperty("message", out var warningMessageElement)
-                            ? warningMessageElement.GetString() ?? "Sample warning"
-                            : "Sample warning";
+                        var warnMsg = root.TryGetProperty("message", out var warnEl)
+                            ? warnEl.GetString() ?? "Sample warning" : "Sample warning";
+
                         Dispatcher.BeginInvoke(() =>
                         {
-                            RecordingStatusText.Text = warningMessage;
+                            RecordingStatusText.Text = warnMsg;
                             RecordingIndicator.Fill = new SolidColorBrush(Colors.Orange);
                         });
                         break;
@@ -252,9 +251,9 @@ namespace LabServerAdmin
                             SampleTimerStatusText.Text = "✅ Timer finished: all samples completed.";
                             RecordingProgress.IsIndeterminate = false;
                             RecordingProgress.Value = 100;
-                            RecordButton.Content = "🔁 Re-record";
+                            RecordButton.Content = "🔁  Re-record";
                             RecordButton.IsEnabled = true;
-                            SaveButton.Content = "Done";
+                            SaveButton.Content = "✅  Save Profile";
                             SaveButton.IsEnabled = true;
                             WasEnrolled = true;
                             StopMicAnimation();
@@ -266,9 +265,8 @@ namespace LabServerAdmin
                         break;
 
                     case "error":
-                        var reason = root.TryGetProperty("reason", out var reasonElement)
-                            ? reasonElement.GetString() ?? "unknown_error"
-                            : "unknown_error";
+                        var reason = root.TryGetProperty("reason", out var reasonEl)
+                            ? reasonEl.GetString() ?? "unknown_error" : "unknown_error";
                         Dispatcher.BeginInvoke(() => HandleEnrollmentError(reason));
                         _isEnrollmentRunning = false;
                         break;
@@ -276,19 +274,13 @@ namespace LabServerAdmin
             }
             catch
             {
-                Dispatcher.BeginInvoke(() =>
-                {
-                    RecordingStatusText.Text = e.Data;
-                });
+                Dispatcher.BeginInvoke(() => { RecordingStatusText.Text = e.Data; });
             }
         }
 
         private void EnrollmentProcess_ErrorDataReceived(object sender, DataReceivedEventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(e.Data))
-            {
-                return;
-            }
+            if (string.IsNullOrWhiteSpace(e.Data)) return;
 
             Dispatcher.BeginInvoke(() =>
             {
@@ -307,10 +299,12 @@ namespace LabServerAdmin
                 if (!wasEnrolled)
                 {
                     RecordButton.IsEnabled = true;
-                    RecordButton.Content = "🎤 Start Recording";
+                    RecordButton.Content = "🎤  Start Recording";
                     RecordingIndicator.Fill = new SolidColorBrush(Colors.Gray);
                     RecordingProgress.IsIndeterminate = false;
-                    if (string.IsNullOrWhiteSpace(RecordingStatusText.Text) || RecordingStatusText.Text.StartsWith("Recording sample", StringComparison.OrdinalIgnoreCase))
+
+                    if (string.IsNullOrWhiteSpace(RecordingStatusText.Text) ||
+                        RecordingStatusText.Text.StartsWith("Recording sample", StringComparison.OrdinalIgnoreCase))
                     {
                         RecordingStatusText.Text = "Enrollment stopped.";
                     }
@@ -327,15 +321,18 @@ namespace LabServerAdmin
             WasEnrolled = false;
             _currentPhrase = 0;
             _totalSamples = VoiceSpeakerService.EnrollmentPhrases.Length;
+
             RecordButton.IsEnabled = false;
-            RecordButton.Content = "🔴 Recording...";
+            RecordButton.Content = "🔴  Recording...";
             SaveButton.IsEnabled = false;
-            SaveButton.Content = "✅ Save Profile";
+            SaveButton.Content = "✅  Save Profile";
+
             RecordingIndicator.Fill = new SolidColorBrush(Colors.Red);
             RecordingStatusText.Text = "Starting enrollment...";
             SampleTimerStatusText.Text = "Timer: Starting...";
             RecordingProgress.Value = 0;
             RecordingProgress.IsIndeterminate = true;
+
             ResetSampleState();
             UpdatePhraseDisplay();
             StopMicAnimation();
@@ -349,7 +346,7 @@ namespace LabServerAdmin
             }
         }
 
-        private static void ResetSample(System.Windows.Controls.Border border, System.Windows.Controls.TextBlock text, string label)
+        private static void ResetSample(Border border, TextBlock text, string label)
         {
             border.Background = new SolidColorBrush(Color.FromRgb(233, 236, 239));
             border.BorderBrush = Brushes.Transparent;
@@ -361,8 +358,9 @@ namespace LabServerAdmin
         private void HandleEnrollmentError(string reason)
         {
             RecordButton.IsEnabled = true;
-            RecordButton.Content = "🎤 Start Recording";
+            RecordButton.Content = "🎤  Start Recording";
             SaveButton.IsEnabled = false;
+
             RecordingIndicator.Fill = new SolidColorBrush(Colors.OrangeRed);
             RecordingProgress.Value = 0;
             RecordingProgress.IsIndeterminate = false;
@@ -388,32 +386,25 @@ namespace LabServerAdmin
 
         private void MarkSampleDone(int index)
         {
-            if (index < 0 || index >= _sampleIndicators.Count)
-            {
-                return;
-            }
+            if (index < 0 || index >= _sampleIndicators.Count) return;
 
             var (border, text) = _sampleIndicators[index];
-
             border.Background = new SolidColorBrush(Color.FromRgb(212, 237, 218));
             border.BorderBrush = new SolidColorBrush(Color.FromRgb(40, 167, 69));
             border.BorderThickness = new Thickness(1);
-            text.Text = $"☑ Phrase {index + 1} completed";
+            text.Text = $"☑ Phrase {index + 1}";
             text.Foreground = new SolidColorBrush(Color.FromRgb(21, 87, 36));
         }
 
         private void MarkSampleRecording(int index)
         {
-            if (index < 0 || index >= _sampleIndicators.Count)
-            {
-                return;
-            }
+            if (index < 0 || index >= _sampleIndicators.Count) return;
 
             var (border, text) = _sampleIndicators[index];
             border.Background = new SolidColorBrush(Color.FromRgb(255, 243, 205));
             border.BorderBrush = new SolidColorBrush(Color.FromRgb(255, 193, 7));
             border.BorderThickness = new Thickness(1);
-            text.Text = $"◔ Phrase {index + 1} recording";
+            text.Text = $"◔ Phrase {index + 1}";
             text.Foreground = new SolidColorBrush(Color.FromRgb(133, 100, 4));
         }
 
@@ -428,8 +419,8 @@ namespace LabServerAdmin
                 {
                     Background = new SolidColorBrush(Color.FromRgb(233, 236, 239)),
                     CornerRadius = new CornerRadius(20),
-                    Padding = new Thickness(10, 5, 10, 5),
-                    Margin = new Thickness(4, 4, 4, 4),
+                    Padding = new Thickness(10, 4, 10, 4),
+                    Margin = new Thickness(0, 0, 6, 6),
                     BorderBrush = Brushes.Transparent,
                     BorderThickness = new Thickness(0)
                 };
@@ -447,40 +438,38 @@ namespace LabServerAdmin
             }
         }
 
-        private static string GetSampleLabel(int index) => $"☐ Phrase {index + 1} not completed";
+        private static string GetSampleLabel(int index) => $"☐ Phrase {index + 1}";
+
+        // --- Wave visualizer (9 bars) ---
 
         private void InitializeWaveVisualizer()
         {
-            _waveBars = new[] { Wave1, Wave2, Wave3, Wave4, Wave5 };
-            _waveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
+            // Map to the 9 named bars in the XAML
+            _waveBars = new[]
+            {
+                Wave1, Wave2, Wave3, Wave4, Wave5,
+                Wave6, Wave7, Wave8, Wave9
+            };
+
+            _waveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(110) };
             _waveTimer.Tick += (_, _) => UpdateWaveFrame();
             StopMicAnimation();
         }
 
         private void StartMicAnimation()
         {
-            if (_waveTimer == null)
-            {
-                return;
-            }
-
-            if (!_waveTimer.IsEnabled)
-            {
-                _waveTimer.Start();
-            }
+            if (_waveTimer == null) return;
+            if (!_waveTimer.IsEnabled) _waveTimer.Start();
         }
 
         private void StopMicAnimation()
         {
-            if (_waveTimer?.IsEnabled == true)
-            {
-                _waveTimer.Stop();
-            }
+            if (_waveTimer?.IsEnabled == true) _waveTimer.Stop();
 
             foreach (var bar in _waveBars)
             {
-                bar.Height = 20;
-                bar.Fill = Brushes.Green;
+                bar.Height = 12;
+                bar.Fill = Brushes.LightGray;
             }
 
             Glow.Opacity = 0;
@@ -490,24 +479,24 @@ namespace LabServerAdmin
         {
             foreach (var bar in _waveBars)
             {
-                bar.Height = _waveRandom.Next(12, 56);
-                bar.Fill = bar.Height > 42
-                    ? Brushes.OrangeRed
-                    : bar.Height > 28
-                        ? Brushes.Gold
-                        : Brushes.Green;
+                var h = _waveRandom.Next(8, 48);
+                bar.Height = h;
+                bar.Fill = h > 38
+                    ? new SolidColorBrush(Color.FromRgb(230, 57, 70))   // red   – loud
+                    : h > 24
+                        ? new SolidColorBrush(Color.FromRgb(248, 184, 0)) // amber – mid
+                        : new SolidColorBrush(Color.FromRgb(40, 167, 69));// green – quiet
             }
 
-            Glow.Opacity = 0.15 + _waveRandom.NextDouble() * 0.35;
+            Glow.Opacity = 0.12 + _waveRandom.NextDouble() * 0.30;
         }
+
+        // --- Process management ---
 
         private void StopEnrollmentProcess()
         {
             var process = _enrollmentProcess;
-            if (process == null)
-            {
-                return;
-            }
+            if (process == null) return;
 
             try
             {
@@ -517,9 +506,7 @@ namespace LabServerAdmin
                     process.WaitForExit(2000);
                 }
             }
-            catch
-            {
-            }
+            catch { }
             finally
             {
                 CleanupProcess();
@@ -530,10 +517,7 @@ namespace LabServerAdmin
 
         private void CleanupProcess()
         {
-            if (_enrollmentProcess == null)
-            {
-                return;
-            }
+            if (_enrollmentProcess == null) return;
 
             _enrollmentProcess.OutputDataReceived -= EnrollmentProcess_OutputDataReceived;
             _enrollmentProcess.ErrorDataReceived -= EnrollmentProcess_ErrorDataReceived;
@@ -551,27 +535,16 @@ namespace LabServerAdmin
             };
 
             foreach (var candidate in directCandidates)
-            {
-                if (File.Exists(candidate))
-                {
-                    return candidate;
-                }
-            }
+                if (File.Exists(candidate)) return candidate;
 
             var directory = new DirectoryInfo(AppContext.BaseDirectory);
             while (directory != null)
             {
                 var candidate = Path.Combine(directory.FullName, "Voice Auth", "main.py");
-                if (File.Exists(candidate))
-                {
-                    return candidate;
-                }
+                if (File.Exists(candidate)) return candidate;
 
                 candidate = Path.Combine(directory.FullName, "LabServerAdmin", "Voice Auth", "main.py");
-                if (File.Exists(candidate))
-                {
-                    return candidate;
-                }
+                if (File.Exists(candidate)) return candidate;
 
                 directory = directory.Parent;
             }
@@ -579,18 +552,28 @@ namespace LabServerAdmin
             return null;
         }
 
-        private static Process? StartPythonProcess(string scriptPath, string username, string? configuredPython, int samples, int durationSeconds)
+        private static Process? StartPythonProcess(
+            string scriptPath,
+            string username,
+            string? configuredPython,
+            int samples,
+            int durationSeconds)
         {
             var workingDirectory = Path.GetDirectoryName(scriptPath) ?? AppContext.BaseDirectory;
             var escapedUsername = username.Replace("\"", "\\\"");
             var sampleCount = Math.Max(1, samples);
             var duration = Math.Max(1, durationSeconds);
+
             var launchers = new List<(string FileName, string Arguments)>
             {
-                (configuredPython ?? string.Empty, $"\"{scriptPath}\" --mode enroll --name \"{escapedUsername}\" --samples {sampleCount} --duration {duration} --overwrite"),
-                ("py", $"-3 \"{scriptPath}\" --mode enroll --name \"{escapedUsername}\" --samples {sampleCount} --duration {duration} --overwrite"),
-                ("python", $"\"{scriptPath}\" --mode enroll --name \"{escapedUsername}\" --samples {sampleCount} --duration {duration} --overwrite"),
-                ("python3", $"\"{scriptPath}\" --mode enroll --name \"{escapedUsername}\" --samples {sampleCount} --duration {duration} --overwrite")
+                (configuredPython ?? string.Empty,
+                 $"\"{scriptPath}\" --mode enroll --name \"{escapedUsername}\" --samples {sampleCount} --duration {duration} --overwrite"),
+                ("py",
+                 $"-3 \"{scriptPath}\" --mode enroll --name \"{escapedUsername}\" --samples {sampleCount} --duration {duration} --overwrite"),
+                ("python",
+                 $"\"{scriptPath}\" --mode enroll --name \"{escapedUsername}\" --samples {sampleCount} --duration {duration} --overwrite"),
+                ("python3",
+                 $"\"{scriptPath}\" --mode enroll --name \"{escapedUsername}\" --samples {sampleCount} --duration {duration} --overwrite")
             };
 
             foreach (var launcher in launchers.Where(l => !string.IsNullOrWhiteSpace(l.FileName)))
@@ -610,17 +593,12 @@ namespace LabServerAdmin
                     startInfo.EnvironmentVariables["PYTHONUNBUFFERED"] = "1";
 
                     var process = Process.Start(startInfo);
-                    if (process == null)
-                    {
-                        continue;
-                    }
+                    if (process == null) continue;
 
                     process.EnableRaisingEvents = true;
                     return process;
                 }
-                catch
-                {
-                }
+                catch { }
             }
 
             return null;

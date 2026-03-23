@@ -77,47 +77,34 @@ namespace LabServerClient
             _username = Environment.UserName;
             InitializeComponent();
 
-            _heartbeatTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(5)
-            };
+            _heartbeatTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
             _heartbeatTimer.Tick += HeartbeatTimer_Tick;
             _heartbeatTimer.Start();
 
-            _updateTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(1)
-            };
+            _updateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _updateTimer.Tick += UpdateTimer_Tick;
             _updateTimer.Start();
 
-            _usageLimitUiTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(1)
-            };
+            _usageLimitUiTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _usageLimitUiTimer.Tick += UsageLimitUiTimer_Tick;
 
-            // Timer to check for logout request approval
-            _logoutRequestCheckTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(5) // Check every 5 seconds
-            };
+            _logoutRequestCheckTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
             _logoutRequestCheckTimer.Tick += LogoutRequestCheckTimer_Tick;
 
-            // Timer to check for server start (when locked waiting for instructor)
-            _serverStartCheckTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(3) // Check every 3 seconds
-            };
+            _serverStartCheckTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
             _serverStartCheckTimer.Tick += ServerStartCheckTimer_Tick;
 
-            // Usage limit now managed independently; default to no limit
             _usageLimitExpiryUtc = null;
+
+            // --- UPDATED PART ---
+            // Siguraduhin na i-check ang schedule/server status pagka-load ng window
+            this.Loaded += async (s, e) =>
+            {
+                await InitializeScheduleBasedTimerAsync();
+            };
 
             UpdateDisplay();
             Closing += SessionWindow_Closing;
-
-            // Set automatic timer based on schedule
         }
 
         /// <summary>
@@ -133,9 +120,7 @@ namespace LabServerClient
                     return;
                 }
 
-                // ← Gamitin ang studNo, hindi Environment.UserName
                 var studNo = _username;
-
 
                 if (string.IsNullOrWhiteSpace(studNo))
                 {
@@ -148,12 +133,12 @@ namespace LabServerClient
 
                 var schedule = await _databaseService.GetStudentScheduleAsync(studNo, pcName);
 
+                // 1. Check kung may schedule
                 if (schedule == null || !schedule.Value.scheduleEnd.HasValue)
                 {
-                    LogMessage("[TIMER] No schedule found for today - no automatic timer set");
+                    LogMessage("[TIMER] No schedule found for today.");
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        // Ipakita na walang schedule pero huwag mag-lock agad
                         TimeRemainingText.Text = "No Schedule";
                         TimeRemainingText.Foreground = System.Windows.Media.Brushes.Gray;
                     });
@@ -162,12 +147,9 @@ namespace LabServerClient
 
                 var now = DateTime.Now;
                 var scheduleEnd = schedule.Value.scheduleEnd.Value;
-                var scheduleStart = schedule.Value.scheduleStart;
                 var serverStartTime = schedule.Value.serverStart;
 
-                LogMessage($"[TIMER] Schedule: {scheduleStart:HH:mm} - {scheduleEnd:HH:mm}, ServerStart: {serverStartTime}");
-
-                // Check kung tapos na ang schedule
+                // 2. Check kung tapos na ang schedule
                 if (scheduleEnd <= now)
                 {
                     LogMessage($"[TIMER] Schedule already ended at {scheduleEnd:HH:mm:ss} - locking system");
@@ -175,31 +157,37 @@ namespace LabServerClient
                     return;
                 }
 
-                // Check kung nagsimula na ang server
+                // 3. Check kung nagsimula na ang server (ITO ANG GATEKEEPER)
                 if (serverStartTime == null)
                 {
-                    LogMessage("[TIMER] Server has not started yet - locking screen and waiting");
+                    LogMessage("[TIMER] Server has not started yet - enforcement of lock screen");
+
+                    _isWaitingForServerStart = true;
+
                     await Dispatcher.InvokeAsync(async () =>
                     {
+                        // Itago muna ang main window content para hindi makita ng student
+                        this.Visibility = Visibility.Collapsed;
+
                         await LockSystemWithMessage(
                             "⏳ Waiting for Instructor\n\n" +
                             "The lab server has not been started yet.\n" +
                             "Please wait for your instructor to start the session.\n\n" +
                             "Timer will begin when server starts.");
-                        _isWaitingForServerStart = true;
+
                         _serverStartCheckTimer.Start();
                     });
                     return;
                 }
 
-                // I-set ang timer based sa schedule end time
+                // 4. Kung umabot dito, ibig sabihin may schedule at naka-ON ang server
                 var timeRemaining = scheduleEnd - now;
-
                 LogMessage($"[TIMER] Time remaining: {timeRemaining:hh\\:mm\\:ss} (ends at {scheduleEnd:HH:mm:ss})");
 
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    // I-cancel ang existing timer kung meron
+                    this.Visibility = Visibility.Visible; // Siguraduhing visible ang window
+
                     _usageLimitCts?.Cancel();
                     _usageLimitCts?.Dispose();
 
@@ -226,8 +214,10 @@ namespace LabServerClient
         /// </summary>
         private async void ServerStartCheckTimer_Tick(object? sender, EventArgs e)
         {
+            // 1. Safety check: Huwag magpatuloy kung hindi naman naghihintay o walang database connection
             if (!_isWaitingForServerStart || _databaseService == null || string.IsNullOrWhiteSpace(_username))
             {
+                _serverStartCheckTimer.Stop(); // Patayin ang timer kung hindi naman kailangan
                 return;
             }
 
@@ -235,37 +225,33 @@ namespace LabServerClient
             {
                 var pcName = _clientWindow?.GetClientName() ?? Environment.MachineName;
                 var schedule = await _databaseService.GetStudentScheduleAsync(_username, pcName);
+
                 var serverStartTime = schedule?.serverStart;
 
                 if (serverStartTime.HasValue)
                 {
-                    // Server has started! Unlock the screen
-                    LogMessage($"[SERVER] Server started at {serverStartTime.Value:HH:mm:ss} - unlocking screen");
+                    LogMessage($"[SERVER] Server started at {serverStartTime.Value:HH:mm:ss} - granting access.");
 
                     _serverStartCheckTimer.Stop();
                     _isWaitingForServerStart = false;
 
                     await Dispatcher.InvokeAsync(async () =>
                     {
-                        // Unlock the system
                         if (_kioskModeWindow != null)
                         {
                             try
                             {
                                 _kioskModeWindow.Close();
                             }
-                            catch { }
+                            catch { /* Ignore close errors */ }
                             _kioskModeWindow = null;
                         }
 
-                        // Show notification
-                        MessageBox.Show(
-                            "The instructor has started the lab server.\n\nYou may now begin your work.",
-                            "Server Started",
-                            MessageBoxButton.OK,
-                            MessageBoxImage.Information);
+                        this.Visibility = Visibility.Visible;
+                        this.Activate(); 
 
-                        // Re-initialize timer now that server has started
+                        
+
                         await InitializeScheduleBasedTimerAsync();
                     });
                 }

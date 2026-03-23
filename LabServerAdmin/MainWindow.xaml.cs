@@ -205,28 +205,73 @@ namespace LabServerAdmin
             try
             {
                 await _databaseService.InitializeDatabaseAsync();
-                // Load system logs when application starts
                 await RefreshSystemLogs();
-                // Load computers when application starts
                 await RefreshComputers();
-                // Load attendance logs when application starts
                 await RefreshAttendanceLogs();
-                // Load activity logs when application starts
                 await RefreshActivityLogs();
-                // Load login requests when application starts
                 await RefreshLoginRequests();
-                // Load class list when application starts
                 await RefreshClassList();
 
-            if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
-            {
-                _voiceRecognitionService.SetCurrentUser(_currentAdminUsername);
-            }
+                if (!string.IsNullOrWhiteSpace(_currentAdminUsername))
+                {
+                    _voiceRecognitionService.SetCurrentUser(_currentAdminUsername);
+                }
+
+                // ── NEW: Check enrollment on first login ──────────────────
+                CheckAndPromptVoiceEnrollment();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Initialization error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Initialization error: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
                 UpdateStatus($"Initialization error: {ex.Message}");
+            }
+        }
+
+
+        private void CheckAndPromptVoiceEnrollment()
+        {
+            var speakerService = _host.Services.GetRequiredService<VoiceSpeakerService>();
+
+            if (speakerService.HasProfile(_currentAdminUsername ?? ""))
+            {
+                // Already enrolled — show dashboard normally
+                return;
+            }
+
+            // Not enrolled yet — hide dashboard, show enrollment dialog
+            Hide();
+
+            var dialog = new VoiceEnrollmentDialog(
+                speakerService,
+                _host.Services.GetRequiredService<IConfiguration>(),
+                _currentAdminUsername ?? "professor")
+            {
+                // No Owner — we're hidden, so Owner = this would cause issues
+            };
+
+            var result = dialog.ShowDialog();
+
+            if (result == true && dialog.WasEnrolled)
+            {
+                _voiceRecognitionService.SetCurrentUser(_currentAdminUsername);
+                UpdateStatus($"✅ Voice profile enrolled — verification active for {_currentAdminUsername}");
+
+                // Show dashboard only after successful enrollment
+                Show();
+                WindowState = WindowState.Maximized;
+                Activate();
+            }
+            else
+            {
+                // User cancelled without enrolling — shut down the app
+                MessageBox.Show(
+                    "Voice enrollment is required to use this application.\n\nThe application will now close.",
+                    "Enrollment Required",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+
+                Application.Current.Shutdown();
             }
         }
 
@@ -387,40 +432,39 @@ namespace LabServerAdmin
             }
         }
 
-    private bool OpenVoiceEnrollmentDialog()
-    {
-        var dialog = new VoiceEnrollmentDialog(
-            _host.Services.GetRequiredService<VoiceSpeakerService>(),
-            _host.Services.GetRequiredService<IConfiguration>(),
-            _currentAdminUsername ?? "professor")
+        private bool OpenVoiceEnrollmentDialog()
         {
-            Owner = this
-        };
+            var dialog = new VoiceEnrollmentDialog(
+                _host.Services.GetRequiredService<VoiceSpeakerService>(),
+                _host.Services.GetRequiredService<IConfiguration>(),
+                _currentAdminUsername ?? "professor")
+            {
+                Owner = this   // keep Owner here since window is visible
+            };
 
-        var result = dialog.ShowDialog();
+            var result = dialog.ShowDialog();
 
-        if (result == true && dialog.WasEnrolled)
-        {
-            // Activate speaker verification with the newly saved profile
-            _voiceRecognitionService.SetCurrentUser(_currentAdminUsername);
-            UpdateStatus($"✅ Voice profile enrolled — verification active for {_currentAdminUsername}");
+            if (result == true && dialog.WasEnrolled)
+            {
+                _voiceRecognitionService.SetCurrentUser(_currentAdminUsername);
+                UpdateStatus($"✅ Voice profile enrolled — verification active for {_currentAdminUsername}");
 
-            MessageBox.Show(
-                "Voice profile saved!\n\n" +
-                "✅ Speaker verification is now ACTIVE.\n\n" +
-                "Only your voice will be accepted when Voice Commands are ON.\n" +
-                "If commands are rejected, re-enroll from the Enroll Voice button.",
-                "Enrollment Complete",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+                MessageBox.Show(
+                    "Voice profile saved!\n\n" +
+                    "✅ Speaker verification is now ACTIVE.\n\n" +
+                    "Only your voice will be accepted when Voice Commands are ON.\n" +
+                    "If commands are rejected, re-enroll from the Enroll Voice button.",
+                    "Enrollment Complete",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
 
-            return true;
+                return true;
+            }
+
+            return false;
         }
 
-        return false;
-    }
-
-    public bool OpenVoiceEnrollmentFromMicTest()
+        public bool OpenVoiceEnrollmentFromMicTest()
     {
         return OpenVoiceEnrollmentDialog();
     }
