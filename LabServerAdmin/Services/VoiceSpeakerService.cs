@@ -30,16 +30,23 @@ namespace LabServerAdmin.Services
         private const int SampleRate = 16000;  // 16kHz standard for SR
         private const int BitsPerSample = 16;
         private const int Channels = 1;      // Mono
-        private const int RecordingSeconds = 3;      // Duration per sample
+        private const int RecordingSeconds = 5;      // Duration per sample
         private const int MfccCoefficients = 13;     // Standard MFCC count
         private const double VerifyThreshold = 0.82; // 60% similarity required
 
-        // ── Enrollment phrases — short to match actual command length ────────
+        // ── Enrollment phrases ───────────────────────────────────────────────
         public static readonly string[] EnrollmentPhrases = new[]
         {
-            "Lock all",
-            "Unlock all",
-            "Shutdown all"
+            "Restart all computers",
+            "Restart PC number one",
+            "Shutdown all computers",
+            "Shutdown PC number one",
+            "Sleep all computers",
+            "Sleep PC number one",
+            "Open notepad",
+            "Open chrome",
+            "Open excel",
+            "Open powerpoint"
         };
 
         public VoiceSpeakerService()

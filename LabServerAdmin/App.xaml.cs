@@ -66,17 +66,21 @@ namespace LabServerAdmin
                 var username = loginWindow.AuthenticatedUsername;
                 var role = loginWindow.UserRole;
                 var password = loginWindow.AuthenticatedPassword;
+                var shouldShowWelcomeAndMicTest = false;
 
                 // ✅ ADDED: Show WelcomeText for first-time INSTRUCTOR login
                 if (_databaseService != null &&
                     !string.IsNullOrWhiteSpace(username) &&
-                    string.Equals(role, "INSTRUCTOR", StringComparison.OrdinalIgnoreCase) &&
-                    await _databaseService.ShouldShowWelcomeTextAsync(username))
+                    string.Equals(role, "INSTRUCTOR", StringComparison.OrdinalIgnoreCase))
                 {
-                    var welcomeWindow = new WelcomeText();
-                    welcomeWindow.AnimationCompleted += (_, _) => welcomeWindow.Close();
-                    welcomeWindow.ShowDialog();
-                    await _databaseService.MarkWelcomeTextShownAsync(username);
+                    shouldShowWelcomeAndMicTest = await _databaseService.ShouldShowWelcomeTextAsync(username);
+                    if (shouldShowWelcomeAndMicTest)
+                    {
+                        var welcomeWindow = new WelcomeText();
+                        welcomeWindow.AnimationCompleted += (_, _) => welcomeWindow.Close();
+                        welcomeWindow.ShowDialog();
+                        await _databaseService.MarkWelcomeTextShownAsync(username);
+                    }
                 }
 
                 try
@@ -85,6 +89,16 @@ namespace LabServerAdmin
                     mainWindow.Show();
                     mainWindow.Activate();
                     mainWindow.Focus();
+
+                    if (shouldShowWelcomeAndMicTest)
+                    {
+                        var micTestWindow = new MicTest
+                        {
+                            Owner = mainWindow
+                        };
+                        micTestWindow.ShowDialog();
+                    }
+
                     ShutdownMode = ShutdownMode.OnMainWindowClose;
                 }
                 catch (Exception ex)

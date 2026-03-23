@@ -13,6 +13,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -386,7 +387,7 @@ namespace LabServerAdmin
             }
         }
 
-    private void OpenVoiceEnrollmentDialog()
+    private bool OpenVoiceEnrollmentDialog()
     {
         var dialog = new VoiceEnrollmentDialog(
             _host.Services.GetRequiredService<VoiceSpeakerService>(),
@@ -412,7 +413,16 @@ namespace LabServerAdmin
                 "Enrollment Complete",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
+
+            return true;
         }
+
+        return false;
+    }
+
+    public bool OpenVoiceEnrollmentFromMicTest()
+    {
+        return OpenVoiceEnrollmentDialog();
     }
 
     private void VoiceEnrollButton_Click(object sender, RoutedEventArgs e)
@@ -422,7 +432,7 @@ namespace LabServerAdmin
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            var settingsDialog = new SessionSettingsDialog(_sessionTimeoutMinutes, _warningBeforeMinutes, OpenVoiceEnrollmentDialog)
+            var settingsDialog = new SessionSettingsDialog(_sessionTimeoutMinutes, _warningBeforeMinutes, () => OpenVoiceEnrollmentDialog())
             {
                 Owner = this
             };
@@ -3298,36 +3308,21 @@ namespace LabServerAdmin
                     return;
                 }
 
-                var json = System.IO.File.ReadAllText(configPath);
-                var jsonDoc = System.Text.Json.JsonDocument.Parse(json);
-                var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+                var json = File.ReadAllText(configPath);
+                var root = JsonNode.Parse(json)?.AsObject();
 
-                using var stream = System.IO.File.Create(configPath);
-                using var writer = new System.Text.Json.Utf8JsonWriter(stream, new System.Text.Json.JsonWriterOptions { Indented = true });
-
-                // Parse and update
-                var doc = System.Text.Json.JsonDocument.Parse(json);
-                var root = doc.RootElement;
-
-                writer.WriteStartObject();
-
-                foreach (var property in root.EnumerateObject())
+                if (root == null)
                 {
-                    if (property.Name == "Security")
-                    {
-                        writer.WriteStartObject("Security");
-                        writer.WriteNumber("SessionTimeoutMinutes", _sessionTimeoutMinutes);
-                        writer.WriteNumber("ShowWarningBeforeMinutes", _warningBeforeMinutes);
-                        writer.WriteEndObject();
-                    }
-                    else
-                    {
-                        property.Value.WriteTo(writer);
-                    }
+                    throw new InvalidOperationException("appsettings.json does not contain a valid JSON object.");
                 }
 
-                writer.WriteEndObject();
-                writer.Flush();
+                root["Security"] = new JsonObject
+                {
+                    ["SessionTimeoutMinutes"] = _sessionTimeoutMinutes,
+                    ["ShowWarningBeforeMinutes"] = _warningBeforeMinutes
+                };
+
+                File.WriteAllText(configPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
                 UpdateStatus($"Session settings saved: {_sessionTimeoutMinutes} min timeout, {_warningBeforeMinutes} min warning");
             }

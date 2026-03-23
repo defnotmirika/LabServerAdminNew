@@ -2,8 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Screen Locked - Lab Management System" 
-        Height="500" Width="600"
-        WindowStartupLocation="CenterScreen"
+        WindowState="Maximized"
+        WindowStartupLocation="Manual"
         ResizeMode="NoResize"
         WindowStyle="None"
         Topmost="True"
@@ -187,19 +187,19 @@
         <!-- Clock Display (Bottom Right) -->
         <StackPanel Grid.Row="2" 
                     VerticalAlignment="Bottom" 
-                    HorizontalAlignment="Right"
+                    HorizontalAlignment="Center"
                     Margin="30">
             <TextBlock x:Name="ClockTextBlock"
                        Text="00:00:00"
                        FontSize="48"
                        FontWeight="Bold"
                        Foreground="White"
-                       HorizontalAlignment="Right"/>
+                       HorizontalAlignment="Center"/>
             <TextBlock x:Name="DateTextBlock"
                        Text="Monday, January 1, 2024"
                        FontSize="16"
                        Foreground="#cccccc"
-                       HorizontalAlignment="Right"
+                       HorizontalAlignment="Center"
                        Margin="0,5,0,0"/>
         </StackPanel>
     </Grid>

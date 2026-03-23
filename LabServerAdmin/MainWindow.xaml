@@ -555,16 +555,16 @@
                             </DataGridTextColumn>
 
                             <!-- Actions Column -->
-                            <DataGridTemplateColumn Header="Actions" Width="*" IsReadOnly="False">
+                            <DataGridTemplateColumn Header="Actions" Width="220" MinWidth="220" IsReadOnly="False">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <StackPanel Orientation="Horizontal">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                                             <!-- Approve Button - Only visible for Pending requests -->
                                             <Button Content="✓ Approve" 
                                                     Style="{StaticResource SuccessButton}" 
                                                     Click="ApproveLoginRequestButton_Click" 
                                                     Tag="{Binding Id}" 
-                                                    Width="90" Height="28" Padding="5,4"
+                                                    Width="100" Height="30" Padding="8,4"
                                                     Visibility="{Binding IsPending, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
                                             <!-- Decline Button - Only visible for Pending requests -->
@@ -572,7 +572,7 @@
                                                     Style="{StaticResource DangerButton}" 
                                                     Click="DeclineLoginRequestButton_Click" 
                                                     Tag="{Binding Id}" 
-                                                    Width="90" Height="28" Padding="5,4"
+                                                    Width="100" Height="30" Padding="8,4"
                                                     Visibility="{Binding IsPending, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                         </StackPanel>
                                     </DataTemplate>

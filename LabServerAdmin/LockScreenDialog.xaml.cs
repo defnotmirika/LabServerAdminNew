@@ -18,6 +18,7 @@ namespace LabServerAdmin
         public LockScreenDialog(string username, string password)
         {
             InitializeComponent();
+            WindowState = WindowState.Maximized;
             
             _username = username;
             _password = password;

@@ -20,7 +20,7 @@ namespace LabServerAdmin.Services
                 ?? _configuration["Supabase:ConnectionString"];
 
             var defaultConnection = _configuration.GetConnectionString("DefaultConnection")
-                ?? "Host=localhost;Port=5432;Database=learniqDBnew;Username=postgres;Password=mynewpass";
+                ?? "Host=localhost;Port=5432;Database=learniqDB1;Username=postgres;Password=abc123";
 
             _connectionString = !string.IsNullOrWhiteSpace(supabaseConnection)
                 ? supabaseConnection
@@ -200,6 +200,133 @@ namespace LabServerAdmin.Services
             }
         }
 
+        #region Client/Student First-Time Login
+
+        public async Task<bool> IsStudentTempPasswordAsync(string studNo)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            SELECT is_temp_password FROM us_credentials 
+            WHERE studno = @studNo LIMIT 1";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@studNo", studNo);
+
+                var result = await command.ExecuteScalarAsync();
+                if (result == null || result == DBNull.Value) return false;
+                return Convert.ToBoolean(result);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public async Task<bool> UpdateStudentPasswordAsync(string studNo, string newPassword)
+        {
+            try
+            {
+                var hashed = BCrypt.Net.BCrypt.HashPassword(newPassword);
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var updateQuery = @"
+            UPDATE us_credentials
+            SET password_hash = @newHash,
+                is_temp_password = FALSE,
+                show_welcome_text = TRUE
+            WHERE studno = @studNo";
+
+                using var cmd = new NpgsqlCommand(updateQuery, connection);
+                cmd.Parameters.AddWithValue("@newHash", hashed);
+                cmd.Parameters.AddWithValue("@studNo", studNo);
+                var rows = await cmd.ExecuteNonQueryAsync();
+                return rows > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public async Task<bool> ShouldShowWelcomeTextStudentAsync(string studNo)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            SELECT show_welcome_text
+            FROM us_credentials
+            WHERE studno = @studNo
+            LIMIT 1";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@studNo", studNo);
+
+                var result = await command.ExecuteScalarAsync();
+                return result != null && result != DBNull.Value && Convert.ToBoolean(result);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public async Task<bool> MarkWelcomeTextShownStudentAsync(string studNo)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            UPDATE us_credentials
+            SET show_welcome_text = FALSE
+            WHERE studno = @studNo";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@studNo", studNo);
+                return await command.ExecuteNonQueryAsync() > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public async Task<bool> ResetStudentPasswordAsync(string studNo, string newPassword)
+        {
+            try
+            {
+                var hashedPassword = BCrypt.Net.BCrypt.HashPassword(newPassword);
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            UPDATE us_credentials
+            SET password_hash = @newHash, is_temp_password = FALSE
+            WHERE studno = @studNo";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@newHash", hashedPassword);
+                command.Parameters.AddWithValue("@studNo", studNo);
+
+                return await command.ExecuteNonQueryAsync() > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        #endregion
+
         public async Task InitializeDatabaseAsync()
         {
             using var connection = new NpgsqlConnection(_connectionString);
@@ -331,6 +458,46 @@ namespace LabServerAdmin.Services
     ";
             using var ipNullableCommand = new NpgsqlCommand(makeIpNullable, connection);
             await ipNullableCommand.ExecuteNonQueryAsync();
+
+            // ✅ ADDED: is_temp_password column for us_credentials (students)
+            var ensureStudentTempPasswordColumn = @"
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_name = 'us_credentials'
+            ) THEN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'us_credentials' AND column_name = 'is_temp_password'
+                ) THEN
+                    ALTER TABLE us_credentials ADD COLUMN is_temp_password BOOLEAN NOT NULL DEFAULT FALSE;
+                END IF;
+            END IF;
+        END $$;
+    ";
+            using var studentTempPasswordCommand = new NpgsqlCommand(ensureStudentTempPasswordColumn, connection);
+            await studentTempPasswordCommand.ExecuteNonQueryAsync();
+
+            // ✅ ADDED: show_welcome_text column for us_credentials (students)
+            var ensureStudentWelcomeTextColumn = @"
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_name = 'us_credentials'
+            ) THEN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'us_credentials' AND column_name = 'show_welcome_text'
+                ) THEN
+                    ALTER TABLE us_credentials ADD COLUMN show_welcome_text BOOLEAN NOT NULL DEFAULT FALSE;
+                END IF;
+            END IF;
+        END $$;
+    ";
+            using var studentWelcomeTextCommand = new NpgsqlCommand(ensureStudentWelcomeTextColumn, connection);
+            await studentWelcomeTextCommand.ExecuteNonQueryAsync();
         }
 
         private static bool IsValidBcryptHash(string? hash)

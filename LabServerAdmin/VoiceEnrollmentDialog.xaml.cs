@@ -2,9 +2,12 @@
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using LabServerAdmin.Services;
 using Microsoft.Extensions.Configuration;
 
@@ -18,7 +21,19 @@ namespace LabServerAdmin
         private Process? _enrollmentProcess;
         private bool _isEnrollmentRunning;
         private int _currentPhrase;
-        private int _totalSamples = 3;
+        private int _totalSamples = VoiceSpeakerService.EnrollmentPhrases.Length;
+        private readonly List<(Border Border, TextBlock Text)> _sampleIndicators = new();
+        private readonly Random _waveRandom = new();
+        private DispatcherTimer? _waveTimer;
+        private System.Windows.Shapes.Rectangle[] _waveBars = Array.Empty<System.Windows.Shapes.Rectangle>();
+        private int _tutorialStepIndex;
+        private const int EnrollmentSampleDurationSeconds = 5;
+        private static readonly string[] TutorialSteps =
+        {
+            "This is the voice register button. Click it to begin recording your voice samples.",
+            "Read the phrase shown in the blue box clearly when recording starts.",
+            "When all samples are complete, save your voice profile to finish."
+        };
 
         public bool WasEnrolled { get; private set; } = false;
 
@@ -36,7 +51,65 @@ namespace LabServerAdmin
                 ExistingProfileWarning.Visibility = Visibility.Visible;
             }
 
+            InitializeWaveVisualizer();
+            InitializeSampleIndicators();
+            UpdateTutorialStep();
             UpdatePhraseDisplay();
+        }
+
+        private void MicButton_Click(object sender, RoutedEventArgs e)
+        {
+            RecordButton_Click(sender, e);
+        }
+
+        private void Prev_Click(object sender, RoutedEventArgs e)
+        {
+            if (_tutorialStepIndex > 0)
+            {
+                _tutorialStepIndex--;
+                UpdateTutorialStep();
+            }
+        }
+
+        private void Next_Click(object sender, RoutedEventArgs e)
+        {
+            if (_tutorialStepIndex < TutorialSteps.Length - 1)
+            {
+                _tutorialStepIndex++;
+                UpdateTutorialStep();
+                return;
+            }
+
+            if (_tutorialStepIndex == TutorialSteps.Length - 1)
+            {
+                if (WasEnrolled)
+                {
+                    _tutorialStepIndex = TutorialSteps.Length;
+                    UpdateTutorialStep();
+                }
+                return;
+            }
+
+            if (_tutorialStepIndex == TutorialSteps.Length)
+            {
+                DialogResult = true;
+                Close();
+            }
+        }
+
+        private void UpdateTutorialStep()
+        {
+            if (_tutorialStepIndex < TutorialSteps.Length)
+            {
+                TutorialText.Text = TutorialSteps[_tutorialStepIndex];
+                PrevButton.Visibility = _tutorialStepIndex == 0 ? Visibility.Collapsed : Visibility.Visible;
+                NextButton.Content = _tutorialStepIndex == TutorialSteps.Length - 1 ? "Done" : "Next";
+                return;
+            }
+
+            TutorialText.Text = "Congratulations! 🎉 Your voice profile is saved and ready. Click Let’s go! to continue.";
+            PrevButton.Visibility = Visibility.Collapsed;
+            NextButton.Content = "Let's go!";
         }
 
         private async void RecordButton_Click(object sender, RoutedEventArgs e)
@@ -57,7 +130,7 @@ namespace LabServerAdmin
                 return;
             }
 
-            var process = await Task.Run(() => StartPythonProcess(scriptPath, _username, _configuration["VoiceRecognition:PythonExecutable"]));
+            var process = await Task.Run(() => StartPythonProcess(scriptPath, _username, _configuration["VoiceRecognition:PythonExecutable"], _totalSamples, EnrollmentSampleDurationSeconds));
             if (process == null)
             {
                 MessageBox.Show(
@@ -93,7 +166,7 @@ namespace LabServerAdmin
         private void CancelButton_Click(object sender, RoutedEventArgs e)
         {
             StopEnrollmentProcess();
-            DialogResult = false;
+            DialogResult = WasEnrolled;
             Close();
         }
 
@@ -146,13 +219,16 @@ namespace LabServerAdmin
                                 MarkSampleDone(current - 2);
                             }
 
+                            MarkSampleRecording(current - 1);
                             _currentPhrase = Math.Max(0, Math.Min(current - 1, VoiceSpeakerService.EnrollmentPhrases.Length - 1));
                             UpdatePhraseDisplay();
                             RecordingStatusText.Text = $"Recording sample {current} of {total}... speak now!";
+                            SampleTimerStatusText.Text = $"Timer running: sample {current}/{total} ({EnrollmentSampleDurationSeconds}s)";
                             RecordingIndicator.Fill = new SolidColorBrush(Colors.Red);
                             RecordingProgress.IsIndeterminate = true;
                             RecordingProgress.Value = ((double)(current - 1) / total) * 100;
                             RecordButton.Content = "🔴 Recording...";
+                            StartMicAnimation();
                         });
                         break;
 
@@ -173,13 +249,18 @@ namespace LabServerAdmin
                             MarkSampleDone(_totalSamples - 1);
                             RecordingIndicator.Fill = new SolidColorBrush(Color.FromRgb(40, 167, 69));
                             RecordingStatusText.Text = $"✅ Voice profile saved for '{_username}'.";
+                            SampleTimerStatusText.Text = "✅ Timer finished: all samples completed.";
                             RecordingProgress.IsIndeterminate = false;
                             RecordingProgress.Value = 100;
-                            RecordButton.Content = "✅ Saved";
-                            RecordButton.IsEnabled = false;
+                            RecordButton.Content = "🔁 Re-record";
+                            RecordButton.IsEnabled = true;
                             SaveButton.Content = "Done";
                             SaveButton.IsEnabled = true;
                             WasEnrolled = true;
+                            StopMicAnimation();
+
+                            _tutorialStepIndex = TutorialSteps.Length;
+                            UpdateTutorialStep();
                         });
                         _isEnrollmentRunning = false;
                         break;
@@ -234,6 +315,8 @@ namespace LabServerAdmin
                         RecordingStatusText.Text = "Enrollment stopped.";
                     }
                 }
+
+                StopMicAnimation();
             });
 
             CleanupProcess();
@@ -243,24 +326,27 @@ namespace LabServerAdmin
         {
             WasEnrolled = false;
             _currentPhrase = 0;
-            _totalSamples = 3;
+            _totalSamples = VoiceSpeakerService.EnrollmentPhrases.Length;
             RecordButton.IsEnabled = false;
             RecordButton.Content = "🔴 Recording...";
             SaveButton.IsEnabled = false;
             SaveButton.Content = "✅ Save Profile";
             RecordingIndicator.Fill = new SolidColorBrush(Colors.Red);
             RecordingStatusText.Text = "Starting enrollment...";
+            SampleTimerStatusText.Text = "Timer: Starting...";
             RecordingProgress.Value = 0;
             RecordingProgress.IsIndeterminate = true;
             ResetSampleState();
             UpdatePhraseDisplay();
+            StopMicAnimation();
         }
 
         private void ResetSampleState()
         {
-            ResetSample(Sample1Border, Sample1Text, "① Not recorded");
-            ResetSample(Sample2Border, Sample2Text, "② Not recorded");
-            ResetSample(Sample3Border, Sample3Text, "③ Not recorded");
+            for (var i = 0; i < _sampleIndicators.Count; i++)
+            {
+                ResetSample(_sampleIndicators[i].Border, _sampleIndicators[i].Text, GetSampleLabel(i));
+            }
         }
 
         private static void ResetSample(System.Windows.Controls.Border border, System.Windows.Controls.TextBlock text, string label)
@@ -281,6 +367,8 @@ namespace LabServerAdmin
             RecordingProgress.Value = 0;
             RecordingProgress.IsIndeterminate = false;
             RecordingStatusText.Text = $"Enrollment failed: {reason}";
+            SampleTimerStatusText.Text = $"⛔ Timer stopped: {reason}";
+            StopMicAnimation();
 
             MessageBox.Show(
                 $"Voice enrollment failed: {reason}",
@@ -300,24 +388,117 @@ namespace LabServerAdmin
 
         private void MarkSampleDone(int index)
         {
-            var (border, text) = index switch
-            {
-                0 => (Sample1Border, Sample1Text),
-                1 => (Sample2Border, Sample2Text),
-                2 => (Sample3Border, Sample3Text),
-                _ => (null, null)
-            };
-
-            if (border == null || text == null)
+            if (index < 0 || index >= _sampleIndicators.Count)
             {
                 return;
             }
 
+            var (border, text) = _sampleIndicators[index];
+
             border.Background = new SolidColorBrush(Color.FromRgb(212, 237, 218));
             border.BorderBrush = new SolidColorBrush(Color.FromRgb(40, 167, 69));
             border.BorderThickness = new Thickness(1);
-            text.Text = $"✅ Sample {index + 1} done";
+            text.Text = $"☑ Phrase {index + 1} completed";
             text.Foreground = new SolidColorBrush(Color.FromRgb(21, 87, 36));
+        }
+
+        private void MarkSampleRecording(int index)
+        {
+            if (index < 0 || index >= _sampleIndicators.Count)
+            {
+                return;
+            }
+
+            var (border, text) = _sampleIndicators[index];
+            border.Background = new SolidColorBrush(Color.FromRgb(255, 243, 205));
+            border.BorderBrush = new SolidColorBrush(Color.FromRgb(255, 193, 7));
+            border.BorderThickness = new Thickness(1);
+            text.Text = $"◔ Phrase {index + 1} recording";
+            text.Foreground = new SolidColorBrush(Color.FromRgb(133, 100, 4));
+        }
+
+        private void InitializeSampleIndicators()
+        {
+            SampleStatusPanel.Children.Clear();
+            _sampleIndicators.Clear();
+
+            for (var i = 0; i < VoiceSpeakerService.EnrollmentPhrases.Length; i++)
+            {
+                var border = new Border
+                {
+                    Background = new SolidColorBrush(Color.FromRgb(233, 236, 239)),
+                    CornerRadius = new CornerRadius(20),
+                    Padding = new Thickness(10, 5, 10, 5),
+                    Margin = new Thickness(4, 4, 4, 4),
+                    BorderBrush = Brushes.Transparent,
+                    BorderThickness = new Thickness(0)
+                };
+
+                var text = new TextBlock
+                {
+                    Text = GetSampleLabel(i),
+                    FontSize = 11,
+                    Foreground = new SolidColorBrush(Color.FromRgb(136, 136, 136))
+                };
+
+                border.Child = text;
+                SampleStatusPanel.Children.Add(border);
+                _sampleIndicators.Add((border, text));
+            }
+        }
+
+        private static string GetSampleLabel(int index) => $"☐ Phrase {index + 1} not completed";
+
+        private void InitializeWaveVisualizer()
+        {
+            _waveBars = new[] { Wave1, Wave2, Wave3, Wave4, Wave5 };
+            _waveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
+            _waveTimer.Tick += (_, _) => UpdateWaveFrame();
+            StopMicAnimation();
+        }
+
+        private void StartMicAnimation()
+        {
+            if (_waveTimer == null)
+            {
+                return;
+            }
+
+            if (!_waveTimer.IsEnabled)
+            {
+                _waveTimer.Start();
+            }
+        }
+
+        private void StopMicAnimation()
+        {
+            if (_waveTimer?.IsEnabled == true)
+            {
+                _waveTimer.Stop();
+            }
+
+            foreach (var bar in _waveBars)
+            {
+                bar.Height = 20;
+                bar.Fill = Brushes.Green;
+            }
+
+            Glow.Opacity = 0;
+        }
+
+        private void UpdateWaveFrame()
+        {
+            foreach (var bar in _waveBars)
+            {
+                bar.Height = _waveRandom.Next(12, 56);
+                bar.Fill = bar.Height > 42
+                    ? Brushes.OrangeRed
+                    : bar.Height > 28
+                        ? Brushes.Gold
+                        : Brushes.Green;
+            }
+
+            Glow.Opacity = 0.15 + _waveRandom.NextDouble() * 0.35;
         }
 
         private void StopEnrollmentProcess()
@@ -343,6 +524,7 @@ namespace LabServerAdmin
             {
                 CleanupProcess();
                 _isEnrollmentRunning = false;
+                StopMicAnimation();
             }
         }
 
@@ -397,16 +579,18 @@ namespace LabServerAdmin
             return null;
         }
 
-        private static Process? StartPythonProcess(string scriptPath, string username, string? configuredPython)
+        private static Process? StartPythonProcess(string scriptPath, string username, string? configuredPython, int samples, int durationSeconds)
         {
             var workingDirectory = Path.GetDirectoryName(scriptPath) ?? AppContext.BaseDirectory;
             var escapedUsername = username.Replace("\"", "\\\"");
+            var sampleCount = Math.Max(1, samples);
+            var duration = Math.Max(1, durationSeconds);
             var launchers = new List<(string FileName, string Arguments)>
             {
-                (configuredPython ?? string.Empty, $"\"{scriptPath}\" --mode enroll --name \"{escapedUsername}\" --overwrite"),
-                ("py", $"-3 \"{scriptPath}\" --mode enroll --name \"{escapedUsername}\" --overwrite"),
-                ("python", $"\"{scriptPath}\" --mode enroll --name \"{escapedUsername}\" --overwrite"),
-                ("python3", $"\"{scriptPath}\" --mode enroll --name \"{escapedUsername}\" --overwrite")
+                (configuredPython ?? string.Empty, $"\"{scriptPath}\" --mode enroll --name \"{escapedUsername}\" --samples {sampleCount} --duration {duration} --overwrite"),
+                ("py", $"-3 \"{scriptPath}\" --mode enroll --name \"{escapedUsername}\" --samples {sampleCount} --duration {duration} --overwrite"),
+                ("python", $"\"{scriptPath}\" --mode enroll --name \"{escapedUsername}\" --samples {sampleCount} --duration {duration} --overwrite"),
+                ("python3", $"\"{scriptPath}\" --mode enroll --name \"{escapedUsername}\" --samples {sampleCount} --duration {duration} --overwrite")
             };
 
             foreach (var launcher in launchers.Where(l => !string.IsNullOrWhiteSpace(l.FileName)))
