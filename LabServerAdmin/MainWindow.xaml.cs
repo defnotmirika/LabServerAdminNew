@@ -131,6 +131,7 @@ namespace LabServerAdmin
             _tcpServerService = _host.Services.GetRequiredService<TcpServerService>();
             _voiceRecognitionService = _host.Services.GetRequiredService<VoiceRecognitionService>();
             _configuration = _host.Services.GetRequiredService<IConfiguration>();
+            _voiceRecognitionService.SetCurrentUser(_currentAdminUsername);
         
             // Setup data binding
             ClientsDataGrid.ItemsSource = _connectedClients;
@@ -217,61 +218,12 @@ namespace LabServerAdmin
                     _voiceRecognitionService.SetCurrentUser(_currentAdminUsername);
                 }
 
-                // ── NEW: Check enrollment on first login ──────────────────
-                CheckAndPromptVoiceEnrollment();
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Initialization error: {ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 UpdateStatus($"Initialization error: {ex.Message}");
-            }
-        }
-
-
-        private void CheckAndPromptVoiceEnrollment()
-        {
-            var speakerService = _host.Services.GetRequiredService<VoiceSpeakerService>();
-
-            if (speakerService.HasProfile(_currentAdminUsername ?? ""))
-            {
-                // Already enrolled — show dashboard normally
-                return;
-            }
-
-            // Not enrolled yet — hide dashboard, show enrollment dialog
-            Hide();
-
-            var dialog = new VoiceEnrollmentDialog(
-                speakerService,
-                _host.Services.GetRequiredService<IConfiguration>(),
-                _currentAdminUsername ?? "professor")
-            {
-                // No Owner — we're hidden, so Owner = this would cause issues
-            };
-
-            var result = dialog.ShowDialog();
-
-            if (result == true && dialog.WasEnrolled)
-            {
-                _voiceRecognitionService.SetCurrentUser(_currentAdminUsername);
-                UpdateStatus($"✅ Voice profile enrolled — verification active for {_currentAdminUsername}");
-
-                // Show dashboard only after successful enrollment
-                Show();
-                WindowState = WindowState.Maximized;
-                Activate();
-            }
-            else
-            {
-                // User cancelled without enrolling — shut down the app
-                MessageBox.Show(
-                    "Voice enrollment is required to use this application.\n\nThe application will now close.",
-                    "Enrollment Required",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-
-                Application.Current.Shutdown();
             }
         }
 
@@ -476,7 +428,7 @@ namespace LabServerAdmin
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            var settingsDialog = new SessionSettingsDialog(_sessionTimeoutMinutes, _warningBeforeMinutes, () => OpenVoiceEnrollmentDialog())
+            var settingsDialog = new SessionSettingsDialog(_sessionTimeoutMinutes, _warningBeforeMinutes)
             {
                 Owner = this
             };

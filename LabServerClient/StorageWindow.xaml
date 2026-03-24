@@ -186,7 +186,7 @@
                         <DataGridTextColumn Header="Size" Binding="{Binding FormattedSize}" Width="100"/>
                         <DataGridTextColumn Header="Date" Binding="{Binding UploadDate, StringFormat={}{0:MMM dd\, yyyy}}" Width="120"/>
 
-                        <DataGridTemplateColumn Header="Actions" Width="150">
+                        <DataGridTemplateColumn Header="Actions" Width="180">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">

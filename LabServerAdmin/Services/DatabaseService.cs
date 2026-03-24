@@ -20,7 +20,7 @@ namespace LabServerAdmin.Services
                 ?? _configuration["Supabase:ConnectionString"];
 
             var defaultConnection = _configuration.GetConnectionString("DefaultConnection")
-                ?? "Host=localhost;Port=5432;Database=learniqDBnew;Username=postgres;Password=mynewpass";
+                ?? "Host=localhost;Port=5432;Database=learniqDB2;Username=postgres;Password=abc123";
 
             _connectionString = !string.IsNullOrWhiteSpace(supabaseConnection)
                 ? supabaseConnection
@@ -522,6 +522,30 @@ namespace LabServerAdmin.Services
 
             var result = await command.ExecuteScalarAsync();
             return result == null || result == DBNull.Value ? null : result.ToString();
+        }
+
+        public async Task<(string? Username, string? EmpId)> GetInstructorIdentifiersAsync(string usernameOrEmpId)
+        {
+            using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var query = @"
+                SELECT username, empid FROM ui_credentials
+                WHERE username = @value OR empid = @value
+                LIMIT 1";
+
+            using var command = new NpgsqlCommand(query, connection);
+            command.Parameters.AddWithValue("@value", usernameOrEmpId);
+
+            using var reader = await command.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                var username = reader.IsDBNull(0) ? null : reader.GetString(0);
+                var empId = reader.IsDBNull(1) ? null : reader.GetString(1);
+                return (username, empId);
+            }
+
+            return (null, null);
         }
 
         public async Task<bool> ValidateAdminAsync(string username, string password)

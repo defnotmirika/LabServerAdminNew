@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using Microsoft.Extensions.Configuration;
 
 namespace LabServerAdmin
 {
@@ -47,7 +48,11 @@ namespace LabServerAdmin
         public string? UserRole { get; private set; } = null;
         public string? AuthenticatedPassword { get; private set; } = null; // Store for lock screen
 
-        public LoginWindow(DatabaseService? databaseService = null, bool requireAuthenticationToClose = true)
+        public LoginWindow(
+            DatabaseService? databaseService = null,
+            VoiceSpeakerService? voiceSpeakerService = null,
+            IConfiguration? configuration = null,
+            bool requireAuthenticationToClose = true)
         {
             _databaseService = databaseService;
             _requireAuthenticationToClose = requireAuthenticationToClose;
@@ -269,16 +274,13 @@ namespace LabServerAdmin
                                 if (result == true)
                                 {
                                     ShowError("Password updated. Please login with your new password.");
-                                }
-                                else
-                                {
-                                    ShowError("You must set a new password to continue.");
+                                    PasswordBox.Password = string.Empty;
+                                    PasswordBox.Focus();
+                                    LoginButton.IsEnabled = true;
+                                    return;
                                 }
 
-                                IsAuthenticated = false;
-                                AuthenticatedUsername = null;
-                                UserRole = null;
-                                AuthenticatedPassword = null;
+                                ShowError("You must set a new password to continue.");
                                 PasswordBox.Password = string.Empty;
                                 PasswordBox.Focus();
                                 LoginButton.IsEnabled = true;

@@ -1,5 +1,7 @@
 using System;
 using System.Threading.Tasks;
+using System.IO;
+using System.Text.RegularExpressions;
 using System.Windows;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -58,29 +60,72 @@ namespace LabServerAdmin
             _splashWindow?.Close();
             _splashWindow = null;
 
-            var loginWindow = new LoginWindow(_databaseService);
-            bool? dialogResult = loginWindow.ShowDialog();
-
-            if (loginWindow != null && loginWindow.IsAuthenticated && dialogResult == true)
+            var voiceSpeakerService = _host?.Services.GetRequiredService<VoiceSpeakerService>();
+            var configuration = _host?.Services.GetRequiredService<IConfiguration>();
+            while (true)
             {
+                var loginWindow = new LoginWindow(
+                    _databaseService,
+                    voiceSpeakerService,
+                    configuration);
+                bool? dialogResult = loginWindow.ShowDialog();
+
+                if (loginWindow == null || !loginWindow.IsAuthenticated || dialogResult != true)
+                {
+                    Shutdown();
+                    return;
+                }
+
                 var username = loginWindow.AuthenticatedUsername;
                 var role = loginWindow.UserRole;
                 var password = loginWindow.AuthenticatedPassword;
-                var shouldShowWelcomeAndMicTest = false;
+                var isInstructor = !string.IsNullOrWhiteSpace(username) &&
+                    string.Equals(role, "INSTRUCTOR", StringComparison.OrdinalIgnoreCase);
 
-                // ✅ ADDED: Show WelcomeText for first-time INSTRUCTOR login
-                if (_databaseService != null &&
-                    !string.IsNullOrWhiteSpace(username) &&
-                    string.Equals(role, "INSTRUCTOR", StringComparison.OrdinalIgnoreCase))
+                var identifiers = (Username: (string?)null, EmpId: (string?)null);
+                if (isInstructor && _databaseService != null && !string.IsNullOrWhiteSpace(username))
                 {
-                    shouldShowWelcomeAndMicTest = await _databaseService.ShouldShowWelcomeTextAsync(username);
-                    if (shouldShowWelcomeAndMicTest)
+                    identifiers = await _databaseService.GetInstructorIdentifiersAsync(username);
+                }
+
+                var hasProfile = HasVoiceAuthProfile(username) ||
+                                 HasVoiceAuthProfile(identifiers.Username) ||
+                                 HasVoiceAuthProfile(identifiers.EmpId);
+
+                var shouldRunFirstTimeFlow = _databaseService != null &&
+                    isInstructor &&
+                    await _databaseService.ShouldShowWelcomeTextAsync(username!) &&
+                    !hasProfile;
+
+                if (shouldRunFirstTimeFlow)
+                {
+                    var welcomeWindow = new WelcomeText();
+                    welcomeWindow.AnimationCompleted += (_, _) => welcomeWindow.Close();
+                    welcomeWindow.ShowDialog();
+
+                    var micTestWindow = new MicTest(voiceSpeakerService, configuration, username)
                     {
-                        var welcomeWindow = new WelcomeText();
-                        welcomeWindow.AnimationCompleted += (_, _) => welcomeWindow.Close();
-                        welcomeWindow.ShowDialog();
-                        await _databaseService.MarkWelcomeTextShownAsync(username);
+                        Owner = null
+                    };
+
+                    var micTestResult = micTestWindow.ShowDialog();
+                    if (micTestResult != true)
+                    {
+                        MessageBox.Show(
+                            "Voice enrollment is required to complete first-time setup.",
+                            "Setup Incomplete",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                        Shutdown();
+                        return;
                     }
+
+                    await _databaseService.MarkWelcomeTextShownAsync(username);
+                }
+                else if (_databaseService != null && isInstructor &&
+                         await _databaseService.ShouldShowWelcomeTextAsync(username!))
+                {
+                    await _databaseService.MarkWelcomeTextShownAsync(username);
                 }
 
                 try
@@ -90,16 +135,8 @@ namespace LabServerAdmin
                     mainWindow.Activate();
                     mainWindow.Focus();
 
-                    if (shouldShowWelcomeAndMicTest)
-                    {
-                        var micTestWindow = new MicTest
-                        {
-                            Owner = mainWindow
-                        };
-                        micTestWindow.ShowDialog();
-                    }
-
                     ShutdownMode = ShutdownMode.OnMainWindowClose;
+                    return;
                 }
                 catch (Exception ex)
                 {
@@ -109,12 +146,71 @@ namespace LabServerAdmin
                         MessageBoxButton.OK,
                         MessageBoxImage.Error);
                     Shutdown();
+                    return;
                 }
             }
-            else
+        }
+
+        private static bool HasVoiceAuthProfile(string username)
+        {
+            if (string.IsNullOrWhiteSpace(username))
             {
-                Shutdown();
+                return false;
             }
+
+            var safeName = Regex.Replace(username.Trim().ToLowerInvariant(), "[^a-zA-Z0-9_\\-]", "_");
+            var profileFile = $"{safeName}.json";
+            var directCandidates = new[]
+            {
+                Path.Combine(AppContext.BaseDirectory, "Voice Auth", "speaker_profiles"),
+                Path.Combine(AppContext.BaseDirectory, "Voice Auth", "voice_auth", "speaker_profiles"),
+                Path.Combine(Directory.GetCurrentDirectory(), "Voice Auth", "speaker_profiles"),
+                Path.Combine(Directory.GetCurrentDirectory(), "Voice Auth", "voice_auth", "speaker_profiles")
+            };
+
+            foreach (var candidate in directCandidates)
+            {
+                if (File.Exists(Path.Combine(candidate, profileFile)))
+                {
+                    return true;
+                }
+            }
+
+            var directory = new DirectoryInfo(AppContext.BaseDirectory);
+            var maxLevels = 5;
+            var currentLevel = 0;
+
+            while (directory != null && currentLevel < maxLevels)
+            {
+                var candidate = Path.Combine(directory.FullName, "Voice Auth", "speaker_profiles", profileFile);
+                if (File.Exists(candidate))
+                {
+                    return true;
+                }
+
+                candidate = Path.Combine(directory.FullName, "Voice Auth", "voice_auth", "speaker_profiles", profileFile);
+                if (File.Exists(candidate))
+                {
+                    return true;
+                }
+
+                candidate = Path.Combine(directory.FullName, "LabServerAdmin", "Voice Auth", "speaker_profiles", profileFile);
+                if (File.Exists(candidate))
+                {
+                    return true;
+                }
+
+                candidate = Path.Combine(directory.FullName, "LabServerAdmin", "Voice Auth", "voice_auth", "speaker_profiles", profileFile);
+                if (File.Exists(candidate))
+                {
+                    return true;
+                }
+
+                directory = directory.Parent;
+                currentLevel++;
+            }
+
+            return false;
         }
 
         private static IHostBuilder CreateHostBuilder() =>
@@ -122,6 +218,7 @@ namespace LabServerAdmin
                 .ConfigureServices((context, services) =>
                 {
                     services.AddSingleton<DatabaseService>();
+                    services.AddSingleton<VoiceSpeakerService>();
                 });
 
         protected override void OnExit(ExitEventArgs e)

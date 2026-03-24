@@ -1,4 +1,6 @@
 ﻿using NAudio.Wave;
+using LabServerAdmin.Services;
+using Microsoft.Extensions.Configuration;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -10,6 +12,9 @@ namespace LabServerAdmin
 {
     public partial class MicTest : Window
     {
+        private readonly VoiceSpeakerService? _voiceSpeakerService;
+        private readonly IConfiguration? _configuration;
+        private readonly string? _username;
         // Tutorial state for the embedded tutorial box
         private int tutorialStep = 0;
 
@@ -56,8 +61,11 @@ namespace LabServerAdmin
 
         private const int WM_DEVICECHANGE = 0x0219;
 
-        public MicTest()
+        public MicTest(VoiceSpeakerService? voiceSpeakerService = null, IConfiguration? configuration = null, string? username = null)
         {
+            _voiceSpeakerService = voiceSpeakerService;
+            _configuration = configuration;
+            _username = username;
             InitializeComponent();
             RefreshDevices();
             ShowTutorialStep();
@@ -255,8 +263,7 @@ namespace LabServerAdmin
                 isRunning = false;
             }
 
-            var mainWindow = Owner as MainWindow ?? Application.Current.MainWindow as MainWindow;
-            if (mainWindow == null)
+            if (_voiceSpeakerService == null || _configuration == null || string.IsNullOrWhiteSpace(_username))
             {
                 MessageBox.Show(
                     "Cannot open Voice Enrollment from this context.",
@@ -266,9 +273,17 @@ namespace LabServerAdmin
                 return;
             }
 
-            Hide();
-            mainWindow.OpenVoiceEnrollmentFromMicTest();
-            Close();
+            var enrollmentDialog = new VoiceEnrollmentDialog(_voiceSpeakerService, _configuration, _username)
+            {
+                Owner = this
+            };
+
+            var result = enrollmentDialog.ShowDialog();
+            if (result == true && enrollmentDialog.WasEnrolled)
+            {
+                DialogResult = true;
+                Close();
+            }
         }
 
         private void Prev_Click(object sender, RoutedEventArgs e)

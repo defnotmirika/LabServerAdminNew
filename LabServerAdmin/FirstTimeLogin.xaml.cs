@@ -17,9 +17,10 @@ namespace LabServerAdmin
 
         private async void Save_Click(object sender, RoutedEventArgs e)
         {
+            ErrorText.Visibility = Visibility.Collapsed;
+
             var password = NewPasswordBox.Password;
             var confirmPassword = ConfirmPasswordBox.Password;
-            ErrorText.Visibility = Visibility.Collapsed;
 
             if (string.IsNullOrWhiteSpace(password) || password.Length < 6)
             {

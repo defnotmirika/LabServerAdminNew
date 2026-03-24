@@ -1,9 +1,11 @@
 ﻿<Window x:Class="LabServerAdmin.VoiceEnrollmentDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="🎤 Voice Enrollment" Height="720" Width="540"
-        WindowStartupLocation="CenterOwner"
+        Title="🎤 Voice Enrollment"
+        WindowState="Maximized"
+        WindowStyle="None"
         ResizeMode="NoResize"
+        ShowInTaskbar="False"
         Background="#050d60">
 
     <Window.Resources>

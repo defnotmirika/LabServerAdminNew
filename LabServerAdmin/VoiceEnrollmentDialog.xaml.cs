@@ -96,10 +96,17 @@ namespace LabServerAdmin
             // On the congrats step — "Let's go!" button (only reached after WasEnrolled)
             if (_tutorialStepIndex == TutorialSteps.Length)
             {
-                TutorialBox.Visibility = Visibility.Collapsed;
-                DialogResult = true;
-                Close();
+                CompleteEnrollmentAndClose();
             }
+        }
+
+        private async void CompleteEnrollmentAndClose()
+        {
+            await MarkOnboardingCompleteAsync();
+
+            TutorialBox.Visibility = Visibility.Collapsed;
+            DialogResult = true;
+            Close();
         }
 
         private void UpdateTutorialStep()
@@ -167,11 +174,26 @@ namespace LabServerAdmin
             _isEnrollmentRunning = true;
         }
 
-        private void SaveButton_Click(object sender, RoutedEventArgs e)
+        private async void SaveButton_Click(object sender, RoutedEventArgs e)
         {
             if (!WasEnrolled) return;
-            DialogResult = true;
-            Close();
+
+            await MarkOnboardingCompleteAsync();
+            _tutorialStepIndex = TutorialSteps.Length;
+            UpdateTutorialStep();
+        }
+
+        private async Task MarkOnboardingCompleteAsync()
+        {
+            try
+            {
+                var databaseService = new DatabaseService(_configuration);
+                await databaseService.MarkWelcomeTextShownAsync(_username);
+            }
+            catch
+            {
+                // Ignore errors; flow should continue even if the welcome flag cannot be updated.
+            }
         }
 
         private void CancelButton_Click(object sender, RoutedEventArgs e)
@@ -258,7 +280,7 @@ namespace LabServerAdmin
                             WasEnrolled = true;
                             StopMicAnimation();
 
-                            _tutorialStepIndex = TutorialSteps.Length;
+                            _tutorialStepIndex = TutorialSteps.Length - 1;
                             UpdateTutorialStep();
                         });
                         _isEnrollmentRunning = false;

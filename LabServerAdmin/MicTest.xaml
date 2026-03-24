@@ -9,6 +9,7 @@
         WindowState="Maximized"
         WindowStyle="None"
         ResizeMode="NoResize"
+        ShowInTaskbar="False"
         Background="#050d60">
 
     <Grid>

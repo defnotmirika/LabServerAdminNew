@@ -93,7 +93,6 @@ Background="White">
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
             <!-- Title -->
@@ -183,18 +182,8 @@ Background="White">
                 </StackPanel>
             </GroupBox>
 
-            <!-- Voice Enrollment -->
-            <GroupBox Grid.Row="6" Header="Voice Enrollment" BorderBrush="#050d60" BorderThickness="2" Padding="12" Margin="0,0,0,12">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                    <Button x:Name="EnrollVoiceButton" Content="🎙️ Enroll Voice"
-                            Style="{StaticResource ModernButton}" Click="EnrollVoiceButton_Click"
-                            ToolTip="Enroll or re-enroll your voice profile for voice command verification"
-                            Width="170" Height="38"/>
-                </StackPanel>
-            </GroupBox>
-
             <!-- Current Settings Display -->
-            <Border Grid.Row="7" Background="#F0F0F0" BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="3" Padding="10" Margin="0,0,0,0">
+            <Border Grid.Row="6" Background="#F0F0F0" BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="3" Padding="10" Margin="0,0,0,0">
                 <StackPanel>
                     <TextBlock Text="📊 Current Settings:" FontWeight="Bold" Foreground="#050d60" Margin="0,0,0,6"/>
                     <TextBlock x:Name="CurrentSettingsTextBlock" Text="Timeout: 15 min, Warning: 1 min" 

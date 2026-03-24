@@ -91,7 +91,7 @@
                                    FontSize="28"
                                    FontWeight="Bold"
                                    Foreground="#2C3E50"/>
-                        <TextBlock Text="Please enter a new password for your instructor account."
+                         <TextBlock Text="Please enter a new password for your instructor account."
                                    FontSize="14"
                                    Foreground="#7F8C8D"
                                    Margin="0,5,0,0"/>
