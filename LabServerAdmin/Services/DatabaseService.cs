@@ -1689,21 +1689,51 @@ namespace LabServerAdmin.Services
         /// <summary>
         /// FIX: uses lab_sessions instead of server_sessions.
         /// </summary>
-        public async Task RecordServerStopAsync()
+        public async Task RecordServerStopAsync(string? instructorUsername = null)
         {
-            try
+            using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            string query;
+
+            if (!string.IsNullOrWhiteSpace(instructorUsername))
             {
-                using var connection = new NpgsqlConnection(_connectionString);
-                await connection.OpenAsync();
-                using var command = new NpgsqlCommand(@"
-                    UPDATE lab_sessions 
-                    SET actual_end = CURRENT_TIMESTAMP, is_active = FALSE
-                    WHERE DATE(actual_start) = CURRENT_DATE AND is_active = TRUE", connection);
+                // I-resolve muna ang empid ng instructor
+                var resolveQuery = @"
+            SELECT empid FROM ui_credentials 
+            WHERE (username = @username OR empid = @username) 
+            AND role = 'INSTRUCTOR' 
+            LIMIT 1";
+
+                using var resolveCmd = new NpgsqlCommand(resolveQuery, connection);
+                resolveCmd.Parameters.AddWithValue("@username", instructorUsername);
+                var empid = await resolveCmd.ExecuteScalarAsync() as string;
+
+                // I-update gamit ang empid via JOIN sa course_schedules
+                query = @"
+            UPDATE lab_sessions ls
+            SET is_active = FALSE, 
+                actual_end = CURRENT_TIMESTAMP
+            FROM course_schedules cs
+            WHERE ls.schedule_id = cs.id
+              AND cs.empid = @empid
+              AND ls.is_active = TRUE";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@empid", empid ?? instructorUsername);
                 await command.ExecuteNonQueryAsync();
             }
-            catch (Exception ex)
+            else
             {
-                await LogSystemActionAsync("Server Stop Error", "Server", "Error", $"Failed to record server stop: {ex.Message}");
+                // Safety net — close ALL active sessions
+                query = @"
+            UPDATE lab_sessions 
+            SET is_active = FALSE, 
+                actual_end = CURRENT_TIMESTAMP
+            WHERE is_active = TRUE";
+
+                using var command = new NpgsqlCommand(query, connection);
+                await command.ExecuteNonQueryAsync();
             }
         }
 

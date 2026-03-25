@@ -3231,7 +3231,7 @@ namespace LabServerAdmin
                 }
 
                 // Record server stop time
-                await _databaseService.RecordServerStopAsync();
+                await _databaseService.RecordServerStopAsync(_currentAdminUsername);
 
                 await _tcpServerService.StopServerAsync();
                 _isServerRunning = false;
