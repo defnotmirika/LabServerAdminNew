@@ -55,10 +55,18 @@ namespace LabServerClient
 
         private async void ClientWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            // Auto-connect if not already connected
             if (!_isConnected)
             {
+                // Try to connect once — if it fails, SessionWindow will handle
+                // reconnect via ReconnectToServer() when server starts
                 await ConnectToServer();
+
+                if (!_isConnected)
+                {
+                    LogMessage("[ClientWindow] Initial connection failed - waiting for server to start");
+                    // Hindi na mag-re-retry dito — SessionWindow's ServerStartCheckTimer
+                    // ang bahala mag-trigger ng ReconnectToServer() kapag nag-start na ang server
+                }
             }
         }
 

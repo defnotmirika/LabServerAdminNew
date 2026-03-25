@@ -214,10 +214,9 @@ namespace LabServerClient
         /// </summary>
         private async void ServerStartCheckTimer_Tick(object? sender, EventArgs e)
         {
-            // 1. Safety check: Huwag magpatuloy kung hindi naman naghihintay o walang database connection
             if (!_isWaitingForServerStart || _databaseService == null || string.IsNullOrWhiteSpace(_username))
             {
-                _serverStartCheckTimer.Stop(); // Patayin ang timer kung hindi naman kailangan
+                _serverStartCheckTimer.Stop();
                 return;
             }
 
@@ -225,32 +224,40 @@ namespace LabServerClient
             {
                 var pcName = _clientWindow?.GetClientName() ?? Environment.MachineName;
                 var schedule = await _databaseService.GetStudentScheduleAsync(_username, pcName);
-
                 var serverStartTime = schedule?.serverStart;
 
                 if (serverStartTime.HasValue)
                 {
-                    LogMessage($"[SERVER] Server started at {serverStartTime.Value:HH:mm:ss} - granting access.");
-
+                    LogMessage($"[SERVER] Server started - reconnecting to TCP...");
                     _serverStartCheckTimer.Stop();
                     _isWaitingForServerStart = false;
 
                     await Dispatcher.InvokeAsync(async () =>
                     {
+                        // Close lock screen
                         if (_kioskModeWindow != null)
                         {
-                            try
-                            {
-                                _kioskModeWindow.Close();
-                            }
-                            catch { /* Ignore close errors */ }
+                            try { _kioskModeWindow.Close(); } catch { }
                             _kioskModeWindow = null;
                         }
 
                         this.Visibility = Visibility.Visible;
-                        this.Activate(); 
+                        this.Activate();
 
-                        
+                        // ✅ KEY FIX: Reconnect + re-register to TCP server
+                        if (_clientWindow != null)
+                        {
+                            var reconnected = await _clientWindow.ReconnectToServer();
+                            if (reconnected)
+                            {
+                                LogMessage("[SERVER] Reconnected and registered to TCP server");
+                                InitializeTcpListening(); // refresh the stream reference
+                            }
+                            else
+                            {
+                                LogMessage("[SERVER] WARNING: Reconnect failed");
+                            }
+                        }
 
                         await InitializeScheduleBasedTimerAsync();
                     });
