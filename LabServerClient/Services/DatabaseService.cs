@@ -398,16 +398,16 @@ namespace LabServerClient.Services
                 int labId = Convert.ToInt32(labIdResult);
 
                 var getScheduleQuery = @"
-                    SELECT cs.time_in, cs.time_out, ls.actual_start
-                    FROM us_geninfo ug
-                    LEFT JOIN course_schedules cs ON ug.section_id = cs.section_id
-                        AND cs.lab_id = @labId
-                        AND TRIM(cs.day_of_week) = TRIM(TO_CHAR(CURRENT_DATE, 'Day'))
-                    LEFT JOIN lab_sessions ls ON ls.schedule_id = cs.schedule_id
-                        AND ls.is_active = TRUE
-                        AND DATE(ls.actual_start) = CURRENT_DATE
-                    WHERE ug.studNo = @studNo
-                    LIMIT 1";
+                SELECT cs.time_in, cs.time_out, ls.actual_start
+                FROM us_geninfo ug
+                LEFT JOIN course_schedules cs ON ug.section_id = cs.section_id
+                    AND cs.lab_id = @labId
+                    AND cs.day_of_week = TO_CHAR(CURRENT_DATE, 'FMDay')
+                LEFT JOIN lab_sessions ls ON ls.schedule_id = cs.schedule_id
+                    AND ls.is_active = TRUE
+                    AND DATE(ls.actual_start) = CURRENT_DATE
+                WHERE ug.studNo = @studNo
+                LIMIT 1";
 
                 using var scheduleCmd = new NpgsqlCommand(getScheduleQuery, connection);
                 scheduleCmd.Parameters.AddWithValue("@studNo", studNo);
