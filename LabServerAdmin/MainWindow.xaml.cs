@@ -333,9 +333,10 @@ namespace LabServerAdmin
                 }
                 else
                 {
-                    // Stop server manually
                     await StopServerAsync(isAutoStop: false);
-                
+
+                    await Task.Yield();
+
                     MessageBox.Show(
                         "Server stopped successfully!\n\nStatus: Stopped",
                         "Server Stopped",

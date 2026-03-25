@@ -1711,13 +1711,13 @@ namespace LabServerAdmin.Services
 
                 // I-update gamit ang empid via JOIN sa course_schedules
                 query = @"
-            UPDATE lab_sessions ls
-            SET is_active = FALSE, 
-                actual_end = CURRENT_TIMESTAMP
-            FROM course_schedules cs
-            WHERE ls.schedule_id = cs.id
-              AND cs.empid = @empid
-              AND ls.is_active = TRUE";
+                    UPDATE lab_sessions ls
+                    SET is_active = FALSE, 
+                        actual_end = CURRENT_TIMESTAMP
+                    FROM course_schedules cs
+                    WHERE ls.schedule_id = cs.schedule_id  -- ✅ DITO LANG BINAGO
+                      AND cs.empid = @empid
+                      AND ls.is_active = TRUE";
 
                 using var command = new NpgsqlCommand(query, connection);
                 command.Parameters.AddWithValue("@empid", empid ?? instructorUsername);
