@@ -231,34 +231,21 @@ namespace LabServerClient
 
         private void ViewModel_LoginCancelled()
         {
-            // ✅ Parse the error message from ViewModel to show correct UI
-            string message = _viewModel.ErrorMessage ?? string.Empty;
-
-            if (message.Contains("locked"))
+            if (_viewModel.IsAccountLocked)
             {
                 ShowLockedError();
             }
-            else if (message.Contains("attempt"))
+            else if (_viewModel.FailedAttemptCount > 0)
             {
-                // Extract remaining count from message e.g. "3 attempt(s) remaining"
-                int remaining = 4;
-                int failed = 0;
-                for (int i = 1; i <= MAX_ATTEMPTS; i++)
-                {
-                    if (message.Contains($"{MAX_ATTEMPTS - i} attempt"))
-                    {
-                        remaining = MAX_ATTEMPTS - i;
-                        failed = i;
-                        break;
-                    }
-                }
-                ShowAttemptError(failed, remaining);
+                int remaining = MAX_ATTEMPTS - _viewModel.FailedAttemptCount;
+                ShowAttemptError(_viewModel.FailedAttemptCount, remaining);
             }
             else
             {
-                ShowSimpleError(message);
+                ShowSimpleError(_viewModel.ErrorMessage ?? string.Empty);
             }
 
+            PasswordBox.Password = "";
             PasswordBox.Focus();
         }
 

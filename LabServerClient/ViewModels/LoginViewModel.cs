@@ -7,11 +7,6 @@ using LabServerClient.Services;
 
 namespace LabServerClient.ViewModels
 {
-    /// <summary>
-    /// ViewModel for the LoginWindow following the MVVM pattern.
-    /// Handles all login business logic, PC Name validation, and server communication.
-    /// Separates UI logic from service calls and data persistence.
-    /// </summary>
     public class LoginViewModel : INotifyPropertyChanged
     {
         private readonly DatabaseService? _databaseService;
@@ -27,17 +22,18 @@ namespace LabServerClient.ViewModels
         private int? _authenticatedClientId;
         private string _currentPcName = string.Empty;
 
-        // Events for UI interaction
+        // ✅ NEW: Attempt tracking properties
+        private int _failedAttemptCount = 0;
+        private bool _isAccountLocked = false;
+
         public event Action? LoginSuccess;
-        public event Action<string, string>? PcMismatchDetected; // username, assignedPcName
+        public event Action<string, string>? PcMismatchDetected;
         public event Action? LoginCancelled;
 
         public LoginViewModel(DatabaseService? databaseService = null)
         {
             _databaseService = databaseService;
             _loginRequestService = new LoginRequestService();
-
-            // Initialize PC Name from registry
             _currentPcName = PcNameService.GetPcName();
         }
 
@@ -162,6 +158,33 @@ namespace LabServerClient.ViewModels
             }
         }
 
+        // ✅ NEW: Exposed so LoginWindow.xaml.cs can read directly — no string parsing needed
+        public int FailedAttemptCount
+        {
+            get => _failedAttemptCount;
+            private set
+            {
+                if (_failedAttemptCount != value)
+                {
+                    _failedAttemptCount = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public bool IsAccountLocked
+        {
+            get => _isAccountLocked;
+            private set
+            {
+                if (_isAccountLocked != value)
+                {
+                    _isAccountLocked = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
         #endregion
 
         #region Login Logic
@@ -169,7 +192,10 @@ namespace LabServerClient.ViewModels
         public async Task AttemptLoginAsync()
         {
             if (!ValidateInput())
+            {
+                LoginCancelled?.Invoke();
                 return;
+            }
 
             IsLoginButtonEnabled = false;
 
@@ -183,7 +209,9 @@ namespace LabServerClient.ViewModels
                     bool isLocked = await _databaseService.IsStudentLockedAsync(Username);
                     if (isLocked)
                     {
-                        ErrorMessage = "Your account has been locked due to too many failed attempts. Please contact your administrator.";
+                        IsAccountLocked = true;
+                        FailedAttemptCount = 0;
+                        ErrorMessage = "Your account has been locked.";
                         LoginCancelled?.Invoke();
                         return;
                     }
@@ -193,7 +221,10 @@ namespace LabServerClient.ViewModels
 
                 if (verificationResult.IsSuccessful && verificationResult.IsPcNameMatch)
                 {
-                    // ✅ Reset failed attempts on success
+                    // ✅ Reset on success
+                    FailedAttemptCount = 0;
+                    IsAccountLocked = false;
+
                     if (_databaseService != null)
                         await _databaseService.ResetStudentFailedAttemptsAsync(Username);
 
@@ -202,35 +233,44 @@ namespace LabServerClient.ViewModels
                 }
                 else if (!verificationResult.IsPcNameMatch && !string.IsNullOrWhiteSpace(verificationResult.AssignedPcName))
                 {
-                    // PC mismatch — don't count as failed attempt
+                    // PC mismatch — not a failed attempt, no counter change
                     PcMismatchDetected?.Invoke(Username, verificationResult.AssignedPcName);
                 }
                 else if (!string.IsNullOrWhiteSpace(verificationResult.ErrorMessage) &&
                          verificationResult.ErrorMessage.Contains("schedule", StringComparison.OrdinalIgnoreCase))
                 {
-                    // Schedule error — don't count as failed attempt
+                    // Schedule error — not a failed attempt
+                    FailedAttemptCount = 0;
+                    IsAccountLocked = false;
                     ErrorMessage = verificationResult.ErrorMessage;
                     LoginCancelled?.Invoke();
                 }
                 else
                 {
-                    // ✅ Actual wrong credentials — increment counter
+                    // ✅ Wrong credentials — increment counter
                     if (_databaseService != null)
                     {
                         bool studentExists = await _databaseService.StudentExistsAsync(Username);
                         if (studentExists)
                         {
                             int failedCount = await _databaseService.IncrementStudentFailedAttemptsAsync(Username);
-                            int remaining = 4 - failedCount;
+                            int remaining = MAX_ATTEMPTS - failedCount;
 
-                            if (failedCount >= 4)
+                            if (failedCount >= MAX_ATTEMPTS)
                             {
                                 await _databaseService.LockStudentAccountAsync(Username);
-                                ErrorMessage = "Your account has been locked due to too many failed attempts. Please contact your administrator.";
+
+                                // ✅ Signal locked — LoginWindow will call ShowLockedError()
+                                FailedAttemptCount = MAX_ATTEMPTS;
+                                IsAccountLocked = true;
+                                ErrorMessage = "Account locked.";
                             }
                             else
                             {
-                                ErrorMessage = $"Invalid username or password. {remaining} attempt(s) remaining before your account is locked.";
+                                // ✅ Signal attempt warning — LoginWindow will call ShowAttemptError()
+                                FailedAttemptCount = failedCount;
+                                IsAccountLocked = false;
+                                ErrorMessage = "Invalid credentials.";
                             }
 
                             LoginCancelled?.Invoke();
@@ -239,12 +279,16 @@ namespace LabServerClient.ViewModels
                     }
 
                     // Unknown username — generic error, no counter
+                    FailedAttemptCount = 0;
+                    IsAccountLocked = false;
                     ErrorMessage = verificationResult.ErrorMessage ?? "Invalid username or password. Please try again.";
                     LoginCancelled?.Invoke();
                 }
             }
             catch (Exception ex)
             {
+                FailedAttemptCount = 0;
+                IsAccountLocked = false;
                 ErrorMessage = $"Login error: {ex.Message}";
                 LoginCancelled?.Invoke();
             }
@@ -253,6 +297,8 @@ namespace LabServerClient.ViewModels
                 IsLoginButtonEnabled = true;
             }
         }
+
+        private const int MAX_ATTEMPTS = 4;
 
         public async Task<bool> SendLoginRequestAsync()
         {
@@ -264,7 +310,6 @@ namespace LabServerClient.ViewModels
                     return false;
                 }
 
-                // Resolve actual studNo first
                 string studNo = Username;
                 try
                 {
@@ -272,7 +317,7 @@ namespace LabServerClient.ViewModels
                     if (!string.IsNullOrWhiteSpace(resolved))
                         studNo = resolved;
                 }
-                catch { /* fallback to Username */ }
+                catch { }
 
                 var message = $"Student '{studNo}' requesting login access from PC '{CurrentPcName}'";
 
@@ -307,12 +352,16 @@ namespace LabServerClient.ViewModels
         {
             if (string.IsNullOrWhiteSpace(Username))
             {
+                FailedAttemptCount = 0;
+                IsAccountLocked = false;
                 ErrorMessage = "Please enter a username.";
                 return false;
             }
 
             if (string.IsNullOrWhiteSpace(Password))
             {
+                FailedAttemptCount = 0;
+                IsAccountLocked = false;
                 ErrorMessage = "Please enter a password.";
                 return false;
             }
@@ -364,7 +413,6 @@ namespace LabServerClient.ViewModels
                         {
                             System.Diagnostics.Debug.WriteLine($"[VERIFY] PC Name mismatch - Current: {CurrentPcName}, Assigned: {loginResult.AssignedPcName}");
 
-                            // Check if admin already approved a Login request for this student on this PC
                             string studNoToCheck = Username;
                             try
                             {
@@ -454,20 +502,11 @@ namespace LabServerClient.ViewModels
             };
         }
 
-        /// <summary>
-        /// Completes the login process.
-        /// FIX: Resolves the actual studNo from the database so the timer works correctly.
-        /// The timer uses studNo to query GetStudentScheduleAsync — if the student logged in
-        /// using their username (not studNo), the schedule lookup would fail and show 00:00:00.
-        /// </summary>
         private async Task CompleteLogin(LoginRequestService.LoginVerificationResult result)
         {
             IsAuthenticated = true;
             UserRole = result.UserRole ?? "Student";
 
-            // ── FIX: Resolve actual studNo for non-admin users ──────────────────
-            // GetStudentScheduleAsync queries us_geninfo.studNo directly.
-            // If the student logged in with a username alias, we need the real studNo.
             if (_databaseService != null &&
                 !string.Equals(UserRole, "Admin", StringComparison.OrdinalIgnoreCase))
             {
@@ -488,7 +527,6 @@ namespace LabServerClient.ViewModels
             {
                 AuthenticatedUsername = Username;
             }
-            // ────────────────────────────────────────────────────────────────────
 
             if (_databaseService != null && !string.Equals(UserRole, "Admin", StringComparison.OrdinalIgnoreCase))
             {
@@ -499,7 +537,6 @@ namespace LabServerClient.ViewModels
                     if (UserRole.Equals("Student", StringComparison.OrdinalIgnoreCase) ||
                         UserRole.Equals("STUDENT", StringComparison.OrdinalIgnoreCase))
                     {
-                        // Use resolved studNo for attendance recording
                         var studNoForAttendance = AuthenticatedUsername ?? Username;
                         await _databaseService.RecordStudentLoginAsync(studNoForAttendance, CurrentPcName);
                         System.Diagnostics.Debug.WriteLine($"[LOGIN] Attendance recorded for {studNoForAttendance} on {CurrentPcName}");
@@ -519,10 +556,6 @@ namespace LabServerClient.ViewModels
             Password = string.Empty;
         }
 
-        /// <summary>
-        /// Resolves the actual studNo from us_credentials given a username or studNo input.
-        /// This ensures the session timer uses the correct studNo for schedule lookups.
-        /// </summary>
         private async Task<string?> ResolveStudNoAsync(string usernameOrStudNo)
         {
             if (_databaseService == null) return null;
@@ -552,50 +585,10 @@ namespace LabServerClient.ViewModels
         private void ClearErrorMessage()
         {
             if (!string.IsNullOrEmpty(ErrorMessage))
+            {
                 ErrorMessage = string.Empty;
-        }
-
-        private bool IsAdminCredentials(string username, string password)
-        {
-            return username == "admin" && password == "admin123";
-        }
-
-        private async Task<bool> CheckTcpServerAvailabilityAsync()
-        {
-            try
-            {
-                string serverIp = "192.168.1.100";
-                try
-                {
-                    var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"SOFTWARE\LabServerClient");
-                    if (key != null)
-                    {
-                        serverIp = key.GetValue("ServerIP", "192.168.1.100")?.ToString() ?? "192.168.1.100";
-                        key.Close();
-                    }
-                }
-                catch
-                {
-                    // Use default if registry read fails
-                }
-
-                using var testClient = new System.Net.Sockets.TcpClient();
-                var connectTask = testClient.ConnectAsync(serverIp, 9000);
-                var timeoutTask = Task.Delay(2000);
-
-                var completedTask = await Task.WhenAny(connectTask, timeoutTask);
-
-                if (completedTask == connectTask && testClient.Connected)
-                {
-                    testClient.Close();
-                    return true;
-                }
-
-                return false;
-            }
-            catch
-            {
-                return false;
+                FailedAttemptCount = 0;
+                IsAccountLocked = false;
             }
         }
 
