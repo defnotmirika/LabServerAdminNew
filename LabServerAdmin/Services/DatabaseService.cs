@@ -327,180 +327,39 @@ namespace LabServerAdmin.Services
 
         #endregion
 
-        public async Task InitializeDatabaseAsync()
-        {
-            using var connection = new NpgsqlConnection(_connectionString);
-            await connection.OpenAsync();
-
-            var createConnectedClients = @"
-        CREATE TABLE IF NOT EXISTS connected_clients (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(100) NOT NULL UNIQUE,
-            ip_address VARCHAR(45),
-            last_response TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            is_connected BOOLEAN DEFAULT TRUE,
-            status VARCHAR(50) DEFAULT 'Online'
-        );
-    ";
-            using var command = new NpgsqlCommand(createConnectedClients, connection);
-            await command.ExecuteNonQueryAsync();
-
-            var createLoginRequests = @"
-        CREATE TABLE IF NOT EXISTS login_requests (
-            id SERIAL PRIMARY KEY,
-            studno VARCHAR(20) NOT NULL,
-            computer_id INT NOT NULL REFERENCES computers(id),
-            request_type VARCHAR(20) NOT NULL DEFAULT 'Login',
-            request_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            request_message VARCHAR(500),
-            status VARCHAR(20) NOT NULL DEFAULT 'Pending',
-            processed_by VARCHAR(20),
-            processed_timestamp TIMESTAMP,
-            CONSTRAINT chk_status CHECK (status IN ('Pending', 'Approved', 'Declined')),
-            CONSTRAINT chk_request_type CHECK (request_type IN ('Login', 'Logout'))
-        );
-        CREATE INDEX IF NOT EXISTS idx_login_requests_status ON login_requests(status);
-        CREATE INDEX IF NOT EXISTS idx_login_requests_timestamp ON login_requests(request_timestamp DESC);
-        CREATE INDEX IF NOT EXISTS idx_login_requests_type ON login_requests(request_type);
-    ";
-            using var loginRequestCommand = new NpgsqlCommand(createLoginRequests, connection);
-            await loginRequestCommand.ExecuteNonQueryAsync();
-
-            // ✅ ADDED: forgot_password_feedback table
-            var createForgotPasswordFeedback = @"
-        CREATE TABLE IF NOT EXISTS forgot_password_feedback (
-            id SERIAL PRIMARY KEY,
-            username VARCHAR(50) NOT NULL,
-            feedback_message TEXT NOT NULL,
-            source_app VARCHAR(20) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            status VARCHAR(20) NOT NULL DEFAULT 'Pending'
-        );
-        CREATE INDEX IF NOT EXISTS idx_forgot_password_feedback_status ON forgot_password_feedback(status);
-        CREATE INDEX IF NOT EXISTS idx_forgot_password_feedback_created_at ON forgot_password_feedback(created_at DESC);
-    ";
-            using var forgotPasswordFeedbackCommand = new NpgsqlCommand(createForgotPasswordFeedback, connection);
-            await forgotPasswordFeedbackCommand.ExecuteNonQueryAsync();
-
-            // ✅ ADDED: show_welcome_text column migration
-            var ensureWelcomeTextColumn = @"
-        DO $$
-        BEGIN
-            IF EXISTS (
-                SELECT 1 FROM information_schema.columns
-                WHERE table_name = 'ui_credentials' AND column_name = 'show_welcome_text'
-            ) THEN
-                NULL;
-            ELSIF EXISTS (
-                SELECT 1 FROM information_schema.tables
-                WHERE table_name = 'ui_credentials'
-            ) THEN
-                ALTER TABLE ui_credentials ADD COLUMN show_welcome_text BOOLEAN NOT NULL DEFAULT FALSE;
-            END IF;
-        END $$;
-    ";
-            using var welcomeColumnCommand = new NpgsqlCommand(ensureWelcomeTextColumn, connection);
-            await welcomeColumnCommand.ExecuteNonQueryAsync();
-
-            var ensureRequestTypeColumn = @"
-        DO $$ 
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM information_schema.columns 
-                WHERE table_name = 'login_requests' AND column_name = 'request_type'
-            ) THEN
-                ALTER TABLE login_requests ADD COLUMN request_type VARCHAR(20) NOT NULL DEFAULT 'Login';
-                ALTER TABLE login_requests ADD CONSTRAINT chk_request_type CHECK (request_type IN ('Login', 'Logout'));
-            END IF;
-        END $$;
-    ";
-            using var requestTypeCommand = new NpgsqlCommand(ensureRequestTypeColumn, connection);
-            await requestTypeCommand.ExecuteNonQueryAsync();
-
-            var ensureUniqueConstraint = @"
-        DO $$ 
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint WHERE conname = 'connected_clients_name_key'
-            ) THEN
-                ALTER TABLE connected_clients ADD CONSTRAINT connected_clients_name_key UNIQUE (name);
-            END IF;
-        END $$;
-    ";
-            using var constraintCommand = new NpgsqlCommand(ensureUniqueConstraint, connection);
-            await constraintCommand.ExecuteNonQueryAsync();
-
-            var ensureLabIdColumn = @"
-        DO $$ 
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM information_schema.columns 
-                WHERE table_name = 'computers' AND column_name = 'lab_id'
-            ) THEN
-                ALTER TABLE computers ADD COLUMN lab_id INTEGER;
-            END IF;
-        END $$;
-    ";
-            using var labIdCommand = new NpgsqlCommand(ensureLabIdColumn, connection);
-            await labIdCommand.ExecuteNonQueryAsync();
-
-            var makeIpNullable = @"
-        DO $$
-        BEGIN
-            IF EXISTS (
-                SELECT 1 FROM information_schema.columns
-                WHERE table_name = 'computers' AND column_name = 'ip_address'
-                AND is_nullable = 'NO'
-            ) THEN
-                ALTER TABLE computers ALTER COLUMN ip_address DROP NOT NULL;
-            END IF;
-        END $$;
-    ";
-            using var ipNullableCommand = new NpgsqlCommand(makeIpNullable, connection);
-            await ipNullableCommand.ExecuteNonQueryAsync();
-
-            // ✅ ADDED: is_temp_password column for us_credentials (students)
-            var ensureStudentTempPasswordColumn = @"
-        DO $$
-        BEGIN
-            IF EXISTS (
-                SELECT 1 FROM information_schema.tables
-                WHERE table_name = 'us_credentials'
-            ) THEN
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_name = 'us_credentials' AND column_name = 'is_temp_password'
-                ) THEN
-                    ALTER TABLE us_credentials ADD COLUMN is_temp_password BOOLEAN NOT NULL DEFAULT FALSE;
-                END IF;
-            END IF;
-        END $$;
-    ";
-            using var studentTempPasswordCommand = new NpgsqlCommand(ensureStudentTempPasswordColumn, connection);
-            await studentTempPasswordCommand.ExecuteNonQueryAsync();
-
-            // ✅ ADDED: show_welcome_text column for us_credentials (students)
-            var ensureStudentWelcomeTextColumn = @"
-        DO $$
-        BEGIN
-            IF EXISTS (
-                SELECT 1 FROM information_schema.tables
-                WHERE table_name = 'us_credentials'
-            ) THEN
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_name = 'us_credentials' AND column_name = 'show_welcome_text'
-                ) THEN
-                    ALTER TABLE us_credentials ADD COLUMN show_welcome_text BOOLEAN NOT NULL DEFAULT FALSE;
-                END IF;
-            END IF;
-        END $$;
-    ";
+// existing code above...
             using var studentWelcomeTextCommand = new NpgsqlCommand(ensureStudentWelcomeTextColumn, connection);
-            await studentWelcomeTextCommand.ExecuteNonQueryAsync();
-        }
+    await studentWelcomeTextCommand.ExecuteNonQueryAsync();
 
-        private static bool IsValidBcryptHash(string? hash)
+    // ✅ ADD BELOW THIS LINE
+    var ensureStudentLockoutColumns = @"
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.tables
+                        WHERE table_name = 'us_credentials'
+                    ) THEN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_name = 'us_credentials' AND column_name = 'failed_attempts'
+                        ) THEN
+                            ALTER TABLE us_credentials ADD COLUMN failed_attempts INT NOT NULL DEFAULT 0;
+                        END IF;
+
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_name = 'us_credentials' AND column_name = 'is_locked'
+                        ) THEN
+                            ALTER TABLE us_credentials ADD COLUMN is_locked BOOLEAN NOT NULL DEFAULT FALSE;
+                        END IF;
+                    END IF;
+                END $$;
+            ";
+            using var studentLockoutCommand = new NpgsqlCommand(ensureStudentLockoutColumns, connection);
+    await studentLockoutCommand.ExecuteNonQueryAsync();
+
+} 
+private static bool IsValidBcryptHash(string? hash)
         {
             if (string.IsNullOrWhiteSpace(hash)) return false;
             return Regex.IsMatch(hash, @"^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$");
@@ -1666,6 +1525,132 @@ namespace LabServerAdmin.Services
                 return null;
             }
         }
+
+        #region Instructor Account Lockout
+
+        public async Task<bool> InstructorExistsAsync(string usernameOrEmpId)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            SELECT COUNT(1) FROM ui_credentials
+            WHERE (username = @value OR empid = @value) AND role = 'INSTRUCTOR'";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@value", usernameOrEmpId);
+
+                var result = await command.ExecuteScalarAsync();
+                return Convert.ToInt32(result) > 0;
+            }
+            catch { return false; }
+        }
+
+        public async Task<bool> IsInstructorLockedAsync(string usernameOrEmpId)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            SELECT is_locked FROM ui_credentials
+            WHERE (username = @value OR empid = @value) AND role = 'INSTRUCTOR'
+            LIMIT 1";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@value", usernameOrEmpId);
+
+                var result = await command.ExecuteScalarAsync();
+                if (result == null || result == DBNull.Value) return false;
+                return Convert.ToBoolean(result);
+            }
+            catch { return false; }
+        }
+
+        public async Task<int> IncrementInstructorFailedAttemptsAsync(string usernameOrEmpId)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            UPDATE ui_credentials
+            SET failed_attempts = failed_attempts + 1
+            WHERE (username = @value OR empid = @value) AND role = 'INSTRUCTOR'
+            RETURNING failed_attempts";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@value", usernameOrEmpId);
+
+                var result = await command.ExecuteScalarAsync();
+                return result == null || result == DBNull.Value ? 0 : Convert.ToInt32(result);
+            }
+            catch { return 0; }
+        }
+
+        public async Task LockInstructorAccountAsync(string usernameOrEmpId)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            UPDATE ui_credentials
+            SET is_locked = TRUE
+            WHERE (username = @value OR empid = @value) AND role = 'INSTRUCTOR'";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@value", usernameOrEmpId);
+                await command.ExecuteNonQueryAsync();
+            }
+            catch { }
+        }
+
+        public async Task ResetInstructorFailedAttemptsAsync(string usernameOrEmpId)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            UPDATE ui_credentials
+            SET failed_attempts = 0
+            WHERE (username = @value OR empid = @value) AND role = 'INSTRUCTOR'";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@value", usernameOrEmpId);
+                await command.ExecuteNonQueryAsync();
+            }
+            catch { }
+        }
+
+        // For admin panel — unlock an instructor account
+        public async Task<bool> UnlockInstructorAccountAsync(string usernameOrEmpId)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            UPDATE ui_credentials
+            SET is_locked = FALSE, failed_attempts = 0
+            WHERE (username = @value OR empid = @value) AND role = 'INSTRUCTOR'";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@value", usernameOrEmpId);
+                return await command.ExecuteNonQueryAsync() > 0;
+            }
+            catch { return false; }
+        }
+
+        #endregion
 
         /// <summary>
         /// FIX: uses lab_sessions instead of server_sessions.

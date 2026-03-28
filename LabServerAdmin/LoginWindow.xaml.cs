@@ -245,10 +245,9 @@ namespace LabServerAdmin
                 bool isValid = false;
                 string role = "";
 
-                // Validate credentials against database if available
                 if (_databaseService != null)
                 {
-                    // Try admin first
+                    // Try admin first (no lockout for admin)
                     isValid = await _databaseService.ValidateAdminAsync(username, password);
                     if (isValid)
                     {
@@ -256,11 +255,24 @@ namespace LabServerAdmin
                     }
                     else
                     {
-                        // Try instructor credentials
+                        // ✅ Check lockout BEFORE validating password
+                        bool isLocked = await _databaseService.IsInstructorLockedAsync(username);
+                        if (isLocked)
+                        {
+                            ShowError("Your account has been locked. Please contact your administrator.");
+                            PasswordBox.Password = string.Empty;
+                            PasswordBox.Focus();
+                            LoginButton.IsEnabled = true;
+                            return;
+                        }
+
                         isValid = await _databaseService.ValidateInstructorAsync(username, password);
                         if (isValid)
                         {
                             role = "INSTRUCTOR";
+
+                            // ✅ Reset failed attempts on successful login
+                            await _databaseService.ResetInstructorFailedAttemptsAsync(username);
 
                             var isTempPassword = await _databaseService.IsInstructorTempPasswordAsync(username);
                             if (isTempPassword)
@@ -287,6 +299,35 @@ namespace LabServerAdmin
                                 return;
                             }
                         }
+                        else
+                        {
+                            // ✅ Wrong password — check if instructor exists to track attempts
+                            bool instructorExists = await _databaseService.InstructorExistsAsync(username);
+                            if (instructorExists)
+                            {
+                                int failedCount = await _databaseService.IncrementInstructorFailedAttemptsAsync(username);
+                                int remaining = 4 - failedCount;
+
+                                if (failedCount >= 4)
+                                {
+                                    await _databaseService.LockInstructorAccountAsync(username);
+                                    await _databaseService.LogSystemActionAsync(
+                                        "Account Locked", username, "Warning",
+                                        $"Instructor account locked after 4 failed login attempts");
+
+                                    ShowError("Your account has been locked. Please contact your administrator.");
+                                }
+                                else
+                                {
+                                    ShowError($"Invalid username or password. {remaining} attempt(s) remaining before your account is locked.");
+                                }
+
+                                PasswordBox.Password = "";
+                                PasswordBox.Focus();
+                                LoginButton.IsEnabled = true;
+                                return;
+                            }
+                        }
                     }
                 }
                 else
@@ -298,14 +339,13 @@ namespace LabServerAdmin
 
                 if (isValid)
                 {
-                    // Set authenticated flag and username first
                     IsAuthenticated = true;
                     AuthenticatedUsername = username;
                     UserRole = string.IsNullOrWhiteSpace(role) ? "ADMIN" : role;
-                    AuthenticatedPassword = password; // Store password for lock screen
+                    AuthenticatedPassword = password;
                     ErrorTextBlock.Visibility = Visibility.Collapsed;
 
-                    // Log successful login attempt (fire and forget to not delay window close)
+                    // Log successful login attempt (fire and forget)
                     if (_databaseService != null)
                     {
                         _ = Task.Run(async () =>
@@ -319,20 +359,16 @@ namespace LabServerAdmin
                                     $"User ({UserRole}) logged in successfully"
                                 );
                             }
-                            catch
-                            {
-                                // Ignore logging errors
-                            }
+                            catch { }
                         });
                     }
 
-                    // Set DialogResult and close window
                     this.DialogResult = true;
                     this.Close();
                 }
                 else
                 {
-                    // Log failed login attempt
+                    // Generic error for unknown username or failed admin
                     if (_databaseService != null)
                     {
                         try
@@ -344,10 +380,7 @@ namespace LabServerAdmin
                                 "Invalid credentials provided"
                             );
                         }
-                        catch
-                        {
-                            // Ignore logging errors
-                        }
+                        catch { }
                     }
 
                     ShowError("Invalid username or password. Please try again.");

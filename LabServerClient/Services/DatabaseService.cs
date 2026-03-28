@@ -902,6 +902,132 @@ namespace LabServerClient.Services
             }
         }
 
+
+        #region Student Account Lockout
+
+        public async Task<bool> StudentExistsAsync(string usernameOrStudNo)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            SELECT COUNT(1) FROM us_credentials
+            WHERE (username = @value OR studno = @value)";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@value", usernameOrStudNo);
+
+                var result = await command.ExecuteScalarAsync();
+                return Convert.ToInt32(result) > 0;
+            }
+            catch { return false; }
+        }
+
+        public async Task<bool> IsStudentLockedAsync(string usernameOrStudNo)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            SELECT is_locked FROM us_credentials
+            WHERE (username = @value OR studno = @value)
+            LIMIT 1";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@value", usernameOrStudNo);
+
+                var result = await command.ExecuteScalarAsync();
+                if (result == null || result == DBNull.Value) return false;
+                return Convert.ToBoolean(result);
+            }
+            catch { return false; }
+        }
+
+        public async Task<int> IncrementStudentFailedAttemptsAsync(string usernameOrStudNo)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            UPDATE us_credentials
+            SET failed_attempts = failed_attempts + 1
+            WHERE (username = @value OR studno = @value)
+            RETURNING failed_attempts";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@value", usernameOrStudNo);
+
+                var result = await command.ExecuteScalarAsync();
+                return result == null || result == DBNull.Value ? 0 : Convert.ToInt32(result);
+            }
+            catch { return 0; }
+        }
+
+        public async Task LockStudentAccountAsync(string usernameOrStudNo)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            UPDATE us_credentials
+            SET is_locked = TRUE
+            WHERE (username = @value OR studno = @value)";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@value", usernameOrStudNo);
+                await command.ExecuteNonQueryAsync();
+            }
+            catch { }
+        }
+
+        public async Task ResetStudentFailedAttemptsAsync(string usernameOrStudNo)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            UPDATE us_credentials
+            SET failed_attempts = 0
+            WHERE (username = @value OR studno = @value)";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@value", usernameOrStudNo);
+                await command.ExecuteNonQueryAsync();
+            }
+            catch { }
+        }
+
+        public async Task<bool> UnlockStudentAccountAsync(string usernameOrStudNo)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+            UPDATE us_credentials
+            SET is_locked = FALSE, failed_attempts = 0
+            WHERE (username = @value OR studno = @value)";
+
+                using var command = new NpgsqlCommand(query, connection);
+                command.Parameters.AddWithValue("@value", usernameOrStudNo);
+                return await command.ExecuteNonQueryAsync() > 0;
+            }
+            catch { return false; }
+        }
+
+        #endregion
+
         /// <summary>
         /// Checks if a logout request for this student has been approved.
         /// FIX: studno (lowercase) in WHERE clause.

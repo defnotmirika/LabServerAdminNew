@@ -176,51 +176,75 @@ namespace LabServerClient.ViewModels
             try
             {
                 CurrentPcName = PcNameService.GetPcName();
-                System.Diagnostics.Debug.WriteLine($"[LOGIN] Attempting login for user: '{Username}' on PC: '{CurrentPcName}'");
 
-                // TEMPORARY: TCP server check commented out for debugging login issue
-                // if (!IsAdminCredentials(Username, Password))
-                // {
-                //     bool serverAvailable = await CheckTcpServerAvailabilityAsync();
-                //     if (!serverAvailable)
-                //     {
-                //         ErrorMessage = "Server is not running. Please contact your instructor to start the server.";
-                //         LoginCancelled?.Invoke();
-                //         return;
-                //     }
-                // }
+                // ✅ Check lockout BEFORE attempting verification
+                if (_databaseService != null)
+                {
+                    bool isLocked = await _databaseService.IsStudentLockedAsync(Username);
+                    if (isLocked)
+                    {
+                        ErrorMessage = "Your account has been locked due to too many failed attempts. Please contact your administrator.";
+                        LoginCancelled?.Invoke();
+                        return;
+                    }
+                }
 
                 var verificationResult = await VerifyLoginAsync();
-                System.Diagnostics.Debug.WriteLine($"[LOGIN] Verification result - Success: {verificationResult.IsSuccessful}, PCMatch: {verificationResult.IsPcNameMatch}");
 
                 if (verificationResult.IsSuccessful && verificationResult.IsPcNameMatch)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[LOGIN] Login successful - completing login process");
+                    // ✅ Reset failed attempts on success
+                    if (_databaseService != null)
+                        await _databaseService.ResetStudentFailedAttemptsAsync(Username);
+
                     await CompleteLogin(verificationResult);
-                    System.Diagnostics.Debug.WriteLine($"[LOGIN] Invoking LoginSuccess event");
                     LoginSuccess?.Invoke();
                 }
                 else if (!verificationResult.IsPcNameMatch && !string.IsNullOrWhiteSpace(verificationResult.AssignedPcName))
                 {
-                    System.Diagnostics.Debug.WriteLine($"[LOGIN] PC mismatch detected");
+                    // PC mismatch — don't count as failed attempt
                     PcMismatchDetected?.Invoke(Username, verificationResult.AssignedPcName);
                 }
-                else if (!string.IsNullOrWhiteSpace(verificationResult.ErrorMessage))
+                else if (!string.IsNullOrWhiteSpace(verificationResult.ErrorMessage) &&
+                         verificationResult.ErrorMessage.Contains("schedule", StringComparison.OrdinalIgnoreCase))
                 {
-                    System.Diagnostics.Debug.WriteLine($"[LOGIN] Login failed - {verificationResult.ErrorMessage}");
+                    // Schedule error — don't count as failed attempt
                     ErrorMessage = verificationResult.ErrorMessage;
                     LoginCancelled?.Invoke();
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"[LOGIN] Generic login failure");
-                    ErrorMessage = "Invalid username or password. Please try again.";
+                    // ✅ Actual wrong credentials — increment counter
+                    if (_databaseService != null)
+                    {
+                        bool studentExists = await _databaseService.StudentExistsAsync(Username);
+                        if (studentExists)
+                        {
+                            int failedCount = await _databaseService.IncrementStudentFailedAttemptsAsync(Username);
+                            int remaining = 4 - failedCount;
+
+                            if (failedCount >= 4)
+                            {
+                                await _databaseService.LockStudentAccountAsync(Username);
+                                ErrorMessage = "Your account has been locked due to too many failed attempts. Please contact your administrator.";
+                            }
+                            else
+                            {
+                                ErrorMessage = $"Invalid username or password. {remaining} attempt(s) remaining before your account is locked.";
+                            }
+
+                            LoginCancelled?.Invoke();
+                            return;
+                        }
+                    }
+
+                    // Unknown username — generic error, no counter
+                    ErrorMessage = verificationResult.ErrorMessage ?? "Invalid username or password. Please try again.";
                     LoginCancelled?.Invoke();
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[LOGIN] Exception during login: {ex.Message}");
                 ErrorMessage = $"Login error: {ex.Message}";
                 LoginCancelled?.Invoke();
             }
