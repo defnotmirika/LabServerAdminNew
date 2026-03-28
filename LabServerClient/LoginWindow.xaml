@@ -67,56 +67,34 @@
 
         <!-- Left Side - Blue Background -->
         <Grid Grid.Column="0" Background="#033a80">
-            <StackPanel VerticalAlignment="Center" 
-                       HorizontalAlignment="Center">
-                <!-- Two Images -->
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,0,0,30">
                     <Grid Width="90" Height="90" Margin="0,0,15,0" IsEnabled="False">
-                        <Border Background="White" 
-                               CornerRadius="45"
-                               Opacity="0.15"/>
+                        <Border Background="White" CornerRadius="45" Opacity="0.15"/>
                         <Image Source="/trinity2.png" Width="60" Height="60"/>
                     </Grid>
                     <Grid Width="90" Height="90" Margin="0,0,15,0">
-                        <Border Background="White" 
-                               CornerRadius="45"
-                               Opacity="0.15"/>
+                        <Border Background="White" CornerRadius="45" Opacity="0.15"/>
                         <Image Source="/Images/learniq.png" Width="60" Height="60"/>
                     </Grid>
                 </StackPanel>
 
-                <!-- Welcome Text -->
                 <TextBlock Text="Welcome TPCIANS !" 
-                          FontSize="42" 
-                          FontWeight="Bold" 
-                          Foreground="White"
-                          HorizontalAlignment="Left"
-                          Margin="0,0,0,15"
-                          TextAlignment="Left"/>
+                          FontSize="42" FontWeight="Bold" Foreground="White"
+                          HorizontalAlignment="Left" Margin="0,0,0,15" TextAlignment="Left"/>
 
-                <!-- Description Text -->
                 <TextBlock Text="Designed to help student learning and make efficient classroom management." 
-                          FontSize="16" 
-                          Foreground="#b3c9e6"
-                          HorizontalAlignment="Left"
-                          TextAlignment="Left"
-                          Margin="0,0,0,0"
-                          TextWrapping="Wrap"
-                          MaxWidth="400"/>
+                          FontSize="16" Foreground="#b3c9e6"
+                          HorizontalAlignment="Left" TextAlignment="Left"
+                          TextWrapping="Wrap" MaxWidth="400"/>
             </StackPanel>
         </Grid>
 
         <!-- Right Side - White Background -->
         <Grid Grid.Column="1" Background="White">
-            <!-- Centered Login Card -->
-            <Border Width="400"
-                Padding="30"
-                CornerRadius="10"
-                Background="White"
-                BorderBrush="#DDD"
-                BorderThickness="1"
-                VerticalAlignment="Center"
-                HorizontalAlignment="Center">
+            <Border Width="400" Padding="30" CornerRadius="10"
+                    Background="White" BorderBrush="#DDD" BorderThickness="1"
+                    VerticalAlignment="Center" HorizontalAlignment="Center">
 
                 <Grid>
                     <Grid.RowDefinitions>
@@ -126,112 +104,117 @@
 
                     <!-- Header -->
                     <StackPanel Grid.Row="0" Margin="0,0,0,20">
-
-                        <TextBlock Text="Login" 
-                                FontSize="28" 
-                                FontWeight="Bold" 
-                                HorizontalAlignment="Left"
-                                Foreground="#2C3E50"/>
-
+                        <TextBlock Text="Login" FontSize="28" FontWeight="Bold"
+                                   HorizontalAlignment="Left" Foreground="#2C3E50"/>
                         <TextBlock Text="Welcome back! Please enter your details." 
-                                FontSize="14" 
-                                HorizontalAlignment="Left"
-                                Foreground="#7F8C8D"
-                                Margin="0,5,0,0"/>
+                                   FontSize="14" HorizontalAlignment="Left"
+                                   Foreground="#7F8C8D" Margin="0,5,0,0"/>
                     </StackPanel>
-
 
                     <!-- Login Form -->
                     <StackPanel Grid.Row="1">
 
                         <!-- PC Name Display -->
-                        <TextBlock Text="PC Name" 
-                               FontWeight="SemiBold" 
-                               FontSize="14"
-                               Foreground="#34495E"
-                               Margin="0,0,0,5"/>
-
-                        <Border Background="#f8f9fa"
-                               BorderBrush="#d1d9e0"
-                               BorderThickness="1"
-                               CornerRadius="6"
-                               Height="45"
-                               Margin="0,0,0,15">
-                            <TextBlock x:Name="PcNameTextBlock"
-                                      Text=""
-                                      FontSize="14"
-                                      Foreground="#495057"
-                                      VerticalAlignment="Center"
-                                      Margin="12,0"/>
+                        <TextBlock Text="PC Name" FontWeight="SemiBold" FontSize="14"
+                                   Foreground="#34495E" Margin="0,0,0,5"/>
+                        <Border Background="#f8f9fa" BorderBrush="#d1d9e0"
+                                BorderThickness="1" CornerRadius="6"
+                                Height="45" Margin="0,0,0,15">
+                            <TextBlock x:Name="PcNameTextBlock" Text=""
+                                       FontSize="14" Foreground="#495057"
+                                       VerticalAlignment="Center" Margin="12,0"/>
                         </Border>
 
                         <!-- Username -->
-                        <TextBlock Text="Username" 
-                               FontWeight="SemiBold" 
-                               FontSize="14"
-                               Foreground="#34495E"
-                               Margin="0,0,0,5"/>
-
+                        <TextBlock Text="Username" FontWeight="SemiBold" FontSize="14"
+                                   Foreground="#34495E" Margin="0,0,0,5"/>
                         <Border Style="{StaticResource RoundedTextBox}" Margin="0,0,0,15">
                             <TextBox x:Name="UsernameTextBox"
-                                 Height="40"
-                                 BorderThickness="0"
-                                 Background="Transparent"
-                                 Padding="10,8"
-                                 VerticalContentAlignment="Center"
-                                 Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}"
-                                 KeyDown="UsernameTextBox_KeyDown"/>
+                                     Height="40" BorderThickness="0"
+                                     Background="Transparent" Padding="10,8"
+                                     VerticalContentAlignment="Center"
+                                     Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}"
+                                     KeyDown="UsernameTextBox_KeyDown"/>
                         </Border>
 
                         <!-- Password -->
-                        <TextBlock Text="Password" 
-                               FontWeight="SemiBold" 
-                               FontSize="14"
-                               Foreground="#34495E"
-                               Margin="0,0,0,5"/>
-
+                        <TextBlock Text="Password" FontWeight="SemiBold" FontSize="14"
+                                   Foreground="#34495E" Margin="0,0,0,5"/>
                         <Border Style="{StaticResource RoundedTextBox}" Margin="0,0,0,15">
-                            <PasswordBox x:Name="PasswordBox" 
-                                     Height="40"
-                                     BorderThickness="0"
-                                     Background="Transparent"
-                                     Padding="10,8"
-                                     VerticalContentAlignment="Center"
-                                     KeyDown="PasswordBox_KeyDown"/>
+                            <PasswordBox x:Name="PasswordBox"
+                                         Height="40" BorderThickness="0"
+                                         Background="Transparent" Padding="10,8"
+                                         VerticalContentAlignment="Center"
+                                         KeyDown="PasswordBox_KeyDown"/>
                         </Border>
 
-                        <!-- Error Message -->
-                        <TextBlock x:Name="ErrorTextBlock" 
-                               Text="" 
-                               Foreground="Red" 
-                               FontSize="12"
-                               TextWrapping="Wrap"
-                               Margin="0,0,0,10"
-                               Visibility="Collapsed"/>
+                        <!-- ✅ UPDATED: Error / Warning Panel -->
+                        <Border x:Name="ErrorPanel"
+                                Visibility="Collapsed"
+                                CornerRadius="8" Padding="12,10"
+                                Margin="0,0,0,10"
+                                Background="#FFF5F5"
+                                BorderBrush="#FFCCCC"
+                                BorderThickness="1">
+                            <StackPanel>
+                                <!-- Icon + Message -->
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock x:Name="ErrorIconText"
+                                               Text="&#9888;" FontSize="14"
+                                               Foreground="#C0392B"
+                                               VerticalAlignment="Top"
+                                               Margin="0,1,8,0"/>
+                                    <TextBlock x:Name="ErrorTextBlock"
+                                               Text="" Foreground="#C0392B"
+                                               FontSize="12" FontWeight="SemiBold"
+                                               TextWrapping="Wrap"/>
+                                </StackPanel>
+
+                                <!-- Attempt block indicators -->
+                                <StackPanel x:Name="AttemptPanel" Visibility="Collapsed" Margin="0,10,0,0">
+                                    <Grid Margin="0,0,0,6">
+                                        <TextBlock Text="Login Attempts" FontSize="11" Foreground="#999"/>
+                                        <TextBlock x:Name="AttemptCountText"
+                                                   FontSize="11" FontWeight="Bold"
+                                                   Foreground="#C0392B"
+                                                   HorizontalAlignment="Right"/>
+                                    </Grid>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border x:Name="Block1" Height="8" Width="78" CornerRadius="4"
+                                                Background="#EAEAEA" Margin="0,0,4,0"/>
+                                        <Border x:Name="Block2" Height="8" Width="78" CornerRadius="4"
+                                                Background="#EAEAEA" Margin="0,0,4,0"/>
+                                        <Border x:Name="Block3" Height="8" Width="78" CornerRadius="4"
+                                                Background="#EAEAEA" Margin="0,0,4,0"/>
+                                        <Border x:Name="Block4" Height="8" Width="78" CornerRadius="4"
+                                                Background="#EAEAEA"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
                         <!-- Login Button -->
-                        <Button x:Name="LoginButton" 
-                            Content="Login" 
-                            Click="LoginButton_Click"
-                            Background="#050d60"
-                            Foreground="White"
-                            FontWeight="Bold"
-                            Height="40"
-                            Margin="0,10,0,0"/>
+                        <Button x:Name="LoginButton"
+                                Content="Login"
+                                Click="LoginButton_Click"
+                                Background="#050d60"
+                                Foreground="White"
+                                FontWeight="Bold"
+                                Height="40"
+                                Margin="0,10,0,0"/>
 
                         <Button Content="Forgot Password?"
-                            Click="ForgotPasswordButton_Click"
-                            Background="Transparent"
-                            Foreground="#050d60"
-                            BorderThickness="0"
-                            FontWeight="SemiBold"
-                            Height="32"
-                            HorizontalAlignment="Center"
-                            Margin="0,10,0,0"/>
+                                Click="ForgotPasswordButton_Click"
+                                Background="Transparent"
+                                Foreground="#050d60"
+                                BorderThickness="0"
+                                FontWeight="SemiBold"
+                                Height="32"
+                                HorizontalAlignment="Center"
+                                Margin="0,10,0,0"/>
                     </StackPanel>
                 </Grid>
             </Border>
         </Grid>
     </Grid>
 </Window>
-

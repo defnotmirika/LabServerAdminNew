@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using Microsoft.Extensions.Configuration;
 
 namespace LabServerAdmin
@@ -15,22 +16,16 @@ namespace LabServerAdmin
 
         [DllImport("user32.dll")]
         private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
-
         [DllImport("user32.dll")]
         private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
-
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
-
         [DllImport("user32.dll")]
         private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
-
         [DllImport("user32.dll")]
         private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
-
         [DllImport("user32.dll")]
         private static extern bool BlockInput(bool fBlockIt);
-
         [DllImport("user32.dll")]
         private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
@@ -42,11 +37,12 @@ namespace LabServerAdmin
         private const uint VK_TAB = 0x09;
         private const uint VK_ESCAPE = 0x1B;
         private const int HOTKEY_ID = 9000;
+        private const int MAX_ATTEMPTS = 4;
 
         public bool IsAuthenticated { get; private set; } = false;
         public string? AuthenticatedUsername { get; private set; } = null;
         public string? UserRole { get; private set; } = null;
-        public string? AuthenticatedPassword { get; private set; } = null; // Store for lock screen
+        public string? AuthenticatedPassword { get; private set; } = null;
 
         public LoginWindow(
             DatabaseService? databaseService = null,
@@ -63,78 +59,31 @@ namespace LabServerAdmin
             UsernameTextBox.Focus();
         }
 
-        private void LoginWindow_Loaded(object sender, RoutedEventArgs e)
-        {
-            // TEMPORARILY DISABLED: Alt+Tab blocking for testing
-            // Uncomment when ready to re-enable
+        private void LoginWindow_Loaded(object sender, RoutedEventArgs e) { }
 
-            /*
-            // Prevent alt-tab and make window stay on top
-            var hwnd = new WindowInteropHelper(this).Handle;
-            SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_TOPMOST);
-            SetForegroundWindow(hwnd);
-
-            // Register window message hook to intercept system keys
-            _source = HwndSource.FromHwnd(hwnd);
-            _source?.AddHook(WndProc);
-
-            // Register hotkeys to block Alt+Tab, Ctrl+Alt+Del, etc.
-            if (hwnd != IntPtr.Zero)
-            {
-                RegisterHotKey(hwnd, HOTKEY_ID, MOD_ALT, VK_TAB);
-            }
-            
-            // Disable window animations and transitions
-            DisableWindowAnimations(hwnd);
-            */
-        }
-
-        /// <summary>
-        /// Disables window animations and transitions for a specific window
-        /// </summary>
         private void DisableWindowAnimations(IntPtr hwnd)
         {
             const int WM_CHANGEUISTATE = 0x0127;
             const int UIS_INITIALIZE = 3;
-
-            // Disable UI state animations
             SendMessage(hwnd, WM_CHANGEUISTATE, new IntPtr(UIS_INITIALIZE), IntPtr.Zero);
         }
 
         private void LoginWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
-            // TEMPORARILY DISABLED: Authentication requirement for testing
-            // Uncomment when ready to re-enable
-
-            /*
-            // Prevent closing unless authenticated
-            if (_requireAuthenticationToClose && !IsAuthenticated)
-            {
-                e.Cancel = true;
-                MessageBox.Show("You must login to exit the application.", "Login Required", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-            */
-
-            // Unregister hotkeys only if closing is allowed
             var hwnd = new WindowInteropHelper(this).Handle;
             if (hwnd != IntPtr.Zero)
-            {
                 UnregisterHotKey(hwnd, HOTKEY_ID);
-            }
-            // _source?.RemoveHook(WndProc); // Commented out - matching disabled feature above
         }
 
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
             const int WM_HOTKEY = 0x0312;
             const int WM_SYSCOMMAND = 0x0112;
-            const int SC_TASKLIST = 0xF170; // Alt+Tab
-            const int SC_CLOSE = 0xF060; // Close
+            const int SC_TASKLIST = 0xF170;
+            const int SC_CLOSE = 0xF060;
 
             if (msg == WM_HOTKEY && wParam.ToInt32() == HOTKEY_ID)
             {
-                // Block Alt+Tab
                 handled = true;
                 return IntPtr.Zero;
             }
@@ -144,7 +93,6 @@ namespace LabServerAdmin
                 int command = wParam.ToInt32() & 0xFFF0;
                 if (command == SC_TASKLIST || command == SC_CLOSE)
                 {
-                    // Block Alt+Tab and close
                     if (_requireAuthenticationToClose && !IsAuthenticated)
                     {
                         handled = true;
@@ -156,34 +104,9 @@ namespace LabServerAdmin
             return IntPtr.Zero;
         }
 
-        private void LoginWindow_KeyDown(object sender, KeyEventArgs e)
-        {
-            // TEMPORARILY DISABLED: Key blocking for testing
-            // Uncomment when ready to re-enable
+        private void LoginWindow_KeyDown(object sender, KeyEventArgs e) { }
 
-            /*
-            // Block Alt+Tab, Ctrl+Alt+Del, etc.
-            if (e.Key == Key.System && (Keyboard.Modifiers & ModifierKeys.Alt) == ModifierKeys.Alt)
-            {
-                if (e.SystemKey == Key.Tab || e.SystemKey == Key.F4)
-                {
-                    e.Handled = true;
-                }
-            }
-
-            // Block Escape key
-            if (e.Key == Key.Escape && _requireAuthenticationToClose && !IsAuthenticated)
-            {
-                e.Handled = true;
-            }
-            */
-        }
-
-
-        private void LoginButton_Click(object sender, RoutedEventArgs e)
-        {
-            AttemptLogin();
-        }
+        private void LoginButton_Click(object sender, RoutedEventArgs e) => AttemptLogin();
 
         private void ForgotPasswordButton_Click(object sender, RoutedEventArgs e)
         {
@@ -192,29 +115,18 @@ namespace LabServerAdmin
                 MessageBox.Show("Database is not available.", "Forgot Password", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
-
-            var window = new ForgotPasswordWindow(_databaseService)
-            {
-                Owner = this
-            };
-
+            var window = new ForgotPasswordWindow(_databaseService) { Owner = this };
             window.ShowDialog();
         }
 
         private void UsernameTextBox_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key == Key.Enter)
-            {
-                PasswordBox.Focus();
-            }
+            if (e.Key == Key.Enter) PasswordBox.Focus();
         }
 
         private void PasswordBox_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key == Key.Enter)
-            {
-                AttemptLogin();
-            }
+            if (e.Key == Key.Enter) AttemptLogin();
         }
 
         private async void AttemptLogin()
@@ -224,21 +136,20 @@ namespace LabServerAdmin
 
             if (string.IsNullOrWhiteSpace(username))
             {
-                ShowError("Please enter a username.");
+                ShowSimpleError("Please enter your username.");
                 UsernameTextBox.Focus();
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(password))
             {
-                ShowError("Please enter a password.");
+                ShowSimpleError("Please enter your password.");
                 PasswordBox.Focus();
                 return;
             }
 
-            // Disable login button during authentication
             LoginButton.IsEnabled = false;
-            ErrorTextBlock.Visibility = Visibility.Collapsed;
+            HideError();
 
             try
             {
@@ -259,7 +170,7 @@ namespace LabServerAdmin
                         bool isLocked = await _databaseService.IsInstructorLockedAsync(username);
                         if (isLocked)
                         {
-                            ShowError("Your account has been locked. Please contact your administrator.");
+                            ShowLockedError();
                             PasswordBox.Password = string.Empty;
                             PasswordBox.Focus();
                             LoginButton.IsEnabled = true;
@@ -270,29 +181,23 @@ namespace LabServerAdmin
                         if (isValid)
                         {
                             role = "INSTRUCTOR";
-
-                            // ✅ Reset failed attempts on successful login
                             await _databaseService.ResetInstructorFailedAttemptsAsync(username);
 
                             var isTempPassword = await _databaseService.IsInstructorTempPasswordAsync(username);
                             if (isTempPassword)
                             {
-                                var firstTime = new FirstTimeLoginWindow(_databaseService, username)
-                                {
-                                    Owner = this
-                                };
-
+                                var firstTime = new FirstTimeLoginWindow(_databaseService, username) { Owner = this };
                                 var result = firstTime.ShowDialog();
                                 if (result == true)
                                 {
-                                    ShowError("Password updated. Please login with your new password.");
+                                    ShowSimpleError("Password updated successfully. Please log in again with your new password.");
                                     PasswordBox.Password = string.Empty;
                                     PasswordBox.Focus();
                                     LoginButton.IsEnabled = true;
                                     return;
                                 }
 
-                                ShowError("You must set a new password to continue.");
+                                ShowSimpleError("You must set a new password before continuing.");
                                 PasswordBox.Password = string.Empty;
                                 PasswordBox.Focus();
                                 LoginButton.IsEnabled = true;
@@ -301,25 +206,25 @@ namespace LabServerAdmin
                         }
                         else
                         {
-                            // ✅ Wrong password — check if instructor exists to track attempts
                             bool instructorExists = await _databaseService.InstructorExistsAsync(username);
                             if (instructorExists)
                             {
                                 int failedCount = await _databaseService.IncrementInstructorFailedAttemptsAsync(username);
-                                int remaining = 4 - failedCount;
+                                int remaining = MAX_ATTEMPTS - failedCount;
 
-                                if (failedCount >= 4)
+                                if (failedCount >= MAX_ATTEMPTS)
                                 {
                                     await _databaseService.LockInstructorAccountAsync(username);
                                     await _databaseService.LogSystemActionAsync(
                                         "Account Locked", username, "Warning",
-                                        $"Instructor account locked after 4 failed login attempts");
+                                        $"Instructor account locked after {MAX_ATTEMPTS} failed login attempts");
 
-                                    ShowError("Your account has been locked. Please contact your administrator.");
+                                    ShowLockedError();
                                 }
                                 else
                                 {
-                                    ShowError($"Invalid username or password. {remaining} attempt(s) remaining before your account is locked.");
+                                    // ✅ Show attempt progress bar
+                                    ShowAttemptError(failedCount, remaining);
                                 }
 
                                 PasswordBox.Password = "";
@@ -332,7 +237,6 @@ namespace LabServerAdmin
                 }
                 else
                 {
-                    // Fallback to hardcoded credentials if database is not available
                     isValid = (username == "admin" && password == "admin123");
                     role = isValid ? "ADMIN" : string.Empty;
                 }
@@ -343,9 +247,8 @@ namespace LabServerAdmin
                     AuthenticatedUsername = username;
                     UserRole = string.IsNullOrWhiteSpace(role) ? "ADMIN" : role;
                     AuthenticatedPassword = password;
-                    ErrorTextBlock.Visibility = Visibility.Collapsed;
+                    HideError();
 
-                    // Log successful login attempt (fire and forget)
                     if (_databaseService != null)
                     {
                         _ = Task.Run(async () =>
@@ -353,11 +256,8 @@ namespace LabServerAdmin
                             try
                             {
                                 await _databaseService.LogSystemActionAsync(
-                                    "Login",
-                                    username,
-                                    "Success",
-                                    $"User ({UserRole}) logged in successfully"
-                                );
+                                    "Login", username, "Success",
+                                    $"User ({UserRole}) logged in successfully");
                             }
                             catch { }
                         });
@@ -368,29 +268,25 @@ namespace LabServerAdmin
                 }
                 else
                 {
-                    // Generic error for unknown username or failed admin
                     if (_databaseService != null)
                     {
                         try
                         {
                             await _databaseService.LogSystemActionAsync(
-                                "Login Failed",
-                                username,
-                                "Failed",
-                                "Invalid credentials provided"
-                            );
+                                "Login Failed", username, "Failed",
+                                "Invalid credentials provided");
                         }
                         catch { }
                     }
 
-                    ShowError("Invalid username or password. Please try again.");
+                    ShowSimpleError("Invalid username or password. Please try again.");
                     PasswordBox.Password = "";
                     PasswordBox.Focus();
                 }
             }
             catch (Exception ex)
             {
-                ShowError($"Authentication error: {ex.Message}");
+                ShowSimpleError($"An error occurred during login. Please try again.\n({ex.Message})");
                 PasswordBox.Password = "";
                 PasswordBox.Focus();
             }
@@ -400,11 +296,59 @@ namespace LabServerAdmin
             }
         }
 
-        private void ShowError(string message)
+        // ── UI Helper Methods ─────────────────────────────────────────────────
+
+        /// <summary>Simple error with no progress bar (invalid input, generic errors)</summary>
+        private void ShowSimpleError(string message)
         {
+            ErrorIconText.Text = "⚠";
             ErrorTextBlock.Text = message;
-            ErrorTextBlock.Visibility = Visibility.Visible;
+            AttemptPanel.Visibility = Visibility.Collapsed;
+            ErrorPanel.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>Shows attempt warning with block indicators</summary>
+        private void ShowAttemptError(int failedCount, int remaining)
+        {
+            ErrorIconText.Text = "⚠";
+            ErrorTextBlock.Text = remaining == 1
+                ? $"Incorrect password. You have {remaining} attempt left before your account is locked."
+                : $"Incorrect password. You have {remaining} attempts remaining before your account is locked.";
+
+            AttemptCountText.Text = $"{failedCount} / {MAX_ATTEMPTS}";
+
+            // Block colors — orange → red as attempts increase
+            var activeColor = failedCount switch
+            {
+                1 => new SolidColorBrush(Color.FromRgb(230, 126, 34)),  // Orange
+                2 => new SolidColorBrush(Color.FromRgb(211, 84, 0)),    // Dark orange
+                3 => new SolidColorBrush(Color.FromRgb(192, 57, 43)),   // Red
+                _ => new SolidColorBrush(Color.FromRgb(192, 57, 43))
+            };
+            var inactiveColor = new SolidColorBrush(Color.FromRgb(234, 234, 234));
+
+            Block1.Background = failedCount >= 1 ? activeColor : inactiveColor;
+            Block2.Background = failedCount >= 2 ? activeColor : inactiveColor;
+            Block3.Background = failedCount >= 3 ? activeColor : inactiveColor;
+            Block4.Background = failedCount >= 4 ? activeColor : inactiveColor;
+
+            AttemptPanel.Visibility = Visibility.Visible;
+            ErrorPanel.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>Shows locked account error (no progress bar needed)</summary>
+        private void ShowLockedError()
+        {
+            ErrorIconText.Text = "🔒";
+            ErrorTextBlock.Text = "Your account has been locked due to too many failed attempts. Please contact your administrator to unlock your account.";
+            AttemptPanel.Visibility = Visibility.Collapsed;
+            ErrorPanel.Visibility = Visibility.Visible;
+        }
+
+        private void HideError()
+        {
+            ErrorPanel.Visibility = Visibility.Collapsed;
+            AttemptPanel.Visibility = Visibility.Collapsed;
         }
     }
 }
-

@@ -325,47 +325,59 @@ namespace LabServerAdmin.Services
             }
         }
 
+        /// <summary>
+        /// Ensures that the student lockout columns (failed_attempts, is_locked) exist in us_credentials.
+        /// Call this once during application startup / DB initialization.
+        /// </summary>
+        public async Task EnsureStudentLockoutColumnsAsync()
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var ensureStudentLockoutColumns = @"
+                    DO $$
+                    BEGIN
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.tables
+                            WHERE table_name = 'us_credentials'
+                        ) THEN
+                            IF NOT EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_name = 'us_credentials' AND column_name = 'failed_attempts'
+                            ) THEN
+                                ALTER TABLE us_credentials ADD COLUMN failed_attempts INT NOT NULL DEFAULT 0;
+                            END IF;
+
+                            IF NOT EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_name = 'us_credentials' AND column_name = 'is_locked'
+                            ) THEN
+                                ALTER TABLE us_credentials ADD COLUMN is_locked BOOLEAN NOT NULL DEFAULT FALSE;
+                            END IF;
+                        END IF;
+                    END $$;
+                ";
+
+                using var cmd = new NpgsqlCommand(ensureStudentLockoutColumns, connection);
+                await cmd.ExecuteNonQueryAsync();
+            }
+            catch (Exception ex)
+            {
+                await LogSystemActionAsync("EnsureStudentLockoutColumns Error", "Database", "Error",
+                    $"Failed to ensure student lockout columns: {ex.Message}");
+            }
+        }
+
         #endregion
 
-// existing code above...
-            using var studentWelcomeTextCommand = new NpgsqlCommand(ensureStudentWelcomeTextColumn, connection);
-    await studentWelcomeTextCommand.ExecuteNonQueryAsync();
-
-    // ✅ ADD BELOW THIS LINE
-    var ensureStudentLockoutColumns = @"
-                DO $$
-                BEGIN
-                    IF EXISTS (
-                        SELECT 1 FROM information_schema.tables
-                        WHERE table_name = 'us_credentials'
-                    ) THEN
-                        IF NOT EXISTS (
-                            SELECT 1 FROM information_schema.columns
-                            WHERE table_name = 'us_credentials' AND column_name = 'failed_attempts'
-                        ) THEN
-                            ALTER TABLE us_credentials ADD COLUMN failed_attempts INT NOT NULL DEFAULT 0;
-                        END IF;
-
-                        IF NOT EXISTS (
-                            SELECT 1 FROM information_schema.columns
-                            WHERE table_name = 'us_credentials' AND column_name = 'is_locked'
-                        ) THEN
-                            ALTER TABLE us_credentials ADD COLUMN is_locked BOOLEAN NOT NULL DEFAULT FALSE;
-                        END IF;
-                    END IF;
-                END $$;
-            ";
-            using var studentLockoutCommand = new NpgsqlCommand(ensureStudentLockoutColumns, connection);
-    await studentLockoutCommand.ExecuteNonQueryAsync();
-
-} 
-private static bool IsValidBcryptHash(string? hash)
+        private static bool IsValidBcryptHash(string? hash)
         {
             if (string.IsNullOrWhiteSpace(hash)) return false;
             return Regex.IsMatch(hash, @"^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$");
         }
 
-        // FIX: empid is lowercase in ui_credentials
         private async Task<string?> ResolveInstructorEmpIdAsync(string usernameOrEmpId)
         {
             using var connection = new NpgsqlConnection(_connectionString);
@@ -457,7 +469,6 @@ private static bool IsValidBcryptHash(string? hash)
 
             try
             {
-                // FIX: empid lowercase
                 var instructorQuery = @"
                     SELECT password_hash FROM ui_credentials 
                     WHERE (username = @username OR empid = @username) AND role = 'INSTRUCTOR'";
@@ -506,7 +517,6 @@ private static bool IsValidBcryptHash(string? hash)
 
             try
             {
-                // FIX: empid lowercase
                 var instructorQuery = @"
                     SELECT password_hash FROM ui_credentials 
                     WHERE (username = @username OR empid = @username) AND role = 'INSTRUCTOR'";
@@ -628,7 +638,6 @@ private static bool IsValidBcryptHash(string? hash)
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
-            // FIX: attendance_logs uses studno (lowercase)
             var query = @"
                 SELECT al.id, al.studno, al.computer_id, al.login_time, al.logout_time,
                        al.session_duration, al.status, al.schedule_start_time,
@@ -684,7 +693,6 @@ private static bool IsValidBcryptHash(string? hash)
             var filterDate = startDate ?? DateTime.Today;
             var currentDay = filterDate.DayOfWeek.ToString();
 
-            // FIX: studno lowercase
             var query = @"
                 SELECT al.id, al.studno, al.computer_id, al.login_time, al.logout_time,
                        al.session_duration, al.status, al.schedule_start_time,
@@ -765,10 +773,6 @@ private static bool IsValidBcryptHash(string? hash)
             return logs;
         }
 
-        /// <summary>
-        /// FIX: activity_logs uses user_id (FK to us_credentials.id) and created_at.
-        /// Join us_credentials to get studno, then us_geninfo for student name.
-        /// </summary>
         public async Task<List<ActivityLog>> GetActivityLogsAsync(DateTime? startDate = null, DateTime? endDate = null, int limit = 100)
         {
             using var connection = new NpgsqlConnection(_connectionString);
@@ -832,7 +836,6 @@ private static bool IsValidBcryptHash(string? hash)
                 using var connection = new NpgsqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                // FIX: ip_address is nullable — don't include it in computers INSERT
                 var updateComputerQuery = @"
                     INSERT INTO computers (client_name, status, is_online, is_locked, last_seen)
                     VALUES (@clientName, @status, @isOnline, FALSE, CURRENT_TIMESTAMP)
@@ -858,7 +861,6 @@ private static bool IsValidBcryptHash(string? hash)
                 using var constraintCommand = new NpgsqlCommand(ensureConstraint, connection);
                 await constraintCommand.ExecuteNonQueryAsync();
 
-                // FIX: ip_address is nullable in connected_clients too
                 var query = @"
                     INSERT INTO connected_clients (name, ip_address, is_connected, status, last_response) 
                     VALUES (@name, @ipAddress, @isConnected, @status, @lastResponse)
@@ -957,7 +959,6 @@ private static bool IsValidBcryptHash(string? hash)
                 if (adminResult != null && adminResult != DBNull.Value)
                     return Convert.ToInt32(adminResult);
 
-                // FIX: empid lowercase
                 using var instructorCommand = new NpgsqlCommand(
                     "SELECT id FROM ui_credentials WHERE (username = @username OR empid = @username) AND role = 'INSTRUCTOR' LIMIT 1",
                     connection);
@@ -971,10 +972,6 @@ private static bool IsValidBcryptHash(string? hash)
             catch (Exception) { return null; }
         }
 
-        /// <summary>
-        /// FIX: activity_logs uses created_at not timestamp.
-        /// Also handles both admin and instructor users via user_id.
-        /// </summary>
         public async Task LogAdminActionAsync(string username, string action, string? description = null, string? computerName = null, string? ipAddress = null)
         {
             try
@@ -996,7 +993,6 @@ private static bool IsValidBcryptHash(string? hash)
                         computerId = Convert.ToInt32(computerIdObj);
                 }
 
-                // FIX: created_at instead of timestamp
                 var query = @"
                     INSERT INTO activity_logs (user_id, computer_id, action, description, created_at, ip_address)
                     VALUES (@userId, @computerId, @action, @description, CURRENT_TIMESTAMP, @ipAddress)
@@ -1025,7 +1021,6 @@ private static bool IsValidBcryptHash(string? hash)
             var computerId = await GetComputerIdByNameAsync(connection, pcName, ipAddress);
             if (!computerId.HasValue) throw new Exception($"Computer not found: {pcName}");
 
-            // FIX: studno lowercase
             var query = @"
                 INSERT INTO login_requests (studno, computer_id, request_type, request_message, request_timestamp, status)
                 VALUES (@studNo, @computerId, @requestType, @requestMessage, CURRENT_TIMESTAMP, 'Pending')
@@ -1066,7 +1061,6 @@ private static bool IsValidBcryptHash(string? hash)
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
-            // FIX: studno lowercase
             var query = @"
                 SELECT lr.id, lr.studno,
                        COALESCE(CONCAT(us.f_name, ' ', us.l_name), lr.studno) AS student_name,
@@ -1108,7 +1102,6 @@ private static bool IsValidBcryptHash(string? hash)
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
-            // FIX: studno lowercase
             var query = @"
                 SELECT lr.id, lr.studno,
                        COALESCE(CONCAT(us.f_name, ' ', us.l_name), lr.studno) AS student_name,
@@ -1401,7 +1394,6 @@ private static bool IsValidBcryptHash(string? hash)
             var dayOfWeek = targetDate.DayOfWeek.ToString();
             var currentTime = targetDate.TimeOfDay;
 
-            // FIX: attendance_logs uses studno (lowercase)
             var query = @"
                 SELECT
                     us.studNo,
@@ -1464,11 +1456,6 @@ private static bool IsValidBcryptHash(string? hash)
             return list;
         }
 
-        /// <summary>
-        /// FIX: server_sessions does not exist — use lab_sessions instead.
-        /// Gets the matching schedule_id for today's schedule for this instructor,
-        /// then inserts into lab_sessions.
-        /// </summary>
         public async Task<int?> RecordServerStartAsync(string instructorUsernameOrEmpId, int? labId = null)
         {
             try
@@ -1478,7 +1465,6 @@ private static bool IsValidBcryptHash(string? hash)
                 using var connection = new NpgsqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                // Get today's schedule_id for this instructor
                 var dayOfWeek = DateTime.Now.DayOfWeek.ToString();
                 var getScheduleQuery = @"
                     SELECT schedule_id FROM course_schedules
@@ -1499,7 +1485,6 @@ private static bool IsValidBcryptHash(string? hash)
 
                 var scheduleId = Convert.ToInt32(scheduleIdResult);
 
-                // Deactivate any existing active session for this schedule today
                 var deactivateQuery = @"
                     UPDATE lab_sessions 
                     SET is_active = FALSE, actual_end = CURRENT_TIMESTAMP
@@ -1510,7 +1495,6 @@ private static bool IsValidBcryptHash(string? hash)
                 deactivateCmd.Parameters.AddWithValue("@scheduleId", scheduleId);
                 await deactivateCmd.ExecuteNonQueryAsync();
 
-                // Insert new active session into lab_sessions
                 using var command = new NpgsqlCommand(@"
                     INSERT INTO lab_sessions (schedule_id, actual_start, is_active, created_at)
                     VALUES (@scheduleId, CURRENT_TIMESTAMP, TRUE, CURRENT_TIMESTAMP)
@@ -1579,7 +1563,7 @@ private static bool IsValidBcryptHash(string? hash)
 
                 var query = @"
             UPDATE ui_credentials
-            SET failed_attempts = failed_attempts + 1
+            SET failed_attempts = COALESCE(failed_attempts, 0) + 1
             WHERE (username = @value OR empid = @value) AND role = 'INSTRUCTOR'
             RETURNING failed_attempts";
 
@@ -1589,8 +1573,14 @@ private static bool IsValidBcryptHash(string? hash)
                 var result = await command.ExecuteScalarAsync();
                 return result == null || result == DBNull.Value ? 0 : Convert.ToInt32(result);
             }
-            catch { return 0; }
+            catch (Exception ex) // ✅ TEMPORARILY nakikita ang error
+            {
+                System.Windows.MessageBox.Show($"IncrementFailed Error: {ex.Message}", "Debug");
+                return 0;
+            }
         }
+
+
 
         public async Task LockInstructorAccountAsync(string usernameOrEmpId)
         {
@@ -1609,6 +1599,116 @@ private static bool IsValidBcryptHash(string? hash)
                 await command.ExecuteNonQueryAsync();
             }
             catch { }
+        }
+
+        public async Task InitializeDatabaseAsync()
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                // Ensure failed_attempts and is_locked columns exist on ui_credentials (instructors)
+                var ensureInstructorLockoutColumns = @"
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_name = 'ui_credentials'
+                ) THEN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'ui_credentials' AND column_name = 'failed_attempts'
+                    ) THEN
+                        ALTER TABLE ui_credentials ADD COLUMN failed_attempts INT NOT NULL DEFAULT 0;
+                    END IF;
+
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'ui_credentials' AND column_name = 'is_locked'
+                    ) THEN
+                        ALTER TABLE ui_credentials ADD COLUMN is_locked BOOLEAN NOT NULL DEFAULT FALSE;
+                    END IF;
+                END IF;
+            END $$;
+        ";
+                using var instructorLockoutCmd = new NpgsqlCommand(ensureInstructorLockoutColumns, connection);
+                await instructorLockoutCmd.ExecuteNonQueryAsync();
+
+                // Ensure show_welcome_text exists on ui_credentials
+                var ensureInstructorWelcomeText = @"
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_name = 'ui_credentials'
+                ) THEN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'ui_credentials' AND column_name = 'show_welcome_text'
+                    ) THEN
+                        ALTER TABLE ui_credentials ADD COLUMN show_welcome_text BOOLEAN NOT NULL DEFAULT FALSE;
+                    END IF;
+                END IF;
+            END $$;
+        ";
+                using var instructorWelcomeCmd = new NpgsqlCommand(ensureInstructorWelcomeText, connection);
+                await instructorWelcomeCmd.ExecuteNonQueryAsync();
+
+                // Ensure failed_attempts and is_locked columns exist on us_credentials (students)
+                var ensureStudentLockoutColumns = @"
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_name = 'us_credentials'
+                ) THEN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'us_credentials' AND column_name = 'failed_attempts'
+                    ) THEN
+                        ALTER TABLE us_credentials ADD COLUMN failed_attempts INT NOT NULL DEFAULT 0;
+                    END IF;
+
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'us_credentials' AND column_name = 'is_locked'
+                    ) THEN
+                        ALTER TABLE us_credentials ADD COLUMN is_locked BOOLEAN NOT NULL DEFAULT FALSE;
+                    END IF;
+                END IF;
+            END $$;
+        ";
+                using var studentLockoutCmd = new NpgsqlCommand(ensureStudentLockoutColumns, connection);
+                await studentLockoutCmd.ExecuteNonQueryAsync();
+
+                // Ensure show_welcome_text exists on us_credentials
+                var ensureStudentWelcomeText = @"
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_name = 'us_credentials'
+                ) THEN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'us_credentials' AND column_name = 'show_welcome_text'
+                    ) THEN
+                        ALTER TABLE us_credentials ADD COLUMN show_welcome_text BOOLEAN NOT NULL DEFAULT FALSE;
+                    END IF;
+                END IF;
+            END $$;
+        ";
+                using var studentWelcomeCmd = new NpgsqlCommand(ensureStudentWelcomeText, connection);
+                await studentWelcomeCmd.ExecuteNonQueryAsync();
+
+                await LogSystemActionAsync("Database Initialized", "System", "INFO", "Database schema verified and updated");
+            }
+            catch (Exception ex)
+            {
+                await LogSystemActionAsync("Database Init Error", "System", "Error", $"Failed to initialize database: {ex.Message}");
+                throw; // Re-throw so callers know initialization failed
+            }
         }
 
         public async Task ResetInstructorFailedAttemptsAsync(string usernameOrEmpId)
@@ -1630,7 +1730,6 @@ private static bool IsValidBcryptHash(string? hash)
             catch { }
         }
 
-        // For admin panel — unlock an instructor account
         public async Task<bool> UnlockInstructorAccountAsync(string usernameOrEmpId)
         {
             try
@@ -1652,9 +1751,6 @@ private static bool IsValidBcryptHash(string? hash)
 
         #endregion
 
-        /// <summary>
-        /// FIX: uses lab_sessions instead of server_sessions.
-        /// </summary>
         public async Task<DateTime?> GetTodayServerStartTimeAsync()
         {
             try
@@ -1671,9 +1767,6 @@ private static bool IsValidBcryptHash(string? hash)
             catch { return null; }
         }
 
-        /// <summary>
-        /// FIX: uses lab_sessions instead of server_sessions.
-        /// </summary>
         public async Task RecordServerStopAsync(string? instructorUsername = null)
         {
             using var connection = new NpgsqlConnection(_connectionString);
@@ -1683,7 +1776,6 @@ private static bool IsValidBcryptHash(string? hash)
 
             if (!string.IsNullOrWhiteSpace(instructorUsername))
             {
-                // I-resolve muna ang empid ng instructor
                 var resolveQuery = @"
             SELECT empid FROM ui_credentials 
             WHERE (username = @username OR empid = @username) 
@@ -1694,13 +1786,12 @@ private static bool IsValidBcryptHash(string? hash)
                 resolveCmd.Parameters.AddWithValue("@username", instructorUsername);
                 var empid = await resolveCmd.ExecuteScalarAsync() as string;
 
-                // I-update gamit ang empid via JOIN sa course_schedules
                 query = @"
                     UPDATE lab_sessions ls
                     SET is_active = FALSE, 
                         actual_end = CURRENT_TIMESTAMP
                     FROM course_schedules cs
-                    WHERE ls.schedule_id = cs.schedule_id  -- ✅ DITO LANG BINAGO
+                    WHERE ls.schedule_id = cs.schedule_id
                       AND cs.empid = @empid
                       AND ls.is_active = TRUE";
 
@@ -1710,7 +1801,6 @@ private static bool IsValidBcryptHash(string? hash)
             }
             else
             {
-                // Safety net — close ALL active sessions
                 query = @"
             UPDATE lab_sessions 
             SET is_active = FALSE, 
@@ -1722,9 +1812,6 @@ private static bool IsValidBcryptHash(string? hash)
             }
         }
 
-        /// <summary>
-        /// FIX: empid lowercase in ui_credentials.
-        /// </summary>
         public async Task<TimeSpan?> GetTodayScheduleEndTimeAsync(string instructorUsernameOrEmpId)
         {
             try

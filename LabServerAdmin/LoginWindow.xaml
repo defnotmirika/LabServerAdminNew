@@ -126,20 +126,17 @@
 
                     <!-- Header -->
                     <StackPanel Grid.Row="0" Margin="0,0,0,20">
-
                         <TextBlock Text="Login" 
                                 FontSize="28" 
                                 FontWeight="Bold" 
                                 HorizontalAlignment="Left"
                                 Foreground="#2C3E50"/>
-
                         <TextBlock Text="Welcome back! Please enter your details." 
                                 FontSize="14" 
                                 HorizontalAlignment="Left"
                                 Foreground="#7F8C8D"
                                 Margin="0,5,0,0"/>
                     </StackPanel>
-
 
                     <!-- Login Form -->
                     <StackPanel Grid.Row="1">
@@ -150,7 +147,6 @@
                                FontSize="14"
                                Foreground="#34495E"
                                Margin="0,0,0,5"/>
-
                         <Border Style="{StaticResource RoundedTextBox}" Margin="0,0,0,15">
                             <TextBox x:Name="UsernameTextBox"
                                  Height="40"
@@ -167,7 +163,6 @@
                                FontSize="14"
                                Foreground="#34495E"
                                Margin="0,0,0,5"/>
-
                         <Border Style="{StaticResource RoundedTextBox}" Margin="0,0,0,15">
                             <PasswordBox x:Name="PasswordBox" 
                                      Height="40"
@@ -178,14 +173,50 @@
                                      KeyDown="PasswordBox_KeyDown"/>
                         </Border>
 
-                        <!-- Error Message -->
-                        <TextBlock x:Name="ErrorTextBlock" 
-                               Text="" 
-                               Foreground="Red" 
-                               FontSize="12"
-                               TextWrapping="Wrap"
-                               Margin="0,0,0,10"
-                               Visibility="Collapsed"/>
+                        <!-- ✅ UPDATED: Error / Warning Panel (replaces old ErrorTextBlock) -->
+                        <Border x:Name="ErrorPanel"
+                                Visibility="Collapsed"
+                                CornerRadius="8" Padding="12,10"
+                                Margin="0,0,0,10"
+                                Background="#FFF5F5"
+                                BorderBrush="#FFCCCC"
+                                BorderThickness="1">
+                            <StackPanel>
+                                <!-- Icon + Message -->
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock x:Name="ErrorIconText"
+                                               Text="&#9888;" FontSize="14"
+                                               Foreground="#C0392B"
+                                               VerticalAlignment="Top"
+                                               Margin="0,1,8,0"/>
+                                    <TextBlock x:Name="ErrorTextBlock"
+                                               Text="" Foreground="#C0392B"
+                                               FontSize="12" FontWeight="SemiBold"
+                                               TextWrapping="Wrap"/>
+                                </StackPanel>
+
+                                <!-- Attempt block indicators -->
+                                <StackPanel x:Name="AttemptPanel" Visibility="Collapsed" Margin="0,10,0,0">
+                                    <Grid Margin="0,0,0,6">
+                                        <TextBlock Text="Login Attempts" FontSize="11" Foreground="#999"/>
+                                        <TextBlock x:Name="AttemptCountText"
+                                                   FontSize="11" FontWeight="Bold"
+                                                   Foreground="#C0392B"
+                                                   HorizontalAlignment="Right"/>
+                                    </Grid>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border x:Name="Block1" Height="8" Width="78" CornerRadius="4"
+                                                Background="#EAEAEA" Margin="0,0,4,0"/>
+                                        <Border x:Name="Block2" Height="8" Width="78" CornerRadius="4"
+                                                Background="#EAEAEA" Margin="0,0,4,0"/>
+                                        <Border x:Name="Block3" Height="8" Width="78" CornerRadius="4"
+                                                Background="#EAEAEA" Margin="0,0,4,0"/>
+                                        <Border x:Name="Block4" Height="8" Width="78" CornerRadius="4"
+                                                Background="#EAEAEA"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
                         <!-- Login Button -->
                         <Button x:Name="LoginButton" 
