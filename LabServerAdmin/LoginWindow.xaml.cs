@@ -12,6 +12,8 @@ namespace LabServerAdmin
     public partial class LoginWindow : Window
     {
         private readonly DatabaseService? _databaseService;
+        private readonly VoiceSpeakerService? _voiceSpeakerService;
+        private readonly IConfiguration? _configuration;
         private readonly bool _requireAuthenticationToClose;
 
         [DllImport("user32.dll")]
@@ -51,6 +53,8 @@ namespace LabServerAdmin
             bool requireAuthenticationToClose = true)
         {
             _databaseService = databaseService;
+            _voiceSpeakerService = voiceSpeakerService;
+            _configuration = configuration;
             _requireAuthenticationToClose = requireAuthenticationToClose;
             InitializeComponent();
             Loaded += LoginWindow_Loaded;
@@ -166,7 +170,7 @@ namespace LabServerAdmin
                     }
                     else
                     {
-                        // ✅ Check lockout BEFORE validating password
+                        // Check lockout BEFORE validating password
                         bool isLocked = await _databaseService.IsInstructorLockedAsync(username);
                         if (isLocked)
                         {
@@ -183,11 +187,13 @@ namespace LabServerAdmin
                             role = "INSTRUCTOR";
                             await _databaseService.ResetInstructorFailedAttemptsAsync(username);
 
+                            // ── First-time / temp password check ─────────────────
                             var isTempPassword = await _databaseService.IsInstructorTempPasswordAsync(username);
                             if (isTempPassword)
                             {
                                 var firstTime = new FirstTimeLoginWindow(_databaseService, username) { Owner = this };
                                 var result = firstTime.ShowDialog();
+
                                 if (result == true)
                                 {
                                     ShowSimpleError("Password updated successfully. Please log in again with your new password.");
@@ -223,7 +229,6 @@ namespace LabServerAdmin
                                 }
                                 else
                                 {
-                                    // ✅ Show attempt progress bar
                                     ShowAttemptError(failedCount, remaining);
                                 }
 
@@ -249,6 +254,7 @@ namespace LabServerAdmin
                     AuthenticatedPassword = password;
                     HideError();
 
+                    // ── Log successful login (fire-and-forget) ────────────────
                     if (_databaseService != null)
                     {
                         _ = Task.Run(async () =>
@@ -261,6 +267,48 @@ namespace LabServerAdmin
                             }
                             catch { }
                         });
+                    }
+
+                    // ── Welcome text + voice enrollment (instructors only) ────
+                    if (UserRole == "INSTRUCTOR" && _databaseService != null)
+                    {
+                        try
+                        {
+                            bool shouldShowWelcome = await _databaseService.ShouldShowWelcomeTextAsync(username);
+                            if (shouldShowWelcome)
+                            {
+                                // Step 1 — Show the welcome text screen (no arguments needed)
+                                // Step 1 — Show the welcome text screen
+                                var welcomeText = new WelcomeText { Owner = this };
+                                welcomeText.ShowDialog(); // now properly unblocks after animation completes
+
+                                // Step 2 — Show voice enrollment dialog
+                                if (_voiceSpeakerService != null && _configuration != null)
+                                {
+                                    var voiceEnrollment = new VoiceEnrollmentDialog(
+                                        _voiceSpeakerService,
+                                        _configuration,
+                                        username)
+                                    { Owner = this };
+                                    voiceEnrollment.ShowDialog();
+                                }
+                                else
+                                {
+                                    MessageBox.Show(
+                                        "Voice enrollment is unavailable (missing configuration).",
+                                        "Voice Enrollment",
+                                        MessageBoxButton.OK,
+                                        MessageBoxImage.Warning);
+                                }
+
+                                // Step 3 — Mark as done ONLY here, not inside VoiceEnrollmentDialog
+                                await _databaseService.MarkWelcomeTextShownAsync(username);
+                            }
+                        }
+                        catch
+                        {
+                            // Non-fatal — login proceeds even if welcome/enrollment window fails
+                        }
                     }
 
                     this.DialogResult = true;
@@ -317,12 +365,11 @@ namespace LabServerAdmin
 
             AttemptCountText.Text = $"{failedCount} / {MAX_ATTEMPTS}";
 
-            // Block colors — orange → red as attempts increase
             var activeColor = failedCount switch
             {
-                1 => new SolidColorBrush(Color.FromRgb(230, 126, 34)),  // Orange
-                2 => new SolidColorBrush(Color.FromRgb(211, 84, 0)),    // Dark orange
-                3 => new SolidColorBrush(Color.FromRgb(192, 57, 43)),   // Red
+                1 => new SolidColorBrush(Color.FromRgb(230, 126, 34)),
+                2 => new SolidColorBrush(Color.FromRgb(211, 84, 0)),
+                3 => new SolidColorBrush(Color.FromRgb(192, 57, 43)),
                 _ => new SolidColorBrush(Color.FromRgb(192, 57, 43))
             };
             var inactiveColor = new SolidColorBrush(Color.FromRgb(234, 234, 234));

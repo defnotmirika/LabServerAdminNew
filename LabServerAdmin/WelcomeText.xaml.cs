@@ -82,6 +82,8 @@ namespace LabServerAdmin
             storyboard.Children.Add(subtitleFadeOut);
 
             storyboard.Completed += (_, _) => AnimationCompleted?.Invoke(this, EventArgs.Empty);
+            this.DialogResult = true; 
+            this.Close();
             storyboard.Begin();
         }
     }

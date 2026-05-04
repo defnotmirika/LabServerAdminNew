@@ -185,15 +185,7 @@ namespace LabServerAdmin
 
         private async Task MarkOnboardingCompleteAsync()
         {
-            try
-            {
-                var databaseService = new DatabaseService(_configuration);
-                await databaseService.MarkWelcomeTextShownAsync(_username);
-            }
-            catch
-            {
-                // Ignore errors; flow should continue even if the welcome flag cannot be updated.
-            }
+           
         }
 
         private void CancelButton_Click(object sender, RoutedEventArgs e)
