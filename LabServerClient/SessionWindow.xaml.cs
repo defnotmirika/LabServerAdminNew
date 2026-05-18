@@ -44,8 +44,7 @@ namespace LabServerClient
         private readonly DispatcherTimer _serverStartCheckTimer;
         private bool _isWaitingForServerStart = false;
         private DispatcherTimer? _screenShareTimer;
-        private const string LearniqBaseUrl = "http://localhost:5219";
-
+        private const string LearniqBaseUrl = "http://192.168.1.11:80";
 
         // Remote viewing (screen sharing) fields
         private CancellationTokenSource? _screenShareCts;

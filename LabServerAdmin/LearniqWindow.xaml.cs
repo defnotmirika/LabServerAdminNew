@@ -8,8 +8,7 @@ namespace LabServerAdmin
     {
         private readonly string _username;
         private const string Secret = "LSA-Learniq-Secret-2026";
-        private const string LearniqBaseUrl = "http://localhost:5219";
-
+        private const string LearniqBaseUrl = "http://192.168.1.11:80";
         public LearniqWindow(string username)
         {
             _username = username;
