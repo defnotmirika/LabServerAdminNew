@@ -386,28 +386,13 @@ namespace LabServerClient
         private void LearniqButton_Click(object sender, RoutedEventArgs e)
         {
             const string Secret = "LSA-Learniq-Secret-2026";
-            const int LearniqPort = 5219;
+            const string LearniqIp = "192.168.1.11";
+            const int LearniqPort = 80;
 
-            string serverIp = "192.168.1.11";
-            try
-            {
-                var regKey = Microsoft.Win32.Registry.CurrentUser
-                    .OpenSubKey(@"Software\LabServerClient");
-                if (regKey != null)
-                {
-                    string? savedIp = regKey.GetValue("ServerIP")?.ToString();
-                    if (!string.IsNullOrWhiteSpace(savedIp))
-                        serverIp = savedIp;
-                    regKey.Close();
-                }
-            }
-            catch { }
-
-            var url = $"http://{serverIp}:{LearniqPort}/Account/AutoLogin" +
+            var url = $"http://{LearniqIp}:{LearniqPort}/Account/AutoLogin" +
                       $"?token={Secret}" +
                       $"&username={Uri.EscapeDataString(_username ?? "")}";
 
-            // I-open sa WebView2 window instead of browser
             var learniqWindow = new LearniqWindow(url);
             learniqWindow.Show();
         }

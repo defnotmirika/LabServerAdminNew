@@ -6,6 +6,7 @@ using System.Windows;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging; // ← ADDED
 using LabServerAdmin.Services;
 
 namespace LabServerAdmin
@@ -14,7 +15,7 @@ namespace LabServerAdmin
     {
         private IHost? _host;
         private DatabaseService? _databaseService;
-        private ShowLearniq? _splashWindow; // ✅ ADDED
+        private ShowLearniq? _splashWindow;
 
         private void Application_Startup(object sender, StartupEventArgs e)
         {
@@ -29,9 +30,8 @@ namespace LabServerAdmin
                 _host = CreateHostBuilder().Build();
                 _databaseService = _host.Services.GetRequiredService<DatabaseService>();
 
-                _ = _databaseService.InitializeDatabaseAsync(); // ✅ CHANGED: removed await
+                _ = _databaseService.InitializeDatabaseAsync();
 
-                // ✅ CHANGED: Shows splash screen instead of login directly
                 await Dispatcher.InvokeAsync(() =>
                 {
                     _splashWindow = new ShowLearniq();
@@ -54,7 +54,6 @@ namespace LabServerAdmin
             }
         }
 
-        // ✅ ADDED: New method — handles login + welcome text + main window
         private async Task ShowLoginAndMainAsync()
         {
             _splashWindow?.Close();
@@ -213,8 +212,14 @@ namespace LabServerAdmin
             return false;
         }
 
+        // ← UPDATED: Added ConfigureLogging to remove EventLog
         private static IHostBuilder CreateHostBuilder() =>
             Host.CreateDefaultBuilder()
+                .ConfigureLogging(logging =>
+                {
+                    logging.ClearProviders();
+                    logging.AddConsole();
+                })
                 .ConfigureServices((context, services) =>
                 {
                     services.AddSingleton<DatabaseService>();

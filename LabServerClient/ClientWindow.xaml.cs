@@ -207,14 +207,14 @@ namespace LabServerClient
                 var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\LabServerClient", true);
                 if (key != null)
                 {
-                    ServerIpTextBox.Text = key.GetValue("ServerIP", "192.168.1.11")?.ToString() ?? "192.168.1.11";
+                    ServerIpTextBox.Text = key.GetValue("ServerIP", "192.168.1.12")?.ToString() ?? "192.168.1.12";
                     PcNameTextBox.Text = key.GetValue("PCName", Environment.MachineName)?.ToString() ?? Environment.MachineName;
                     key.Close();
                 }
                 else
                 {
                     // Set defaults if registry key doesn't exist
-                    ServerIpTextBox.Text = "192.168.1.11";
+                    ServerIpTextBox.Text = "192.168.1.12";
                     PcNameTextBox.Text = Environment.MachineName;
                 }
             }
@@ -222,7 +222,7 @@ namespace LabServerClient
             {
                 LogMessage($"Error loading settings: {ex.Message}");
                 // Set defaults on error
-                ServerIpTextBox.Text = "192.168.1.11";
+                ServerIpTextBox.Text = "192.168.1.12";
                 PcNameTextBox.Text = Environment.MachineName;
             }
         }

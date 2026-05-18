@@ -12,7 +12,11 @@
     <AssemblyProduct>Lab Server Admin</AssemblyProduct>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>1.0.0.0</FileVersion>
+	<InterceptorsNamespaces>$(InterceptorsNamespaces);Microsoft.Extensions.Configuration.Binder.SourceGeneration</InterceptorsNamespaces>
   </PropertyGroup>
+	
+	
+	
 
   <ItemGroup>
     <None Remove="appsettings.json" />
